@@ -1,18 +1,17 @@
 """
-Atomic experiment runner for RDX-MCP.
+RDX-MCP 的原子化 experiment runner。
 
-Orchestrates the full lifecycle of a GPU-debug experiment:
+负责编排 GPU-debug experiment 的完整生命周期：
 
-1. Navigate the replay to a specific draw-call event.
-2. Run a verifier on the *baseline* state (before any patch).
-3. Optionally apply a shader patch and re-verify.
-4. Compare before / after metrics to produce a verdict.
-5. Revert the patch so subsequent experiments start from a clean state.
+1. 将 replay 导航到指定 draw-call event。
+2. 在 *baseline* 状态（未打补丁前）运行 verifier。
+3. 可选：应用 shader patch 并重新验证。
+4. 比较 before / after metrics 产生 verdict。
+5. 回滚 patch，确保后续实验从干净状态开始。
 
-The module also provides a *bisect* facility that binary-searches a range
-of events to locate the first draw call where a verifier starts failing,
-and a *batch* runner for executing multiple experiment definitions
-sequentially.
+模块还提供 *bisect* 能力：对 event 范围进行二分搜索，定位
+verifier 首次失败的 draw call；以及 *batch* runner，用于顺序
+执行多个 experiment 定义。
 """
 
 from __future__ import annotations
@@ -40,22 +39,21 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers（内部辅助）
 # ---------------------------------------------------------------------------
 
 def _new_id(prefix: str) -> str:
-    """Generate a short unique identifier with the given *prefix*."""
+    """生成带指定 *prefix* 的短唯一标识符。"""
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 def _ts() -> float:
-    """Current wall-clock time as a POSIX timestamp."""
+    """当前墙钟时间（POSIX timestamp）。"""
     return time.time()
 
 
-# Mapping from verifier type to the metric key that best represents the
-# "badness" of the result.  Lower values are always *better* for these
-# primary metrics.
+# 从 verifier type 映射到最能代表结果“badness”的 metric key。
+# 对这些主指标而言，数值越低越 *好*。
 _PRIMARY_METRIC_KEY: Dict[str, str] = {
     VerifierType.NANINF:          "nan_inf_count",
     VerifierType.IMAGE_DIFF:      "diff_score",
@@ -65,7 +63,7 @@ _PRIMARY_METRIC_KEY: Dict[str, str] = {
     VerifierType.CUSTOM:          "score",
 }
 
-# Minimum relative improvement (fraction) to qualify as ``IMPROVED``.
+# 判定为 ``IMPROVED`` 的最小相对改进比例（fraction）。
 _IMPROVEMENT_THRESHOLD = 0.10
 
 
@@ -74,29 +72,27 @@ _IMPROVEMENT_THRESHOLD = 0.10
 # ---------------------------------------------------------------------------
 
 class ExperimentRunner:
-    """Runs self-contained, auditable GPU-debug experiments.
+    """执行自包含、可审计的 GPU-debug experiments。
 
-    Each experiment captures baseline metrics, optionally applies a patch,
-    re-measures, and produces a verdict with full evidence.  Experiments
-    are *atomic*: every patch is reverted before the method returns,
-    regardless of success or failure.
+    每个 experiment 都会采集 baseline metrics，可选应用 patch，
+    重新测量并给出包含完整 evidence 的 verdict。experiment 是 *atomic*：
+    无论成功或失败，方法返回前都会回滚 patch。
 
     Parameters
     ----------
     session_manager:
-        Provides ``get_controller(session_id)`` to obtain the replay
-        controller for a given session.
+        提供 ``get_controller(session_id)`` 以获得指定 session 的
+        replay controller。
     render_service:
-        Provides ``async capture_render(session_id, event_id)`` returning
-        an :class:`ArtifactRef` for the rendered output at that event.
+        提供 ``async capture_render(session_id, event_id)``，返回
+        该 event 渲染输出的 :class:`ArtifactRef`。
     verifier_engine:
-        Provides ``async verify(session_id, event_id, config)`` returning
-        a ``dict`` of metric results including a ``"passed"`` boolean key.
+        提供 ``async verify(session_id, event_id, config)``，返回
+        包含 ``"passed"`` 布尔字段的 metric ``dict``。
     patch_engine:
-        A :class:`~rdx.core.patch_engine.PatchEngine` instance.
+        :class:`~rdx.core.patch_engine.PatchEngine` 实例。
     artifact_store:
-        Provides ``async store(data, metadata)`` returning an
-        :class:`ArtifactRef`.
+        提供 ``async store(data, metadata)``，返回 :class:`ArtifactRef`。
     """
 
     def __init__(
@@ -113,48 +109,45 @@ class ExperimentRunner:
         self._patch_engine = patch_engine
         self._artifact_store = artifact_store
 
-        # Registry of PatchSpec objects keyed by patch_id.  Callers must
-        # register specs before referencing them in an ExperimentDef.
+        # 以 patch_id 为键的 PatchSpec 注册表。调用方必须在
+        # ExperimentDef 引用之前注册 spec。
         self._patch_specs: Dict[str, PatchSpec] = {}
 
     # ------------------------------------------------------------------
-    # Patch-spec registry
+    # Patch-spec registry（PatchSpec 注册表）
     # ------------------------------------------------------------------
 
     def register_patch_spec(self, spec: PatchSpec) -> None:
-        """Register a :class:`PatchSpec` so experiments can reference it."""
+        """注册 :class:`PatchSpec`，供 experiment 引用。"""
         self._patch_specs[spec.patch_id] = spec
 
     def get_patch_spec(self, patch_id: str) -> Optional[PatchSpec]:
-        """Look up a previously registered :class:`PatchSpec`."""
+        """查询已注册的 :class:`PatchSpec`。"""
         return self._patch_specs.get(patch_id)
 
     # ------------------------------------------------------------------
-    # Single experiment
+    # Single experiment（单实验）
     # ------------------------------------------------------------------
 
     async def run_experiment(
         self,
         experiment_def: ExperimentDef,
     ) -> ExperimentResult:
-        """Execute a single experiment as defined by *experiment_def*.
+        """执行由 *experiment_def* 定义的单个 experiment。
 
         Workflow
         -------
-        1. Navigate the replay to the target event.
-        2. Run the configured verifier to collect **baseline** metrics and
-           optionally capture a rendered artifact.
-        3. If a ``patch_id`` is set on the definition:
-           a. Resolve the :class:`PatchSpec` from the registry.
-           b. Apply the patch through the patch engine.
-           c. Force a re-render at the same event.
-           d. Run the verifier again to collect **after** metrics.
-        4. Build :class:`ExperimentEvidence` with both metric sets and
-           rendered artifacts.
-        5. Determine the verdict by comparing before / after metrics.
-        6. Revert the patch (if one was applied) so the session returns
-           to its original state.
-        7. Return the :class:`ExperimentResult`.
+        1. 将 replay 导航到目标 event。
+        2. 运行配置的 verifier，采集 **baseline** metrics，并可选捕获渲染 artifact。
+        3. 若定义中设置了 ``patch_id``：
+           a. 从注册表解析 :class:`PatchSpec`。
+           b. 通过 patch engine 应用 patch。
+           c. 在同一 event 强制重新渲染。
+           d. 再次运行 verifier 采集 **after** metrics。
+        4. 用两组 metrics 与渲染 artifacts 构建 :class:`ExperimentEvidence`。
+        5. 比较 before / after metrics 决定 verdict。
+        6. 回滚 patch（如有），使 session 回到原始状态。
+        7. 返回 :class:`ExperimentResult`。
         """
         t0 = _ts()
         session_id = experiment_def.session_id
@@ -165,10 +158,10 @@ class ExperimentRunner:
         try:
             controller = self._session_manager.get_controller(session_id)
 
-            # 1 -- navigate to the event
+            # 1 -- 导航到 event
             controller.SetFrameEvent(event_id, True)
 
-            # 2 -- baseline verification
+            # 2 -- baseline 验证
             before_artifact = await self._safe_capture(session_id, event_id)
             before_metrics = await self._safe_verify(
                 session_id, event_id, experiment_def.verifier,
@@ -177,7 +170,7 @@ class ExperimentRunner:
             after_artifact: Optional[ArtifactRef] = None
             after_metrics: Dict[str, Any] = {}
 
-            # 3 -- optional patch application
+            # 3 -- 可选 patch 应用
             if experiment_def.patch_id is not None:
                 spec = self._resolve_patch_spec(experiment_def.patch_id)
                 if spec is None:
@@ -204,10 +197,10 @@ class ExperimentRunner:
                 patch_applied = True
                 patch_id_used = spec.patch_id
 
-                # 3c -- force re-render with the patched shader
+                # 3c -- 使用已打补丁的 shader 强制重新渲染
                 controller.SetFrameEvent(event_id, True)
 
-                # 3d -- post-patch verification
+                # 3d -- patch 后验证
                 after_artifact = await self._safe_capture(
                     session_id, event_id,
                 )
@@ -215,7 +208,7 @@ class ExperimentRunner:
                     session_id, event_id, experiment_def.verifier,
                 )
 
-            # 4 -- build evidence
+            # 4 -- 构建 evidence
             verdict = self._determine_verdict(
                 before_metrics,
                 after_metrics,
@@ -235,7 +228,7 @@ class ExperimentRunner:
                 ),
             )
 
-            # 5 -- result
+            # 5 -- 结果
             status = ExperimentStatus.COMPLETED
 
         except Exception as exc:
@@ -250,7 +243,7 @@ class ExperimentRunner:
             status = ExperimentStatus.FAILED
 
         finally:
-            # 6 -- always revert the patch
+            # 6 -- 始终回滚 patch
             if patch_applied and patch_id_used is not None:
                 try:
                     await self._patch_engine.revert_patch(
@@ -270,7 +263,7 @@ class ExperimentRunner:
         )
 
     # ------------------------------------------------------------------
-    # Bisect
+    # Bisect（二分定位）
     # ------------------------------------------------------------------
 
     async def run_bisect(
@@ -284,36 +277,32 @@ class ExperimentRunner:
         max_iters: int = 60,
         confidence_threshold: float = 0.85,
     ) -> BisectResult:
-        """Binary-search a range of events to find the first "bad" one.
+        """对 event 范围进行二分搜索，找到第一个 "bad" event。
 
         Parameters
         ----------
         session_id:
-            Active replay session identifier.
+            活跃 replay session identifier。
         capture_id:
-            Capture that is being replayed (used for logging only).
+            当前 replay 的 capture（仅用于日志）。
         range_lo, range_hi:
-            Inclusive event-ID boundaries to search.  The assumption is
-            that ``range_lo`` is *good* (verifier passes) and
-            ``range_hi`` is *bad* (verifier fails).
+            要搜索的 event-ID 闭区间。假设 ``range_lo`` 为 *good*
+            （verifier 通过），``range_hi`` 为 *bad*（verifier 失败）。
         verifier_config:
-            Configuration passed to the verifier at each probe point.
+            每个探测点传给 verifier 的配置。
         strategy:
-            ``"binary"`` for classic binary search.
-            ``"ddmin"`` for binary search followed by extra boundary
-            verification probes to increase confidence.
+            ``"binary"`` 表示经典二分搜索。
+            ``"ddmin"`` 表示二分后追加边界验证，以提高置信度。
         max_iters:
-            Hard upper bound on verification calls.
+            verifier 调用次数的硬上限。
         confidence_threshold:
-            Target confidence level; the search may stop early once this
-            threshold is reached and the boundary is adjacent.
+            目标置信度；当达到阈值且边界相邻时可提前停止搜索。
 
         Returns
         -------
         BisectResult
-            Identifies the first bad event, the last known good event, the
-            evidence chain (experiment IDs for each probe), the calculated
-            confidence, and the number of iterations consumed.
+            标识第一个 bad event、最后一个已知 good event、evidence chain
+            （每次探测的 experiment IDs）、计算得到的 confidence 以及迭代次数。
         """
         if range_hi <= range_lo:
             raise ValueError(
@@ -330,7 +319,7 @@ class ExperimentRunner:
         last_good = lo
         last_bad = hi
 
-        # -- Phase 1: binary search ----------------------------------------
+        # -- Phase 1: binary search（经典二分）------------------------------
         while lo + 1 < hi and iterations < max_iters:
             mid = (lo + hi) // 2
 
@@ -350,11 +339,11 @@ class ExperimentRunner:
                 last_good = mid
                 lo = mid
 
-            # Track adjacent boundary consistency.
+            # 跟踪相邻边界的一致性。
             if abs(last_bad - last_good) <= 1:
                 boundary_consistent_count += 1
 
-            # Early exit when confidence is high enough.
+            # 当置信度足够时提前退出。
             confidence = self._calculate_confidence(
                 last_good, last_bad, total_range,
                 boundary_consistent_count,
@@ -362,10 +351,9 @@ class ExperimentRunner:
             if confidence >= confidence_threshold and hi - lo <= 1:
                 break
 
-        # -- Phase 2 (ddmin): boundary reinforcement -----------------------
+        # -- Phase 2 (ddmin): 边界强化 -------------------------------------
         if strategy == "ddmin":
-            # Re-verify the boundary events and probe their immediate
-            # neighbours to increase confidence.
+            # 重新验证边界 events，并探测相邻点以提高置信度。
             verification_points: List[tuple] = [
                 (last_good, True),   # expect good
                 (last_bad,  False),  # expect bad
@@ -395,7 +383,7 @@ class ExperimentRunner:
                         point, expect_good, is_good,
                     )
 
-        # -- Final confidence calculation ----------------------------------
+        # -- 最终 confidence 计算 ------------------------------------------
         confidence = self._calculate_confidence(
             last_good, last_bad, total_range, boundary_consistent_count,
         )
@@ -415,18 +403,17 @@ class ExperimentRunner:
         )
 
     # ------------------------------------------------------------------
-    # Batch execution
+    # Batch execution（批量执行）
     # ------------------------------------------------------------------
 
     async def batch_experiments(
         self,
         experiments: List[ExperimentDef],
     ) -> List[ExperimentResult]:
-        """Run multiple experiments sequentially with clean state between each.
+        """顺序执行多个 experiment，并在每个之间保持干净状态。
 
-        After every experiment, all patches for the experiment's session
-        are reverted as a safety measure to guarantee a pristine baseline
-        for the next experiment.
+        每次 experiment 结束后会回滚该 session 的所有 patch，作为
+        保障措施，确保下一个 experiment 处于干净 baseline。
         """
         results: List[ExperimentResult] = []
 
@@ -434,8 +421,8 @@ class ExperimentRunner:
             result = await self.run_experiment(exp_def)
             results.append(result)
 
-            # Belt-and-suspenders: revert any lingering patches so the
-            # next experiment starts from unmodified state.
+            # 双保险：回滚任何残留 patch，确保下一个 experiment
+            # 从未修改状态开始。
             try:
                 await self._patch_engine.revert_all(
                     exp_def.session_id, self._session_manager,
@@ -450,22 +437,21 @@ class ExperimentRunner:
         return results
 
     # ------------------------------------------------------------------
-    # Private helpers
+    # Private helpers（私有辅助）
     # ------------------------------------------------------------------
 
     def _resolve_patch_spec(self, patch_id: str) -> Optional[PatchSpec]:
-        """Look up a :class:`PatchSpec` by *patch_id*.
+        """通过 *patch_id* 查找 :class:`PatchSpec`。
 
-        Checks the runner's own registry first, then falls back to any
-        spec that the patch engine is already tracking (for patches
-        applied outside of an experiment).
+        先查 runner 自身注册表，再回退到 patch engine 已追踪的 spec
+        （适用于在 experiment 之外应用的 patch）。
         """
         spec = self._patch_specs.get(patch_id)
         if spec is not None:
             return spec
 
-        # Fall back: the patch engine stores specs of already-applied
-        # patches.  Useful when the caller applied a patch directly.
+        # 回退路径：patch engine 会存储已应用 patch 的 spec，
+        # 当调用方直接应用 patch 时很有用。
         for active_spec in self._patch_engine.list_patches():
             if active_spec.patch_id == patch_id:
                 return active_spec
@@ -478,7 +464,7 @@ class ExperimentRunner:
         event_id: int,
         config: VerifierConfig,
     ) -> Dict[str, Any]:
-        """Run the verifier, returning an empty-ish dict on failure."""
+        """运行 verifier，失败时返回近似空的 dict。"""
         try:
             controller = self._session_manager.get_controller(session_id)
             controller.SetFrameEvent(event_id, True)
@@ -497,7 +483,7 @@ class ExperimentRunner:
         session_id: str,
         event_id: int,
     ) -> Optional[ArtifactRef]:
-        """Capture a rendered frame, returning ``None`` on failure."""
+        """捕获渲染帧，失败时返回 ``None``。"""
         try:
             return await self._render_service.capture_render(
                 session_id, event_id,
@@ -515,7 +501,7 @@ class ExperimentRunner:
         t0: float,
         message: str,
     ) -> ExperimentResult:
-        """Construct an :class:`ExperimentResult` for an error case."""
+        """构造错误场景下的 :class:`ExperimentResult`。"""
         return ExperimentResult(
             experiment_id=exp_def.experiment_id,
             status=ExperimentStatus.FAILED,
@@ -533,7 +519,7 @@ class ExperimentRunner:
         after: Dict[str, Any],
         verdict: VerdictResult,
     ) -> str:
-        """Build a human-readable summary of the metric comparison."""
+        """构建 metric 对比的可读摘要。"""
         parts: List[str] = [f"Verdict: {verdict.value}"]
 
         before_passed = before.get("passed", False)
@@ -543,7 +529,7 @@ class ExperimentRunner:
             after_passed = after.get("passed", False)
             parts.append(f"Post-patch passed: {after_passed}")
 
-            # Summarise any numeric metrics that changed.
+            # 汇总发生变化的数值型 metrics。
             for key in sorted(set(before) | set(after)):
                 if key in ("passed", "error"):
                     continue
@@ -556,7 +542,7 @@ class ExperimentRunner:
         return "; ".join(parts)
 
     # ------------------------------------------------------------------
-    # Confidence calculation
+    # Confidence calculation（置信度计算）
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -566,28 +552,26 @@ class ExperimentRunner:
         total_range: int,
         boundary_consistent_count: int,
     ) -> float:
-        """Compute a ``[0, 1]`` confidence score for a bisect boundary.
+        """计算 bisect 边界的 ``[0, 1]`` 置信度分数。
 
-        Higher confidence when:
+        置信度更高的条件：
 
-        * The good / bad boundary is *sharp* (adjacent event IDs).
-        * Multiple consistent verifications have confirmed the boundary.
-        * The total search range was small (fewer opportunities for
-          anomalies).
+        * good / bad 边界更 *sharp*（event ID 相邻）。
+        * 多次一致验证确认边界。
+        * 搜索范围更小（异常机会更少）。
         """
         if total_range <= 0:
             return 0.0
 
         boundary_gap = abs(bad_id - good_id)
 
-        # Sharpness: 1.0 when the boundary is a single step, decaying
-        # hyperbolically as the gap grows.
+        # Sharpness：边界相邻时为 1.0，间隔增大则以双曲方式衰减。
         sharpness = 1.0 / (1.0 + max(boundary_gap - 1, 0))
 
-        # Consistency: saturates at 1.0 after 3 concordant probes.
+        # Consistency：在 3 次一致探测后饱和到 1.0。
         consistency = min(boundary_consistent_count / 3.0, 1.0)
 
-        # Range factor: small ranges are inherently more trustworthy.
+        # Range factor：范围越小越可信。
         range_factor = min(50.0 / max(total_range, 1), 1.0)
 
         confidence = (

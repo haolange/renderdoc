@@ -1,5 +1,5 @@
 """
-RDX-MCP configuration.
+RDX-MCP 配置。
 """
 
 from __future__ import annotations
@@ -12,20 +12,20 @@ from typing import Optional
 
 @dataclass
 class BackendConfig:
-    type: str = "local"  # "local" or "remote"
+    type: str = "local"  # "local" 或 "remote"
     gpu_vendor: str = "any"  # nvidia, amd, intel, arm, any
     gpu_index: int = 0
     remote_host: Optional[str] = None
     remote_port: int = 38920
-    remote_protocol: str = "renderdoc"  # renderdoc, adb, ssh
-    remote_auth_mode: str = "none"  # none, key, token
+    remote_protocol: str = "renderdoc"  # 远程协议：renderdoc, adb, ssh
+    remote_auth_mode: str = "none"  # 认证方式：none, key, token
     remote_auth_value: Optional[str] = None
 
 
 @dataclass
 class ReplayConfig:
     headless: bool = True
-    optimisation_level: str = "balanced"  # balanced, fast_seek, max_accurate
+    optimisation_level: str = "balanced"  # 优化等级：balanced, fast_seek, max_accurate
     default_output_width: int = 1920
     default_output_height: int = 1080
     max_texture_readback_bytes: int = 256 * 1024 * 1024  # 256MB
@@ -56,7 +56,7 @@ class DatabaseConfig:
 
 @dataclass
 class BisectConfig:
-    default_strategy: str = "binary"  # binary, ddmin
+    default_strategy: str = "binary"  # 搜索策略：binary, ddmin
     max_iterations: int = 60
     default_confidence_threshold: float = 0.85
     early_stop_on_clear_boundary: bool = True
@@ -67,8 +67,8 @@ class PatchConfig:
     max_patch_ops: int = 50
     auto_revert_on_crash: bool = True
     preserve_original_shaders: bool = True
-    spirv_tools_path: Optional[str] = None  # Path to SPIRV-Tools binaries
-    dxc_path: Optional[str] = None  # Path to DXC compiler
+    spirv_tools_path: Optional[str] = None  # SPIRV-Tools binaries 的路径
+    dxc_path: Optional[str] = None  # DXC compiler 的路径
 
 
 @dataclass
@@ -92,7 +92,7 @@ class RdxConfig:
     patch: PatchConfig = field(default_factory=PatchConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
 
-    renderdoc_module_path: Optional[str] = None  # sys.path addition for renderdoc module
+    renderdoc_module_path: Optional[str] = None  # renderdoc module 的 sys.path 补充路径
     log_level: str = "INFO"
 
     @classmethod

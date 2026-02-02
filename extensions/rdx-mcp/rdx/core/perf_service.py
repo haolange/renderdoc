@@ -1,16 +1,15 @@
-"""Performance counter sampling service for RDX-MCP.
+"""RDX-MCP 的 performance counter 采样 service。
 
-Wraps RenderDoc's GPU performance counter APIs -- enumerate, describe, fetch,
-and analyse -- behind an async interface suitable for MCP tool handlers.
+将 RenderDoc 的 GPU performance counter APIs（枚举、描述、抓取、分析）
+封装为适用于 MCP tool handlers 的 async 接口。
 
-The ``renderdoc`` module is imported lazily so that the rest of the package
-can be loaded and tested without it.
+``renderdoc`` module 采用延迟导入，使其余包可在无该 module 时加载与测试。
 
-Key capabilities:
-    * Enumerate available GPU performance counters with metadata.
-    * Sample a set of counters over a specified event range, producing
-      per-event samples, per-counter summaries, and statistical anomalies.
-    * Detect performance hotspot events by GPU duration.
+关键能力：
+    * 枚举可用的 GPU performance counters 及其元数据。
+    * 在指定 event 范围内采样 counters，生成 per-event samples、
+      per-counter summaries 以及统计异常。
+    * 基于 GPU duration 检测性能热点 event。
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from rdx.models import PerfResult, CounterSample, CounterSummary
 logger = logging.getLogger("rdx.core.perf_service")
 
 # ---------------------------------------------------------------------------
-# Lazy renderdoc import
+# Lazy renderdoc import（延迟导入）
 # ---------------------------------------------------------------------------
 
 _rd_module: Any = None
@@ -34,9 +33,9 @@ _rd_import_attempted: bool = False
 
 
 def _lazy_import_renderdoc() -> Any:
-    """Import ``renderdoc`` on first use.
+    """首次使用时导入 ``renderdoc``。
 
-    Returns the module object or ``None`` if it cannot be loaded.
+    成功返回 module 对象，失败返回 ``None``。
     """
     global _rd_module, _rd_import_attempted
 
@@ -50,9 +49,9 @@ def _lazy_import_renderdoc() -> Any:
         logger.debug("renderdoc module loaded successfully")
     except ImportError:
         logger.warning(
-            "renderdoc Python module not found.  Performance counter "
-            "sampling will be unavailable.  Ensure the module is on "
-            "sys.path or set RDX_RENDERDOC_PATH."
+            "renderdoc Python module not found. Performance counter "
+            "sampling 将不可用。请确保 module 在 sys.path 中或设置 "
+            "RDX_RENDERDOC_PATH。"
         )
         _rd_module = None
 
@@ -60,11 +59,11 @@ def _lazy_import_renderdoc() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers（辅助）
 # ---------------------------------------------------------------------------
 
-# Mapping from ``CounterDescription.resultType`` enum names to the
-# attribute on ``CounterValue`` that should be read.
+# 将 ``CounterDescription.resultType`` enum 名称映射到
+# ``CounterValue`` 中应读取的属性。
 _RESULT_TYPE_ATTR: Dict[str, str] = {
     "Float":  "f",
     "UInt32": "u32",
@@ -72,45 +71,44 @@ _RESULT_TYPE_ATTR: Dict[str, str] = {
     "Double": "d",
 }
 
-# Well-known GPU-duration counter names (checked in priority order).
+# 常见 GPU-duration counter 名称（按优先级检查）。
 _GPU_DURATION_NAMES: Tuple[str, ...] = (
     "EventGPUDuration",
     "GPUDuration",
     "GPU Duration",
 )
 
-# Standard anomaly z-score threshold (mean + N * std).
+# 标准异常 z-score 阈值（mean + N * std）。
 _ANOMALY_Z_THRESHOLD: float = 3.0
 
 
 def _extract_counter_value(result: Any, desc: Any) -> float:
-    """Extract a scalar numeric value from a ``CounterValue`` union.
+    """从 ``CounterValue`` union 中提取标量数值。
 
     Parameters
     ----------
     result:
-        A ``CounterResult`` instance whose ``.value`` attribute is a
-        ``CounterValue`` union.
+        ``CounterResult`` 实例，其 ``.value`` 属性为 ``CounterValue`` union。
     desc:
-        The ``CounterDescription`` for this counter, used to determine
-        which union member to read via ``resultType``.
+        该 counter 的 ``CounterDescription``，用于通过 ``resultType``
+        确定读取哪个 union 成员。
 
     Returns
     -------
     float
-        The extracted value cast to a Python float.
+        提取并转换为 Python float 的数值。
     """
     value_obj = result.value
     result_type_name = str(desc.resultType)
 
-    # Try the direct enum name first (e.g. "Float", "UInt32").
+    # 先尝试直接 enum 名称（如 "Float", "UInt32"）。
     for type_key, attr_name in _RESULT_TYPE_ATTR.items():
         if type_key in result_type_name:
             raw = getattr(value_obj, attr_name, None)
             if raw is not None:
                 return float(raw)
 
-    # Fallback: walk through all known accessors.
+    # 回退：遍历所有已知 accessor。
     for attr_name in ("d", "f", "u64", "u32"):
         raw = getattr(value_obj, attr_name, None)
         if raw is not None:
@@ -129,12 +127,12 @@ def _extract_counter_value(result: Any, desc: Any) -> float:
 
 
 def _compute_p95(values: List[float]) -> float:
-    """Compute the 95th percentile of *values* without NumPy.
+    """在不使用 NumPy 的情况下计算 *values* 的 95 分位数。
 
-    Uses the linear-interpolation method consistent with
-    ``numpy.percentile(values, 95, interpolation='linear')``.
+    使用与 ``numpy.percentile(values, 95, interpolation='linear')`` 一致的
+    线性插值方法。
 
-    Returns ``0.0`` for an empty list.
+    空列表返回 ``0.0``。
     """
     if not values:
         return 0.0
@@ -145,7 +143,7 @@ def _compute_p95(values: List[float]) -> float:
 
     sorted_vals = sorted(values)
 
-    # Rank for the 95th percentile using the C = 1 convention.
+    # 使用 C = 1 约定计算 95 分位的秩。
     rank = 0.95 * (n - 1)
     lo_idx = int(math.floor(rank))
     hi_idx = min(lo_idx + 1, n - 1)
@@ -155,7 +153,7 @@ def _compute_p95(values: List[float]) -> float:
 
 
 def _compute_std(values: List[float], mean: float) -> float:
-    """Compute population standard deviation."""
+    """计算总体标准差。"""
     if len(values) < 2:
         return 0.0
     variance = sum((v - mean) ** 2 for v in values) / len(values)
@@ -168,20 +166,19 @@ def _compute_std(values: List[float], mean: float) -> float:
 
 
 class PerfService:
-    """High-level async service for GPU performance counter operations.
+    """GPU performance counter 操作的高层 async service。
 
-    All public methods accept loose service references (session_manager)
-    so that the service is stateless and straightforward to test with
-    fakes or mocks.
+    所有公开方法都接收松耦合的 service 引用（session_manager），
+    以保持无状态并便于使用 fakes/mocks 测试。
     """
 
     # ------------------------------------------------------------------
-    # Executor helper
+    # Executor helper（执行器辅助）
     # ------------------------------------------------------------------
 
     @staticmethod
     async def _offload(fn: Any, *args: Any, **kwargs: Any) -> Any:
-        """Run a synchronous callable in the default thread-pool executor."""
+        """在默认 thread-pool executor 中运行同步 callable。"""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, functools.partial(fn, *args, **kwargs),
@@ -196,7 +193,7 @@ class PerfService:
         session_id: str,
         session_manager: Any,
     ) -> List[Dict[str, Any]]:
-        """Return available GPU performance counters with descriptions.
+        """返回可用 GPU performance counters 及其描述。
 
         Each entry in the returned list is a dict with keys:
 
@@ -211,16 +208,14 @@ class PerfService:
         Parameters
         ----------
         session_id:
-            Active session identifier.
+            活跃 session identifier。
         session_manager:
-            Provides ``get_controller(session_id)`` to obtain the replay
-            controller.
+            提供 ``get_controller(session_id)`` 以获取 replay controller。
 
         Returns
         -------
         list[dict]
-            A list of counter description dicts, or an empty list if the
-            renderdoc module is unavailable or enumeration fails.
+            counter 描述 dict 列表；若 renderdoc 不可用或枚举失败则返回空列表。
         """
         rd = _lazy_import_renderdoc()
         if rd is None:
@@ -279,28 +274,26 @@ class PerfService:
         counter_ids: List[int],
         session_manager: Any,
     ) -> PerfResult:
-        """Fetch and analyse performance counters for a range of events.
+        """抓取并分析指定 event 范围内的 performance counters。
 
         Parameters
         ----------
         session_id:
-            Active session identifier.
+            活跃 session identifier。
         event_range:
-            ``(lo, hi)`` inclusive event-ID boundaries.  Only counter
-            results whose ``eventId`` falls within this range are included.
+            ``(lo, hi)`` 闭区间 event-ID 边界。仅包含 ``eventId`` 位于该范围的结果。
         counter_ids:
-            List of ``GPUCounter`` integer values to sample.  Pass the
-            ``counter_id`` values obtained from :meth:`enumerate_counters`.
+            要采样的 ``GPUCounter`` 整数值列表。可使用 :meth:`enumerate_counters`
+            返回的 ``counter_id``。
         session_manager:
-            Provides the replay controller.
+            提供 replay controller。
 
         Returns
         -------
         PerfResult
-            Contains ``samples`` (per-event, per-counter values),
-            ``summaries`` (per-counter statistics including min, max,
-            mean, p95, and hotspot event), and ``anomaly_events``
-            (event IDs where any counter exceeded mean + 3*std).
+            包含 ``samples``（per-event、per-counter 值）、
+            ``summaries``（per-counter 统计：min、max、mean、p95、hotspot event），
+            以及 ``anomaly_events``（任一 counter 超过 mean + 3*std 的 event IDs）。
         """
         rd = _lazy_import_renderdoc()
         if rd is None:
@@ -318,7 +311,7 @@ class PerfService:
 
         lo, hi = event_range
 
-        # -- Resolve GPUCounter enums from integer IDs ---------------------
+        # -- 从整数 ID 解析 GPUCounter enums ------------------------------
         counter_list: List[Any] = []
         try:
             all_counters = await self._offload(controller.EnumerateCounters)
@@ -343,7 +336,7 @@ class PerfService:
             logger.warning("No valid counters to sample")
             return PerfResult()
 
-        # -- Build counter description lookup ------------------------------
+        # -- 构建 counter description 查找表 ------------------------------
         desc_map: Dict[int, Any] = {}
         name_map: Dict[int, str] = {}
         for counter in counter_list:
@@ -358,7 +351,7 @@ class PerfService:
                     "DescribeCounter failed for %s: %s", counter, exc,
                 )
 
-        # -- Fetch counters ------------------------------------------------
+        # -- 抓取 counters ------------------------------------------------
         try:
             raw_results = await self._offload(
                 controller.FetchCounters, counter_list,
@@ -367,9 +360,9 @@ class PerfService:
             logger.error("FetchCounters failed: %s", exc)
             return PerfResult()
 
-        # -- Filter to event range and build samples -----------------------
+        # -- 过滤到 event 范围并构建 samples -------------------------------
         samples: List[CounterSample] = []
-        # Accumulator: counter_id -> list of (event_id, value) pairs.
+        # 累加器：counter_id -> (event_id, value) 列表。
         per_counter: Dict[int, List[Tuple[int, float]]] = {}
 
         for r in raw_results:
@@ -394,7 +387,7 @@ class PerfService:
 
             per_counter.setdefault(cid, []).append((eid, value))
 
-        # -- Compute per-counter summaries ---------------------------------
+        # -- 计算 per-counter summaries -----------------------------------
         summaries: List[CounterSummary] = []
         for cid, pairs in per_counter.items():
             values = [v for _, v in pairs]
@@ -406,7 +399,7 @@ class PerfService:
             mean_val = sum(values) / len(values)
             p95_val = _compute_p95(values)
 
-            # Hotspot: event with the maximum value for this counter.
+            # Hotspot：该 counter 最大值对应的 event。
             hotspot_eid = max(pairs, key=lambda p: p[1])[0]
 
             summaries.append(CounterSummary(
@@ -418,7 +411,7 @@ class PerfService:
                 hotspot_event_id=hotspot_eid,
             ))
 
-        # -- Detect anomaly events (z-score > 3 on any counter) -----------
+        # -- 检测异常 events（任一 counter 的 z-score > 3）-----------------
         anomaly_event_set: set = set()
         for cid, pairs in per_counter.items():
             values = [v for _, v in pairs]
@@ -462,7 +455,7 @@ class PerfService:
         *,
         top_k: int = 10,
     ) -> List[Dict[str, Any]]:
-        """Identify the top-K most expensive events by GPU duration.
+        """基于 GPU duration 识别 top-K 最昂贵的 events。
 
         Samples the ``EventGPUDuration`` counter (or its platform-specific
         equivalent) across all events in the capture, then returns the
@@ -471,23 +464,23 @@ class PerfService:
         Parameters
         ----------
         session_id:
-            Active session identifier.
+            活跃 session identifier。
         session_manager:
-            Provides the replay controller.
+            提供 replay controller。
         top_k:
-            Maximum number of hotspot entries to return (default 10).
+            返回的 hotspot 条目最大数量（默认 10）。
 
         Returns
         -------
         list[dict]
-            Each entry has:
+            每条包含：
 
             * ``event_id`` (``int``) -- the draw-call event ID.
             * ``duration_us`` (``float``) -- GPU duration in microseconds.
             * ``rank`` (``int``) -- 1-based rank (1 = slowest).
 
-            An empty list is returned if the GPU duration counter is not
-            available or the renderdoc module cannot be loaded.
+            若 GPU duration counter 不可用或 renderdoc module 无法加载，
+            则返回空列表。
         """
         rd = _lazy_import_renderdoc()
         if rd is None:
@@ -503,7 +496,7 @@ class PerfService:
             )
             return []
 
-        # -- Find the GPU-duration counter ---------------------------------
+        # -- 查找 GPU-duration counter ------------------------------------
         try:
             all_counters = await self._offload(controller.EnumerateCounters)
         except Exception as exc:
@@ -519,8 +512,8 @@ class PerfService:
                     controller.DescribeCounter, counter,
                 )
                 cname = str(getattr(desc, "name", ""))
-                # Check the counter name against known GPU-duration names,
-                # as well as the GPUCounter enum member name itself.
+                # 检查 counter name 是否命中常见 GPU-duration 名称，
+                # 同时检查 GPUCounter enum 成员名。
                 enum_name = str(counter)
                 if any(
                     dn.lower() in cname.lower() or dn.lower() in enum_name.lower()
@@ -539,7 +532,7 @@ class PerfService:
             )
             return []
 
-        # -- Fetch the duration counter for all events ---------------------
+        # -- 抓取所有 events 的 duration counter ---------------------------
         try:
             raw_results = await self._offload(
                 controller.FetchCounters, [duration_counter],
@@ -548,7 +541,7 @@ class PerfService:
             logger.error("FetchCounters for GPU duration failed: %s", exc)
             return []
 
-        # -- Extract (event_id, duration) pairs ----------------------------
+        # -- 提取 (event_id, duration) 对 ---------------------------------
         event_durations: List[Tuple[int, float]] = []
         for r in raw_results:
             eid = int(r.eventId)
@@ -559,7 +552,7 @@ class PerfService:
             logger.info("No duration samples returned; capture may be empty")
             return []
 
-        # -- Sort descending and take top-K --------------------------------
+        # -- 递减排序并取 top-K -------------------------------------------
         event_durations.sort(key=lambda p: p[1], reverse=True)
         top = event_durations[:max(1, top_k)]
 

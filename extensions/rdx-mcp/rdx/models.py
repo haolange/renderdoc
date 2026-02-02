@@ -1,6 +1,6 @@
 """
-Core data models for RDX-MCP.
-All structured types used across MCP tools and internal services.
+RDX-MCP 的核心数据模型。
+供 MCP tools 与内部服务使用的结构化类型集合。
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ class BisectStrategy(str, Enum):
 
 
 # ---------------------------------------------------------------------------
-# Common response envelope
+# 通用响应封装（response envelope）
 # ---------------------------------------------------------------------------
 
 class ArtifactRef(BaseModel):
@@ -122,7 +122,7 @@ class ToolResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Session
+# Session（会话）
 # ---------------------------------------------------------------------------
 
 class SessionCapabilities(BaseModel):
@@ -157,7 +157,7 @@ class CaptureInfo(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Event tree
+# Event tree（事件树）
 # ---------------------------------------------------------------------------
 
 class EventFlags(BaseModel):
@@ -181,7 +181,7 @@ class EventNode(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Anomaly
+# Anomaly（异常）
 # ---------------------------------------------------------------------------
 
 class BBox(BaseModel):
@@ -204,7 +204,7 @@ class AnomalyInfo(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Hypothesis
+# Hypothesis（假设）
 # ---------------------------------------------------------------------------
 
 class Hypothesis(BaseModel):
@@ -291,7 +291,7 @@ class ShaderExportBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Shader debug trace
+# Shader debug trace（Shader 调试轨迹）
 # ---------------------------------------------------------------------------
 
 class DebugStep(BaseModel):
@@ -310,7 +310,7 @@ class PixelDebugResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Patch
+# Patch（补丁）
 # ---------------------------------------------------------------------------
 
 class PatchOp(BaseModel):
@@ -344,7 +344,7 @@ class PatchResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Experiment
+# Experiment（实验）
 # ---------------------------------------------------------------------------
 
 class VerifierConfig(BaseModel):
@@ -382,7 +382,7 @@ class ExperimentResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Bisect
+# Bisect（二分定位）
 # ---------------------------------------------------------------------------
 
 class BisectRange(BaseModel):
@@ -399,7 +399,7 @@ class BisectResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Performance counters
+# Performance counters（性能计数器）
 # ---------------------------------------------------------------------------
 
 class CounterSample(BaseModel):
@@ -425,7 +425,7 @@ class PerfResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Report
+# Report（报告）
 # ---------------------------------------------------------------------------
 
 class ReportBundle(BaseModel):
@@ -446,7 +446,7 @@ class ReportBundle(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Knowledge / Fingerprint
+# Knowledge / Fingerprint（知识/指纹）
 # ---------------------------------------------------------------------------
 
 class PassFingerprint(BaseModel):
@@ -494,7 +494,7 @@ class RegressionEntry(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Task (top-level)
+# Task（顶层）
 # ---------------------------------------------------------------------------
 
 class TaskInput(BaseModel):

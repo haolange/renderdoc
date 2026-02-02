@@ -1,14 +1,14 @@
 """
-Pluggable verifier engine for RDX-MCP.
+RDX-MCP 的可插拔 verifier engine。
 
-Each verifier takes experiment inputs (context) and returns a structured
-verdict with metrics, anomaly information, and artifact references.
+每个 verifier 接收 experiment 输入（context），并返回包含 metrics、
+异常信息与 artifact 引用的结构化 verdict。
 
-Verifiers registered by default:
-    naninf       -- detect NaN / Inf pixels in render output
-    image_diff   -- compare render output against a reference image
-    pixel_stats  -- check pixel statistics in a region
-    binding_diff -- compare resource bindings between two events
+默认注册的 verifiers：
+    naninf       —— 检测渲染输出中的 NaN / Inf 像素
+    image_diff   —— 与参考图像对比渲染输出
+    pixel_stats  —— 检查区域内的像素统计
+    binding_diff —— 比较两个 event 的资源绑定
 """
 
 from __future__ import annotations
@@ -28,18 +28,18 @@ from rdx.models import (
 )
 
 if TYPE_CHECKING:
-    pass  # forward references only; no heavy imports at module level
+    pass  # 仅用于 forward references；避免模块级重依赖导入
 
 logger = logging.getLogger("rdx.core.verifiers")
 
 
 # ---------------------------------------------------------------------------
-# Data-transfer objects
+# Data-transfer objects（DTO）
 # ---------------------------------------------------------------------------
 
 @dataclass
 class VerifyContext:
-    """All inputs a verifier needs to do its job."""
+    """verifier 执行所需的全部输入。"""
 
     session_id: str
     capture_id: str
@@ -52,7 +52,7 @@ class VerifyContext:
 
 @dataclass
 class VerifyResult:
-    """Structured verdict returned by every verifier."""
+    """每个 verifier 返回的结构化 verdict。"""
 
     passed: bool
     metrics: Dict[str, Any] = field(default_factory=dict)
@@ -62,20 +62,20 @@ class VerifyResult:
 
 
 # ---------------------------------------------------------------------------
-# Abstract base
+# Abstract base（抽象基类）
 # ---------------------------------------------------------------------------
 
 class BaseVerifier(abc.ABC):
-    """Interface that every verifier must implement."""
+    """每个 verifier 必须实现的接口。"""
 
     @abc.abstractmethod
     def name(self) -> str:
-        """Machine-readable identifier (e.g. ``"naninf"``)."""
+        """机器可读标识（如 ``"naninf"``）。"""
         ...
 
     @abc.abstractmethod
     async def verify(self, context: VerifyContext) -> VerifyResult:
-        """Execute the verification and return a result."""
+        """执行验证并返回结果。"""
         ...
 
 
@@ -84,23 +84,22 @@ class BaseVerifier(abc.ABC):
 # ---------------------------------------------------------------------------
 
 class NaNInfVerifier(BaseVerifier):
-    """Detect NaN and Inf values in the rendered output at a given event.
+    """检测指定 event 的渲染输出中的 NaN 与 Inf。
 
     Workflow
     --------
-    1.  Navigate replay to *event_id* and render the output.
-    2.  Read back the pixel buffer (float32 RGBA).
-    3.  Compute a NaN/Inf mask via ``image_utils.compute_naninf_mask()``.
-    4.  Build metrics and (when anomalous) an ``AnomalyInfo`` with bounding
-        box and mask artifact.
+    1.  将 replay 导航到 *event_id* 并渲染输出。
+    2.  读回像素缓冲（float32 RGBA）。
+    3.  使用 ``image_utils.compute_naninf_mask()`` 计算 NaN/Inf mask。
+    4.  构建 metrics，并在异常时生成包含 bounding box 与 mask artifact 的
+        ``AnomalyInfo``。
     """
 
     def name(self) -> str:
         return "naninf"
 
     async def verify(self, context: VerifyContext) -> VerifyResult:
-        # Late imports -- renderdoc / numpy may not be on sys.path at
-        # module-load time.
+        # 延迟导入 —— renderdoc / numpy 可能在模块加载时不在 sys.path 中。
         try:
             from rdx.utils import image_utils
         except ImportError:
@@ -252,13 +251,13 @@ class NaNInfVerifier(BaseVerifier):
 # ---------------------------------------------------------------------------
 
 class ImageDiffVerifier(BaseVerifier):
-    """Compare the render output against a reference image.
+    """将渲染输出与参考图像进行对比。
 
     Required *params* keys:
-        reference_image_path (str): Path to the reference image file.
+        reference_image_path (str)：参考图像文件路径。
     Optional:
-        threshold (float): Mean-diff threshold below which the check passes.
-            Default ``0.01``.
+        threshold (float)：均值差异阈值，低于该值则通过。
+            默认 ``0.01``。
     """
 
     DEFAULT_THRESHOLD: float = 0.01
@@ -291,7 +290,7 @@ class ImageDiffVerifier(BaseVerifier):
         render_svc = context.render_service
         artifact_store = context.artifact_store
 
-        # 1. Render current output ----------------------------------------------
+        # 1. 渲染当前输出 ----------------------------------------------
         try:
             pixel_data = await render_svc.readback_texture(
                 session_id=context.session_id,
@@ -319,7 +318,7 @@ class ImageDiffVerifier(BaseVerifier):
                 notes=f"Render/readback failed: {exc}",
             )
 
-        # 2. Load reference image -----------------------------------------------
+        # 2. 加载参考图像 -----------------------------------------------
         try:
             ref_image = image_utils.load_image(reference_path)
             if ref_image is None:
@@ -335,7 +334,7 @@ class ImageDiffVerifier(BaseVerifier):
                 notes=f"Failed to load reference image: {exc}",
             )
 
-        # 3. Compute diff -------------------------------------------------------
+        # 3. 计算差异 ---------------------------------------------------
         try:
             diff_result = image_utils.compute_diff_map(
                 current_image, ref_image, width, height,
@@ -366,7 +365,7 @@ class ImageDiffVerifier(BaseVerifier):
 
         artifacts: List[ArtifactRef] = []
 
-        # 4. Store diff heatmap artifact ----------------------------------------
+        # 4. 存储差异 heatmap artifact ---------------------------------
         if heatmap is not None and artifact_store is not None:
             try:
                 heatmap_ref = await artifact_store.store_image(
@@ -415,18 +414,16 @@ class ImageDiffVerifier(BaseVerifier):
 # ---------------------------------------------------------------------------
 
 class PixelStatsVerifier(BaseVerifier):
-    """Verify pixel statistics within a region of the render output.
+    """验证渲染输出区域内的像素统计。
 
-    Checks for anomalous values (NaN, Inf, extreme magnitudes) and verifies
-    that pixel values fall within an expected range.
+    检查异常值（NaN、Inf、极端幅度），并验证像素值是否落在期望范围内。
 
     Optional *params* keys:
-        region (dict): ``{x0, y0, x1, y1}`` bounding box.  Full image if
-            omitted.
-        expected_range (list[float]): ``[min_val, max_val]`` for valid pixel
-            values.  Default ``[0.0, 1.0]``.
-        channels (list[int]): Channel indices to check (0=R, 1=G, 2=B, 3=A).
-            Default ``[0, 1, 2]``.
+        region (dict)：``{x0, y0, x1, y1}`` bounding box。省略则使用全图。
+        expected_range (list[float])：合法像素值范围 ``[min_val, max_val]``。
+            默认 ``[0.0, 1.0]``。
+        channels (list[int])：要检查的通道索引（0=R, 1=G, 2=B, 3=A）。
+            默认 ``[0, 1, 2]``。
     """
 
     def name(self) -> str:
@@ -437,7 +434,7 @@ class PixelStatsVerifier(BaseVerifier):
 
         render_svc = context.render_service
 
-        # Parse params -----------------------------------------------------------
+        # 解析 params --------------------------------------------------
         region = context.params.get("region")  # {x0, y0, x1, y1} or None
         expected_range = context.params.get("expected_range", [0.0, 1.0])
         channels: List[int] = context.params.get("channels", [0, 1, 2])
@@ -445,7 +442,7 @@ class PixelStatsVerifier(BaseVerifier):
         range_min = float(expected_range[0])
         range_max = float(expected_range[1])
 
-        # 1. Read back pixels ----------------------------------------------------
+        # 1. 读回像素 ---------------------------------------------------
         try:
             pixel_data = await render_svc.readback_texture(
                 session_id=context.session_id,
@@ -472,7 +469,7 @@ class PixelStatsVerifier(BaseVerifier):
                 notes=f"Readback failed: {exc}",
             )
 
-        # 2. Determine region bounds ---------------------------------------------
+        # 2. 确定区域边界 -----------------------------------------------
         x0 = 0
         y0 = 0
         x1 = width
@@ -483,7 +480,7 @@ class PixelStatsVerifier(BaseVerifier):
             x1 = min(width, int(region.get("x1", width)))
             y1 = min(height, int(region.get("y1", height)))
 
-        # 3. Iterate pixels in region and collect stats --------------------------
+        # 3. 遍历区域像素并收集统计 ------------------------------------
         nan_count = 0
         inf_count = 0
         out_of_range_count = 0
@@ -493,8 +490,8 @@ class PixelStatsVerifier(BaseVerifier):
         channel_maxs: Dict[int, float] = {ch: float("-inf") for ch in channels}
 
         try:
-            # pixels is expected to be a flat array or 2D array with RGBA per
-            # pixel.  We try to handle both numpy arrays and plain lists.
+            # pixels 可能是扁平数组或二维数组（每像素 RGBA）。
+            # 这里兼容 numpy arrays 与普通 lists。
             for row in range(y0, y1):
                 for col in range(x0, x1):
                     base_idx = (row * width + col) * 4
@@ -532,7 +529,7 @@ class PixelStatsVerifier(BaseVerifier):
         anomalous = nan_count + inf_count + out_of_range_count
         passed = anomalous == 0
 
-        # Build per-channel means ------------------------------------------------
+        # 构建每通道均值 -----------------------------------------------
         channel_means: Dict[str, float] = {}
         valid_count = total_checked - nan_count - inf_count
         for ch in channels:
@@ -551,7 +548,7 @@ class PixelStatsVerifier(BaseVerifier):
             **channel_means,
         }
 
-        # Include min/max per channel (only for finite values)
+        # 追加每通道 min/max（仅限有限值）
         for ch in channels:
             min_v = channel_mins[ch]
             max_v = channel_maxs[ch]
@@ -592,15 +589,15 @@ class PixelStatsVerifier(BaseVerifier):
 # ---------------------------------------------------------------------------
 
 class BindingDiffVerifier(BaseVerifier):
-    """Compare resource bindings between two events (good vs. bad).
+    """比较两个 event（good vs. bad）之间的资源绑定差异。
 
     Required *params* keys:
-        good_event_id (int): Event that renders correctly.
-        bad_event_id  (int): Event that renders incorrectly.
+        good_event_id (int)：渲染正确的 event。
+        bad_event_id  (int)：渲染错误的 event。
 
     Optional:
-        pipeline_service: Explicit pipeline-service reference.  If omitted
-            the verifier will attempt to obtain one from *context.params*.
+        pipeline_service：显式 pipeline-service 引用；若省略，
+            verifier 会尝试从 *context.params* 获取。
     """
 
     def name(self) -> str:
@@ -624,7 +621,7 @@ class BindingDiffVerifier(BaseVerifier):
                 notes="pipeline_service is required for binding_diff verifier",
             )
 
-        # 1. Snapshot both events ------------------------------------------------
+        # 1. 获取两个 event 的 snapshot -------------------------------
         try:
             good_snap = await pipeline_service.snapshot(
                 session_id=context.session_id,
@@ -649,7 +646,7 @@ class BindingDiffVerifier(BaseVerifier):
                 notes="One or both pipeline snapshots returned None",
             )
 
-        # 2. Compare bindings ----------------------------------------------------
+        # 2. 比较 bindings --------------------------------------------
         good_bindings = {
             (b.set_or_space, b.binding, b.type): b
             for b in getattr(good_snap, "bindings", [])
@@ -761,13 +758,13 @@ class BindingDiffVerifier(BaseVerifier):
 
 
 # ---------------------------------------------------------------------------
-# Verifier engine (registry + dispatcher)
+# Verifier engine（registry + dispatcher）
 # ---------------------------------------------------------------------------
 
 class VerifierEngine:
-    """Registry of verifiers with convenience dispatch.
+    """verifier 注册表与便捷分发器。
 
-    Pre-registers the four built-in verifiers on construction.
+    构造时预注册四个内置 verifier。
 
     Usage::
 
@@ -784,7 +781,7 @@ class VerifierEngine:
     # -- public API ----------------------------------------------------------
 
     def register(self, name: str, verifier: BaseVerifier) -> None:
-        """Register a verifier under *name* (overwrites existing entry)."""
+        """以 *name* 注册 verifier（会覆盖已有条目）。"""
         if not isinstance(verifier, BaseVerifier):
             raise TypeError(
                 f"Expected BaseVerifier instance, got {type(verifier).__name__}"
@@ -793,9 +790,9 @@ class VerifierEngine:
         logger.debug("Registered verifier %r", name)
 
     def get(self, name: str) -> BaseVerifier:
-        """Retrieve a registered verifier by name.
+        """按名称获取已注册的 verifier。
 
-        Raises ``KeyError`` if not found.
+        若不存在则抛出 ``KeyError``。
         """
         try:
             return self._registry[name]
@@ -811,10 +808,9 @@ class VerifierEngine:
         name: str,
         context: VerifyContext,
     ) -> VerifyResult:
-        """Look up verifier *name* and execute it with *context*.
+        """查找 *name* 对应的 verifier，并用 *context* 执行。
 
-        Catches unexpected exceptions so callers always get a
-        ``VerifyResult`` (with ``passed=False`` on failure).
+        捕获意外异常，确保调用方始终获得 ``VerifyResult``（失败时 ``passed=False``）。
         """
         try:
             verifier = self.get(name)

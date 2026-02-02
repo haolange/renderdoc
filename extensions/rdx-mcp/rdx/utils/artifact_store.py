@@ -1,13 +1,13 @@
 """
-Content-addressable artifact storage for RDX-MCP.
+RDX-MCP 的内容寻址 artifact 存储（CAS）。
 
-Stores files (images, shader dumps, readback data, etc.) using their SHA256 hash
-as the key.  The on-disk layout mirrors git object storage:
+使用 SHA256 hash 作为 key 存储文件（images、shader dumps、readback data 等），
+磁盘布局类似 git object storage：
 
     <store_root>/<sha256[:2]>/<sha256[2:4]>/<sha256>
 
-Artifacts are referenced through ``rdx://`` URIs and described by
-:class:`rdx.models.ArtifactRef` instances.
+Artifacts 通过 ``rdx://`` URI 引用，并由 :class:`rdx.models.ArtifactRef`
+描述。
 """
 
 from __future__ import annotations
@@ -25,14 +25,14 @@ from rdx.models import ArtifactRef
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers（辅助）
 # ---------------------------------------------------------------------------
 
 _CHUNK_SIZE = 1 << 16  # 64 KiB read chunks
 
 
 def _shard_path(root: Path, sha256: str) -> Path:
-    """Return the two-level shard path for a given hash.
+    """返回给定 hash 的两级分片路径。
 
     Example::
 
@@ -42,18 +42,17 @@ def _shard_path(root: Path, sha256: str) -> Path:
 
 
 def _build_uri(sha256: str) -> str:
-    """Build the canonical ``rdx://`` URI for an artifact."""
+    """构建 artifact 的标准 ``rdx://`` URI。"""
     return f"rdx://artifacts/{sha256[:2]}/{sha256[2:4]}/{sha256}"
 
 
 def _sha256_bytes(data: bytes) -> str:
-    """Compute hex-encoded SHA256 of *data*."""
+    """计算 *data* 的 SHA256（hex 编码）。"""
     return hashlib.sha256(data).hexdigest()
 
 
 async def _sha256_file(path: Path) -> str:
-    """Compute hex-encoded SHA256 of the file at *path* without reading
-    the entire file into memory at once."""
+    """计算 *path* 文件的 SHA256（hex 编码），避免一次性读入内存。"""
     h = hashlib.sha256()
     async with aiofiles.open(path, "rb") as fh:
         while True:
@@ -70,18 +69,16 @@ async def _sha256_file(path: Path) -> str:
 
 
 class ArtifactStore:
-    """Directory-backed content-addressable store (CAS).
+    """基于目录的内容寻址存储（CAS）。
 
-    Each blob is stored exactly once under a two-level shard directory keyed
-    by its SHA256 digest.  Metadata is carried in-memory by the returned
-    :class:`ArtifactRef`; the store itself is intentionally simple and
-    stateless so that it can be safely used from multiple async tasks.
+    每个 blob 仅存一次，位于以 SHA256 摘要分片的两级目录下。
+    元数据由返回的 :class:`ArtifactRef` 在内存中携带；存储本身保持简洁、
+    无状态，便于在多个 async 任务中安全使用。
 
     Parameters
     ----------
     root:
-        Root directory for the store.  Created on first write if it does not
-        already exist.
+        存储根目录。首次写入时若不存在会自动创建。
     """
 
     def __init__(self, root: Path) -> None:
@@ -91,7 +88,7 @@ class ArtifactStore:
 
     @property
     def root(self) -> Path:
-        """Root directory of the store."""
+        """存储根目录。"""
         return self._root
 
     # -- public API ---------------------------------------------------------
@@ -102,19 +99,19 @@ class ArtifactStore:
         mime: str = "application/octet-stream",
         meta: Optional[Dict[str, Any]] = None,
     ) -> ArtifactRef:
-        """Store raw bytes and return an :class:`ArtifactRef`.
+        """存储原始字节并返回 :class:`ArtifactRef`。
 
-        If an artifact with the same SHA256 already exists on disk the write
-        is skipped (content-addressable deduplication).
+        若磁盘上已存在相同 SHA256 的 artifact，将跳过写入
+        （内容寻址去重）。
 
         Parameters
         ----------
         data:
-            The raw bytes to store.
+            待存储的原始字节。
         mime:
-            MIME type for the artifact (e.g. ``image/png``).
+            artifact 的 MIME 类型（如 ``image/png``）。
         meta:
-            Arbitrary metadata dict attached to the returned reference.
+            附加到返回引用的任意元数据字典。
 
         Returns
         -------
@@ -158,20 +155,19 @@ class ArtifactStore:
         mime: str = "application/octet-stream",
         meta: Optional[Dict[str, Any]] = None,
     ) -> ArtifactRef:
-        """Hash a file on disk and store it into the CAS.
+        """对磁盘文件计算 hash 并存入 CAS。
 
-        For large files this streams the hash computation so that the entire
-        file does not need to reside in memory at once.  The actual file
-        content is then copied into the shard directory.
+        对大文件采用流式 hash 计算，避免一次性加载到内存。
+        随后将实际文件内容拷贝到分片目录。
 
         Parameters
         ----------
         path:
-            Filesystem path to the source file.
+            源文件路径。
         mime:
-            MIME type for the artifact.
+            artifact 的 MIME 类型。
         meta:
-            Arbitrary metadata dict attached to the returned reference.
+            附加到返回引用的任意元数据字典。
 
         Returns
         -------
@@ -180,7 +176,7 @@ class ArtifactStore:
         Raises
         ------
         FileNotFoundError
-            If *path* does not exist.
+            当 *path* 不存在时抛出。
         """
         path = Path(path)
         if not path.is_file():
@@ -223,12 +219,12 @@ class ArtifactStore:
         )
 
     async def retrieve(self, sha256: str) -> bytes:
-        """Retrieve the raw bytes for an artifact by its SHA256 digest.
+        """按 SHA256 digest 读取 artifact 的原始字节。
 
         Parameters
         ----------
         sha256:
-            Hex-encoded SHA256 digest.
+            Hex 编码的 SHA256 digest。
 
         Returns
         -------
@@ -237,7 +233,7 @@ class ArtifactStore:
         Raises
         ------
         FileNotFoundError
-            If no artifact with that hash is in the store.
+            当 store 中不存在该 hash 的 artifact 时抛出。
         """
         dest = _shard_path(self._root, sha256)
         if not dest.is_file():
@@ -248,15 +244,14 @@ class ArtifactStore:
             return await fh.read()
 
     def get_path(self, sha256: str) -> Path:
-        """Return the filesystem path where an artifact would be stored.
+        """返回 artifact 在文件系统中的存放路径。
 
-        This does **not** guarantee the file exists; use :meth:`exists` to
-        check first if needed.
+        该方法 **不** 保证文件存在；如需检查请使用 :meth:`exists`。
 
         Parameters
         ----------
         sha256:
-            Hex-encoded SHA256 digest.
+            Hex 编码的 SHA256 digest。
 
         Returns
         -------
@@ -265,12 +260,12 @@ class ArtifactStore:
         return _shard_path(self._root, sha256)
 
     def exists(self, sha256: str) -> bool:
-        """Check whether an artifact with the given hash is present.
+        """检查给定 hash 的 artifact 是否存在。 
 
         Parameters
         ----------
         sha256:
-            Hex-encoded SHA256 digest.
+            Hex 编码的 SHA256 digest。
 
         Returns
         -------

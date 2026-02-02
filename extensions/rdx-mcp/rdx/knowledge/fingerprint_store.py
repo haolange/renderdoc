@@ -1,29 +1,25 @@
 """
-Fingerprint storage and matching for GPU debug knowledge accumulation.
+GPU debug 知识积累的 fingerprint 存储与匹配。
 
-Uses SQLite for persistence.  The database stores fingerprints from
-successful debug sessions that can be matched against new captures to
-guide diagnosis.
+使用 SQLite 持久化。数据库保存成功 debug session 的 fingerprints，
+可用于与新 capture 匹配以辅助诊断。
 
 Tables
 ------
 ``fingerprints``
-    One row per recorded fingerprint, linking a pass and/or shader
-    fingerprint to the bug type, verdict, and project metadata from the
-    original debug session.
+    每条记录对应一个 fingerprint，将 pass 和/或 shader fingerprint
+    与 bug type、verdict、project metadata 关联。
 
 ``regression_entries``
-    Anchor rows for regression monitoring.  Each entry records a
-    capture + event pair where a known bug was found, together with the
-    verifier configuration and expected metric baselines so the system
-    can re-check automatically after engine updates.
+    用于 regression 监控的锚点记录。每条记录包含已知 bug 的
+    capture + event，以及 verifier 配置与期望的 metric 基线，
+    便于在引擎更新后自动复查。
 
 Governance rule
 ~~~~~~~~~~~~~~~
-Only fingerprints from sessions with a ``FIXED`` or ``IMPROVED`` verdict
-are stored as *positive* examples.  All other verdicts are stored with
-``is_negative=True`` so the knowledge base can learn what strategies to
-avoid without presenting them as recommended solutions.
+仅保存 verdict 为 ``FIXED`` 或 ``IMPROVED`` 的 fingerprints 作为
+*positive* 示例。其他 verdict 以 ``is_negative=True`` 存储，
+便于知识库学习应避免的策略，同时不将其作为推荐方案。
 """
 
 from __future__ import annotations
@@ -52,11 +48,11 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers（内部辅助）
 # ---------------------------------------------------------------------------
 
 def _new_id(prefix: str) -> str:
-    """Generate a short unique identifier with the given *prefix*."""
+    """生成带 *prefix* 的短唯一标识符。"""
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
@@ -173,34 +169,32 @@ def _weighted_score(
 # ---------------------------------------------------------------------------
 
 class FingerprintStore:
-    """SQLite-backed store for GPU-debug fingerprints and regression entries.
+    """基于 SQLite 的 GPU-debug fingerprints 与 regression entries 存储。
 
-    Fingerprints capture the structural signature of a render-pass or shader
-    at the time a bug was successfully diagnosed.  When a new capture comes
-    in, fingerprint matching helps the system skip straight to the most
-    promising diagnosis strategy.
+    fingerprint 记录了 render-pass 或 shader 在 bug 成功诊断时的结构特征。
+    新 capture 到来时，fingerprint matching 可帮助系统快速定位
+    最有希望的诊断策略。
 
     Governance rule
     ~~~~~~~~~~~~~~~
-    Only fingerprints from sessions with a ``FIXED`` or ``IMPROVED`` verdict
-    are stored as positive examples.  Failed sessions may be stored with
-    ``is_negative=True`` so the system can learn what *not* to try.
+    仅保存 verdict 为 ``FIXED`` 或 ``IMPROVED`` 的 fingerprints 作为
+    positive 示例。失败的 session 可用 ``is_negative=True`` 存储，
+    便于系统学习 *不该* 尝试的策略。
 
     Parameters
     ----------
     db_path:
-        Filesystem path for the SQLite database file.  Parent directories
-        are created automatically on :meth:`initialize`.
+        SQLite 数据库文件路径。父目录会在 :meth:`initialize` 中自动创建。
     """
 
-    # Weights for pass-fingerprint matching dimensions.
+    # pass-fingerprint 匹配维度的权重。
     _PASS_WEIGHTS: Dict[str, float] = {
         "rt_formats": 0.40,
         "blend_modes": 0.30,
         "binding_pattern": 0.30,
     }
 
-    # Weights for shader-fingerprint matching dimensions.
+    # shader-fingerprint 匹配维度的权重。
     _SHADER_WEIGHTS: Dict[str, float] = {
         "resource_names": 0.25,
         "slot_pattern": 0.25,
@@ -214,11 +208,9 @@ class FingerprintStore:
     # -- lifecycle ----------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Create the database file and tables if they do not already exist.
+        """创建数据库文件与表（若尚不存在）。
 
-        Must be called (and awaited) before any other method.  Safe to
-        call multiple times; subsequent calls are no-ops if the tables
-        already exist.
+        必须在其他方法前调用并 await。可重复调用；若表已存在则为 no-op。
         """
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         loop = get_running_loop()
@@ -226,7 +218,7 @@ class FingerprintStore:
         logger.info("FingerprintStore initialized at %s", self._db_path)
 
     def _open_db(self) -> sqlite3.Connection:
-        """Open the SQLite connection and create tables (sync, run in executor)."""
+        """打开 SQLite 连接并创建表（同步方法，在 executor 中运行）。"""
         conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL;")
@@ -239,7 +231,7 @@ class FingerprintStore:
         return conn
 
     def _ensure_conn(self) -> sqlite3.Connection:
-        """Return the active connection, raising if :meth:`initialize` was not called."""
+        """返回当前连接；若未调用 :meth:`initialize` 则抛出异常。"""
         if self._conn is None:
             raise RuntimeError(
                 "FingerprintStore has not been initialized. "
@@ -250,24 +242,23 @@ class FingerprintStore:
     # -- store fingerprint --------------------------------------------------
 
     async def store_fingerprint(self, record: FingerprintRecord) -> str:
-        """Persist a fingerprint record and return its ``record_id``.
+        """持久化 fingerprint 记录并返回 ``record_id``。
 
         Governance rule
         ~~~~~~~~~~~~~~~
-        Only records whose verdict is ``FIXED`` or ``IMPROVED`` are stored as
-        positive examples.  All other verdicts are stored with
-        ``is_negative=True`` so the knowledge base can learn from failures
-        without presenting them as recommended solutions.
+        仅当 verdict 为 ``FIXED`` 或 ``IMPROVED`` 时作为正例存储。
+        其余 verdict 以 ``is_negative=True`` 保存，便于知识库从失败中学习，
+        同时避免将其作为推荐方案。
 
         Parameters
         ----------
         record:
-            The :class:`~rdx.models.FingerprintRecord` to store.
+            待存储的 :class:`~rdx.models.FingerprintRecord`。
 
         Returns
         -------
         str
-            The ``record_id`` of the stored (or updated) record.
+            已存储（或更新）记录的 ``record_id``。
         """
         is_negative = record.verdict not in (
             VerdictResult.FIXED,
@@ -312,7 +303,7 @@ class FingerprintStore:
         return record_id
 
     def _insert_fingerprint(self, **kwargs: Any) -> None:
-        """INSERT OR REPLACE a fingerprint row (sync, run in executor)."""
+        """INSERT OR REPLACE 一条 fingerprint 记录（同步，executor 中运行）。"""
         conn = self._ensure_conn()
         conn.execute(
             """
@@ -339,23 +330,22 @@ class FingerprintStore:
         project_id: Optional[str] = None,
         limit: int = 10,
     ) -> List[FingerprintRecord]:
-        """Query stored fingerprints by various criteria.
+        """按多种条件查询已存储的 fingerprints。
 
         Parameters
         ----------
         bug_type:
-            Filter by bug type string (exact match).
+            按 bug type 字符串过滤（精确匹配）。
         shader_hash:
-            Filter by shader hash.  Supports prefix matching: if the
-            value is shorter than a full hash the store returns records
-            whose shader hash starts with the given prefix.
+            按 shader hash 过滤。支持前缀匹配：当值短于完整 hash 时，
+            返回 shader hash 以该前缀开头的记录。
         rt_formats:
-            Filter to records whose pass fingerprint contains at least
-            one of the specified render-target formats (subset match).
+            过滤为 pass fingerprint 至少包含一个指定 render-target format
+            的记录（子集匹配）。
         project_id:
-            Filter by project identifier (exact match).
+            按 project identifier 过滤（精确匹配）。
         limit:
-            Maximum number of records to return.
+            返回的最大记录数。
 
         Returns
         -------
@@ -383,7 +373,7 @@ class FingerprintStore:
         project_id: Optional[str],
         limit: int,
     ) -> List[sqlite3.Row]:
-        """Execute the fingerprint query in SQL + Python post-filtering."""
+        """使用 SQL + Python 后处理执行 fingerprint 查询。"""
         conn = self._ensure_conn()
 
         conditions: List[str] = []
@@ -449,24 +439,22 @@ class FingerprintStore:
         pass_fp: PassFingerprint,
         threshold: float = 0.5,
     ) -> List[Tuple[FingerprintRecord, float]]:
-        """Score stored fingerprints against a candidate pass fingerprint.
+        """对候选 pass fingerprint 与已存记录进行打分。
 
-        The similarity is a weighted Jaccard coefficient across the
-        ``rt_formats``, ``blend_modes``, and ``binding_pattern``
-        dimensions.
+        相似度为加权 Jaccard 系数，维度包含
+        ``rt_formats``、``blend_modes`` 与 ``binding_pattern``。
 
         Parameters
         ----------
         pass_fp:
-            The candidate pass fingerprint to match against.
+            需要匹配的候选 pass fingerprint。
         threshold:
-            Minimum similarity score (inclusive) to include in results.
+            最小相似度阈值（含），低于该值不返回。
 
         Returns
         -------
         list[tuple[FingerprintRecord, float]]
-            Records paired with their similarity score, sorted by score
-            descending.
+            记录及其相似度分数，按分数降序排序。
         """
         loop = get_running_loop()
         rows = await loop.run_in_executor(
@@ -503,7 +491,7 @@ class FingerprintStore:
         return scored
 
     def _fetch_all_with_pass_fp(self) -> List[sqlite3.Row]:
-        """Return every fingerprint row that has a pass fingerprint."""
+        """返回所有包含 pass fingerprint 的记录。"""
         conn = self._ensure_conn()
         return conn.execute(
             "SELECT * FROM fingerprints WHERE pass_fp_json IS NOT NULL"
@@ -516,25 +504,23 @@ class FingerprintStore:
         shader_fp: ShaderFingerprint,
         threshold: float = 0.5,
     ) -> List[Tuple[FingerprintRecord, float]]:
-        """Score stored fingerprints against a candidate shader fingerprint.
+        """对候选 shader fingerprint 与已存记录进行打分。
 
-        An exact ``shader_hash`` match yields a score of 1.0 immediately.
-        Otherwise the similarity is a weighted combination of
-        ``resource_names``, ``slot_pattern``, and ``ir_kgram_hashes``
-        Jaccard coefficients.
+        精确的 ``shader_hash`` 匹配将直接返回 1.0 分。
+        否则相似度为 ``resource_names``、``slot_pattern``、
+        ``ir_kgram_hashes`` 的加权 Jaccard 系数。
 
         Parameters
         ----------
         shader_fp:
-            The candidate shader fingerprint to match against.
+            需要匹配的候选 shader fingerprint。
         threshold:
-            Minimum similarity score (inclusive) to include in results.
+            最小相似度阈值（含），低于该值不返回。
 
         Returns
         -------
         list[tuple[FingerprintRecord, float]]
-            Records paired with their similarity score, sorted by score
-            descending.
+            记录及其相似度分数，按分数降序排序。
         """
         loop = get_running_loop()
         rows = await loop.run_in_executor(
@@ -556,7 +542,7 @@ class FingerprintStore:
             sfp_data = json.loads(sfp_json)
             stored_hash = sfp_data.get("shader_hash", "")
 
-            # Exact hash match is a perfect score.
+            # 精确 hash 匹配视为满分。
             if query_hash and stored_hash and query_hash == stored_hash:
                 scored.append((self._row_to_record(row), 1.0))
                 continue
@@ -579,7 +565,7 @@ class FingerprintStore:
         return scored
 
     def _fetch_all_with_shader_fp(self) -> List[sqlite3.Row]:
-        """Return every fingerprint row that has a shader fingerprint."""
+        """返回所有包含 shader fingerprint 的记录。"""
         conn = self._ensure_conn()
         return conn.execute(
             "SELECT * FROM fingerprints WHERE shader_fp_json IS NOT NULL"
@@ -588,20 +574,20 @@ class FingerprintStore:
     # -- regression entries -------------------------------------------------
 
     async def store_regression_entry(self, entry: RegressionEntry) -> str:
-        """Persist a regression entry and return its ``entry_id``.
+        """持久化 regression entry 并返回 ``entry_id``。
 
-        Regression entries anchor a known-bad capture + event so the
-        system can monitor for regressions after engine updates.
+        Regression entries 记录已知错误的 capture + event，便于在引擎更新后
+        监控是否出现回归。
 
         Parameters
         ----------
         entry:
-            The :class:`~rdx.models.RegressionEntry` to store.
+            待存储的 :class:`~rdx.models.RegressionEntry`。
 
         Returns
         -------
         str
-            The ``entry_id`` of the stored entry.
+            已存储 entry 的 ``entry_id``。
         """
         entry_id = entry.entry_id or _new_id("reg")
         verifier_json = entry.verifier_config.model_dump_json()
@@ -627,7 +613,7 @@ class FingerprintStore:
         return entry_id
 
     def _insert_regression_entry(self, **kwargs: Any) -> None:
-        """INSERT OR REPLACE a regression_entries row (sync, run in executor)."""
+        """INSERT OR REPLACE 一条 regression_entries 记录（同步，executor 中运行）。"""
         conn = self._ensure_conn()
         conn.execute(
             """
@@ -648,12 +634,12 @@ class FingerprintStore:
         self,
         project_id: Optional[str] = None,
     ) -> List[RegressionEntry]:
-        """Return all regression entries, optionally filtered by project.
+        """返回所有 regression entries，可按 project 过滤。
 
         Parameters
         ----------
         project_id:
-            If provided, only entries for this project are returned.
+            若提供，仅返回该 project 的 entries。
 
         Returns
         -------
@@ -670,7 +656,7 @@ class FingerprintStore:
         self,
         project_id: Optional[str],
     ) -> List[sqlite3.Row]:
-        """Fetch regression rows, optionally filtered (sync, run in executor)."""
+        """获取 regression 行，可选过滤（同步，executor 中运行）。"""
         conn = self._ensure_conn()
         if project_id is not None:
             return conn.execute(
@@ -685,17 +671,17 @@ class FingerprintStore:
     # -- deletion -----------------------------------------------------------
 
     async def delete_fingerprint(self, record_id: str) -> bool:
-        """Remove a fingerprint record by its ``record_id``.
+        """按 ``record_id`` 删除 fingerprint 记录。
 
         Parameters
         ----------
         record_id:
-            Identifier of the record to delete.
+            要删除的记录标识符。
 
         Returns
         -------
         bool
-            ``True`` if a record was deleted, ``False`` if not found.
+            若删除成功返回 ``True``，未找到则返回 ``False``。
         """
         loop = get_running_loop()
         deleted = await loop.run_in_executor(
@@ -707,7 +693,7 @@ class FingerprintStore:
         return deleted
 
     def _delete_fingerprint_sync(self, record_id: str) -> bool:
-        """DELETE one fingerprint row (sync, run in executor)."""
+        """DELETE 一条 fingerprint 记录（同步，executor 中运行）。"""
         conn = self._ensure_conn()
         cursor = conn.execute(
             "DELETE FROM fingerprints WHERE record_id = ?",
@@ -719,7 +705,7 @@ class FingerprintStore:
     # -- stats --------------------------------------------------------------
 
     async def get_stats(self) -> Dict[str, Any]:
-        """Return summary statistics about the fingerprint store.
+        """返回 fingerprint store 的汇总统计。
 
         Returns
         -------
@@ -735,7 +721,7 @@ class FingerprintStore:
         return await loop.run_in_executor(None, self._get_stats_sync)
 
     def _get_stats_sync(self) -> Dict[str, Any]:
-        """Compute aggregate stats (sync, run in executor)."""
+        """计算汇总统计（同步，executor 中运行）。"""
         conn = self._ensure_conn()
 
         total_fp = conn.execute(
@@ -771,7 +757,7 @@ class FingerprintStore:
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> FingerprintRecord:
-        """Deserialise a ``fingerprints`` row into a :class:`FingerprintRecord`."""
+        """将 ``fingerprints`` 行反序列化为 :class:`FingerprintRecord`。"""
         pass_fp = None
         if row["pass_fp_json"]:
             pass_fp = PassFingerprint.model_validate_json(row["pass_fp_json"])
@@ -797,7 +783,7 @@ class FingerprintStore:
 
     @staticmethod
     def _row_to_regression(row: sqlite3.Row) -> RegressionEntry:
-        """Deserialise a ``regression_entries`` row into a :class:`RegressionEntry`."""
+        """将 ``regression_entries`` 行反序列化为 :class:`RegressionEntry`。"""
         verifier_config = VerifierConfig()
         if row["verifier_config_json"]:
             verifier_config = VerifierConfig.model_validate_json(

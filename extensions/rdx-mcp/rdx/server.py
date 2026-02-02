@@ -1,14 +1,13 @@
 """
-RDX-MCP Server -- main MCP server for GPU debug automation.
+RDX-MCP Server —— 用于 GPU debug automation 的主 MCP server。
 
-Registers all MCP tools, wires up service instances via lifespan,
-and exposes two transport entry points:
+注册所有 MCP tools，通过 lifespan 连接各类服务实例，并提供两个传输入口：
 
-* ``main()``     -- stdio transport (default, used by ``rdx-mcp`` CLI).
-* ``main_sse()`` -- SSE transport for web-based clients.
+* ``main()``     —— stdio transport（默认，用于 ``rdx-mcp`` CLI）。
+* ``main_sse()`` —— SSE transport（面向 web clients）。
 
-Every tool function is ``async``, follows the response envelope pattern
-(``ToolResponse``), and delegates to the appropriate service layer.
+每个 tool 函数均为 ``async``，遵循响应封装模式（``ToolResponse``），
+并委派到对应的 service layer。
 """
 
 from __future__ import annotations
@@ -71,7 +70,7 @@ from rdx.utils.scheduler import WorkerScheduler
 logger = logging.getLogger("rdx.server")
 
 # ---------------------------------------------------------------------------
-# Global service instances -- populated during lifespan
+# Global service instances（在 lifespan 中初始化）
 # ---------------------------------------------------------------------------
 
 _config: Optional[RdxConfig] = None
@@ -251,15 +250,15 @@ async def session_create(
     gpu_index: int = 0,
     force_api_validation: bool = False,
 ) -> str:
-    """Create a new RenderDoc replay session.
+    """创建新的 RenderDoc replay session。
 
     Args:
-        backend_type: "local" or "remote".
-        gpu_index: GPU device index to use.
-        force_api_validation: Enable extra API validation layers.
+        backend_type: "local" 或 "remote"。
+        gpu_index: 使用的 GPU 设备索引。
+        force_api_validation: 启用额外的 API validation layers。
 
     Returns:
-        JSON ToolResponse with session_id and capabilities.
+        包含 session_id 与 capabilities 的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -291,13 +290,13 @@ async def session_create(
 
 @mcp.tool(name="rd.session.close")
 async def session_close(session_id: str) -> str:
-    """Close an active replay session and release its resources.
+    """关闭活跃 replay session 并释放资源。
 
     Args:
-        session_id: Identifier of the session to close.
+        session_id: 要关闭的 session 标识。
 
     Returns:
-        JSON ToolResponse confirming closure.
+        确认关闭的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -319,14 +318,14 @@ async def session_close(session_id: str) -> str:
 
 @mcp.tool(name="rd.capture.open")
 async def capture_open(session_id: str, rdc_path: str) -> str:
-    """Open a RenderDoc capture (.rdc) file within an existing session.
+    """在现有 session 中打开 RenderDoc capture（.rdc）文件。
 
     Args:
-        session_id: Target session identifier.
-        rdc_path: Filesystem path to the .rdc capture file.
+        session_id: 目标 session 标识。
+        rdc_path: .rdc capture 文件路径。
 
     Returns:
-        JSON ToolResponse with capture metadata (api, driver, event count).
+        包含 capture 元数据（api、driver、event count）的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -353,14 +352,14 @@ async def capture_get_event_tree(
     session_id: str,
     include_passes: bool = False,
 ) -> str:
-    """Build and return the hierarchical event tree for an open capture.
+    """构建并返回已打开 capture 的层级事件树。
 
     Args:
-        session_id: Session with an open capture.
-        include_passes: If true, run pass inference to annotate events.
+        session_id: 已打开 capture 的 session。
+        include_passes: 为 true 时运行 pass 推断以注释事件。
 
     Returns:
-        JSON ToolResponse with the event tree and summary statistics.
+        包含事件树与汇总统计的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -409,14 +408,14 @@ async def capture_get_event_tree(
 
 @mcp.tool(name="rd.event.set")
 async def event_set(session_id: str, event_id: int) -> str:
-    """Set the replay to a specific event (draw call) for inspection.
+    """将 replay 设置到指定 event（draw call）以便检查。
 
     Args:
-        session_id: Session with an open capture.
-        event_id: The event ID to navigate to.
+        session_id: 已打开 capture 的 session。
+        event_id: 要导航到的 event ID。
 
     Returns:
-        JSON ToolResponse confirming the event is now active.
+        确认已激活该 event 的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -451,21 +450,21 @@ async def event_bisect_first_bad(
     max_iters: int = 60,
     confidence_threshold: float = 0.85,
 ) -> str:
-    """Binary-search events to find the first bad draw call.
+    """对 events 进行二分搜索以定位第一个 bad draw call。
 
     Args:
-        session_id: Active session identifier.
-        capture_id: Capture identifier.
-        range_lo: Start of the event range (inclusive).
-        range_hi: End of the event range (inclusive).
-        verifier_type: Verifier to use (naninf, image_diff, etc.).
-        verifier_params: JSON string of verifier parameters.
-        strategy: Bisect strategy ("binary" or "ddmin").
-        max_iters: Maximum number of bisect iterations.
-        confidence_threshold: Minimum confidence to accept result.
+        session_id: 活跃 session 标识。
+        capture_id: capture 标识。
+        range_lo: event 范围起点（含）。
+        range_hi: event 范围终点（含）。
+        verifier_type: 使用的 verifier（naninf、image_diff 等）。
+        verifier_params: verifier 参数的 JSON 字符串。
+        strategy: bisect 策略（"binary" 或 "ddmin"）。
+        max_iters: 最大 bisect 迭代次数。
+        confidence_threshold: 接受结果的最小置信度。
 
     Returns:
-        JSON ToolResponse with the bisect result.
+        包含 bisect 结果的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -509,17 +508,17 @@ async def output_render(
     source_config: Optional[str] = None,
     view_config: Optional[str] = None,
 ) -> str:
-    """Render the output of a specific event and store the image artifact.
+    """渲染指定 event 的输出并存储图像 artifact。
 
     Args:
-        session_id: Active session identifier.
-        event_id: Event to render.
-        output_format: Image format ("png", "exr", "hdr").
-        source_config: Optional JSON string for source configuration.
-        view_config: Optional JSON string for view configuration.
+        session_id: 活跃 session 标识。
+        event_id: 要渲染的 event。
+        output_format: 图像格式（"png", "exr", "hdr"）。
+        source_config: source 配置的可选 JSON 字符串。
+        view_config: view 配置的可选 JSON 字符串。
 
     Returns:
-        JSON ToolResponse with artifact reference and render metadata.
+        包含 artifact 引用与渲染元数据的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -560,17 +559,17 @@ async def output_readback(
     subresource: Optional[str] = None,
     region: Optional[str] = None,
 ) -> str:
-    """Read back a texture resource at a specific event.
+    """在指定 event 读取 texture 资源。
 
     Args:
-        session_id: Active session identifier.
-        event_id: Event to read back from.
-        texture_id: Resource identifier of the texture.
-        subresource: Optional JSON string for subresource selection.
-        region: Optional JSON string for region-of-interest.
+        session_id: 活跃 session 标识。
+        event_id: 读取的 event。
+        texture_id: texture 的资源标识。
+        subresource: subresource 选择的可选 JSON 字符串。
+        region: ROI（region-of-interest）可选 JSON 字符串。
 
     Returns:
-        JSON ToolResponse with artifact reference and texture metadata.
+        包含 artifact 引用与 texture 元数据的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -610,18 +609,18 @@ async def verify_naninf(
     event_id: int,
     threshold: float = 0.0,
 ) -> str:
-    """Run the NaN/Inf verifier on a rendered event output.
+    """对渲染输出运行 NaN/Inf verifier。
 
-    Detects NaN and Inf values in render target pixels.
+    检测 render target 像素中的 NaN 与 Inf。
 
     Args:
-        session_id: Active session identifier.
-        capture_id: Capture identifier.
-        event_id: Event to verify.
-        threshold: Density threshold for anomaly classification.
+        session_id: 活跃 session 标识。
+        capture_id: capture 标识。
+        event_id: 要验证的 event。
+        threshold: anomaly 判定的密度阈值。
 
     Returns:
-        JSON ToolResponse with verification result and any anomaly info.
+        包含验证结果与 anomaly 信息的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -672,17 +671,17 @@ async def verify_image_diff(
     reference_artifact_sha: Optional[str] = None,
     diff_threshold: float = 0.01,
 ) -> str:
-    """Run the image-diff verifier comparing rendered output to a reference.
+    """运行 image-diff verifier，将渲染输出与参考图像对比。
 
     Args:
-        session_id: Active session identifier.
-        capture_id: Capture identifier.
-        event_id: Event to verify.
-        reference_artifact_sha: SHA256 of the reference image artifact.
-        diff_threshold: Per-pixel difference threshold.
+        session_id: 活跃 session 标识。
+        capture_id: capture 标识。
+        event_id: 要验证的 event。
+        reference_artifact_sha: 参考图像 artifact 的 SHA256。
+        diff_threshold: 逐像素差异阈值。
 
     Returns:
-        JSON ToolResponse with diff metrics and optional mask artifact.
+        包含 diff 指标与可选 mask artifact 的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -733,17 +732,17 @@ async def verify_image_diff(
 
 @mcp.tool(name="rd.pipeline.snapshot")
 async def pipeline_snapshot(session_id: str, event_id: int) -> str:
-    """Capture the full pipeline state at a specific event.
+    """在指定 event 捕获完整的 pipeline state。
 
-    Extracts shaders, render targets, blend states, depth/stencil,
-    bindings, viewport, and topology.
+    提取 shaders、render targets、blend states、depth/stencil、
+    bindings、viewport 与 topology。
 
     Args:
-        session_id: Active session identifier.
-        event_id: Event to snapshot.
+        session_id: 活跃 session 标识。
+        event_id: 要生成 snapshot 的 event。
 
     Returns:
-        JSON ToolResponse with PipelineSnapshot data.
+        包含 PipelineSnapshot 数据的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -774,15 +773,15 @@ async def shader_export_artifacts(
     event_id: int,
     stage: str = "ps",
 ) -> str:
-    """Export shader artifacts (disassembly, reflection, IR, source) for a stage.
+    """导出指定 stage 的 shader artifacts（disassembly、reflection、IR、source）。
 
     Args:
-        session_id: Active session identifier.
-        event_id: Event whose shader to export.
-        stage: Shader stage ("vs", "ps", "cs", etc.).
+        session_id: 活跃 session 标识。
+        event_id: 要导出 shader 的 event。
+        stage: Shader stage（"vs", "ps", "cs" 等）。
 
     Returns:
-        JSON ToolResponse with ShaderExportBundle data and artifact refs.
+        包含 ShaderExportBundle 数据与 artifact refs 的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -820,22 +819,21 @@ async def debug_pixel(
     mode: str = "run_to_naninf",
     max_steps: int = 20000,
 ) -> str:
-    """Debug a pixel shader invocation at coordinates (x, y).
+    """在坐标 (x, y) 调试 pixel shader invocation。
 
-    Steps through shader execution and optionally stops at the first
-    NaN/Inf producing instruction.
+    逐步执行 shader，可选在第一个产生 NaN/Inf 的指令处停止。
 
     Args:
-        session_id: Active session identifier.
-        event_id: Draw call event to debug.
-        x: Pixel x coordinate.
-        y: Pixel y coordinate.
-        sample: Multisample sample index.
-        mode: Debug mode ("run_to_naninf", "step_all", "run_to_end").
-        max_steps: Maximum shader steps before aborting.
+        session_id: 活跃 session 标识。
+        event_id: 要调试的 draw call event。
+        x: 像素 x 坐标。
+        y: 像素 y 坐标。
+        sample: Multisample sample index。
+        mode: 调试模式（"run_to_naninf", "step_all", "run_to_end"）。
+        max_steps: 在中止前允许的最大 shader step 数。
 
     Returns:
-        JSON ToolResponse with PixelDebugResult data and trace artifact.
+        包含 PixelDebugResult 数据与 trace artifact 的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -879,17 +877,17 @@ async def patch_apply(
     intent: str = "fix_naninf",
     ops: Optional[str] = None,
 ) -> str:
-    """Apply a shader hot-patch to modify shader behavior at runtime.
+    """应用 shader hot-patch，在运行时修改 shader 行为。
 
     Args:
-        session_id: Active session identifier.
-        event_id: Target draw call event.
-        stage: Shader stage to patch ("vs", "ps", "cs", etc.).
-        intent: Patch intent description (e.g. "fix_naninf", "guard_div").
-        ops: JSON array of PatchOp definitions.
+        session_id: 活跃 session 标识。
+        event_id: 目标 draw call event。
+        stage: 要打补丁的 shader stage（"vs", "ps", "cs" 等）。
+        intent: patch 目的描述（如 "fix_naninf", "guard_div"）。
+        ops: PatchOp 定义的 JSON 数组。
 
     Returns:
-        JSON ToolResponse with PatchResult data.
+        包含 PatchResult 数据的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -932,14 +930,14 @@ async def patch_apply(
 
 @mcp.tool(name="rd.patch.revert")
 async def patch_revert(session_id: str, patch_id: str) -> str:
-    """Revert a previously applied shader patch.
+    """回滚先前应用的 shader patch。
 
     Args:
-        session_id: Active session identifier.
-        patch_id: Identifier of the patch to revert.
+        session_id: 活跃 session 标识。
+        patch_id: 要回滚的 patch 标识。
 
     Returns:
-        JSON ToolResponse confirming revert success.
+        确认回滚成功的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -981,22 +979,22 @@ async def experiment_run(
     patch_id: Optional[str] = None,
     description: str = "",
 ) -> str:
-    """Run a single experiment: apply optional patch, verify, compare.
+    """运行单个 experiment：可选应用 patch、验证并对比。
 
-    An experiment renders an event, optionally applies a shader patch,
-    re-renders, and runs a verifier to compare before/after results.
+    experiment 会渲染 event、可选应用 shader patch、重新渲染，
+    并运行 verifier 对比前后结果。
 
     Args:
-        session_id: Active session identifier.
-        capture_id: Capture identifier.
-        event_id: Target event for the experiment.
-        verifier_type: Verifier to use ("naninf", "image_diff", etc.).
-        verifier_params: JSON string of additional verifier parameters.
-        patch_id: Optional patch to apply before re-rendering.
-        description: Human-readable experiment description.
+        session_id: 活跃 session 标识。
+        capture_id: capture 标识。
+        event_id: experiment 目标 event。
+        verifier_type: 使用的 verifier（"naninf", "image_diff" 等）。
+        verifier_params: 额外 verifier 参数的 JSON 字符串。
+        patch_id: 重新渲染前可选应用的 patch。
+        description: 人类可读的 experiment 描述。
 
     Returns:
-        JSON ToolResponse with ExperimentResult and evidence data.
+        包含 ExperimentResult 与 evidence 数据的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -1041,17 +1039,16 @@ async def perf_sample_counters(
     range_hi: int,
     counter_ids: Optional[str] = None,
 ) -> str:
-    """Sample GPU performance counters across a range of events.
+    """在 event 范围内采样 GPU performance counters。
 
     Args:
-        session_id: Active session identifier.
-        range_lo: Start event of the range (inclusive).
-        range_hi: End event of the range (inclusive).
-        counter_ids: Optional JSON array of integer counter IDs. If omitted,
-            all available counters are sampled.
+        session_id: 活跃 session 标识。
+        range_lo: 范围起始 event（含）。
+        range_hi: 范围结束 event（含）。
+        counter_ids: 可选的 counter ID 整数 JSON 数组。若省略，则采样全部可用 counters。
 
     Returns:
-        JSON ToolResponse with PerfResult including samples and summaries.
+        包含 samples 与 summaries 的 PerfResult JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -1094,18 +1091,17 @@ async def report_build_bundle(
     task_state_json: str,
     output_dir: Optional[str] = None,
 ) -> str:
-    """Generate a self-contained debug report bundle.
+    """生成自包含的 debug report bundle。
 
-    Produces JSON, Markdown, and interactive HTML reports with all
-    referenced artifacts copied into an assets directory.
+    输出 JSON、Markdown 与交互式 HTML 报告，并将引用的 artifacts
+    拷贝到 assets 目录。
 
     Args:
-        task_state_json: JSON string of the TaskState to report on.
-        output_dir: Directory where the bundle will be written. Defaults
-            to a temporary location under the artifact store root.
+        task_state_json: 需要生成报告的 TaskState JSON 字符串。
+        output_dir: bundle 输出目录。默认写入 artifact store 根目录下的临时位置。
 
     Returns:
-        JSON ToolResponse with paths to the generated report files.
+        包含生成报告文件路径的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -1147,20 +1143,19 @@ async def kb_search(
     project_id: Optional[str] = None,
     limit: int = 10,
 ) -> str:
-    """Search the knowledge base using BM25 text retrieval.
+    """使用 BM25 文本检索搜索知识库。
 
-    Queries local documentation, shader sources, and engine code indexed
-    by the knowledge base connector.
+    查询知识库连接器索引的本地文档、shader 源码与引擎代码。
 
     Args:
-        query: Free-text search query.
-        file_type: Filter by file extension without dot (e.g. "cpp", "usf").
-        path_prefix: Only include results under this path prefix.
-        project_id: Filter by project identifier.
-        limit: Maximum number of results.
+        query: 自然语言查询。
+        file_type: 按不含点的扩展名过滤（如 "cpp", "usf"）。
+        path_prefix: 仅包含该路径前缀下的结果。
+        project_id: 按 project 标识过滤。
+        limit: 最大返回结果数。
 
     Returns:
-        JSON ToolResponse with ranked search results.
+        包含排序结果的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -1208,18 +1203,17 @@ async def fingerprint_match(
     fingerprint_json: str = "{}",
     threshold: float = 0.5,
 ) -> str:
-    """Match a fingerprint against the knowledge store.
+    """在知识库中匹配 fingerprint。
 
-    Finds previously recorded fingerprints that are similar to the
-    provided candidate, scored by Jaccard similarity.
+    查找与候选 fingerprint 相似的历史记录，并以 Jaccard 相似度评分。
 
     Args:
-        fingerprint_type: Type of fingerprint ("pass" or "shader").
-        fingerprint_json: JSON string of the fingerprint data.
-        threshold: Minimum similarity score to include in results.
+        fingerprint_type: fingerprint 类型（"pass" 或 "shader"）。
+        fingerprint_json: fingerprint 数据的 JSON 字符串。
+        threshold: 最小相似度阈值。
 
     Returns:
-        JSON ToolResponse with ranked matches and similarity scores.
+        包含排序匹配结果与相似度分数的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -1274,24 +1268,23 @@ async def pipeline_run_full_debug(
     backend_type: str = "local",
     project_id: str = "",
 ) -> str:
-    """Run the complete S0-S7 automated GPU debug pipeline end-to-end.
+    """端到端运行完整的 S0-S7 自动化 GPU debug pipeline。
 
-    This is the highest-level tool: it opens a capture, localizes
-    anomalies, bisects to the first bad event, extracts pipeline state,
-    generates and tests fix hypotheses, maps to engine source, and
-    builds a final report.
+    这是最高层工具：打开 capture、定位 anomalies、二分到首个 bad event、
+    提取 pipeline state、生成并测试修复假设、映射到引擎源码，
+    并生成最终报告。
 
     Args:
-        rdc_path: Path to the .rdc capture file.
-        description: Natural-language description of the visual bug.
-        reference_image_path: Optional path to a known-good reference image.
-        expected_image_path: Optional path to the expected correct output.
-        bug_type_hints: Optional JSON array of bug type hint strings.
-        backend_type: Backend type ("local" or "remote").
-        project_id: Optional project identifier for fingerprint tracking.
+        rdc_path: .rdc capture 文件路径。
+        description: 对视觉 bug 的自然语言描述。
+        reference_image_path: 可选的已知正确参考图像路径。
+        expected_image_path: 可选的期望正确输出图像路径。
+        bug_type_hints: 可选的 bug type 提示 JSON 数组。
+        backend_type: backend 类型（"local" 或 "remote"）。
+        project_id: 用于 fingerprint tracking 的可选 project 标识。
 
     Returns:
-        JSON ToolResponse with the final TaskState and report paths.
+        包含最终 TaskState 与报告路径的 JSON ToolResponse。
     """
     trace_id = _new_id("trc")
     try:
@@ -1376,7 +1369,7 @@ async def pipeline_run_full_debug(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Run the MCP server using stdio transport (default CLI entry point)."""
+    """使用 stdio transport 运行 MCP server（默认 CLI 入口）。"""
     logging.basicConfig(
         level=os.environ.get("RDX_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -1385,7 +1378,7 @@ def main() -> None:
 
 
 def main_sse() -> None:
-    """Run the MCP server using SSE transport for web-based clients."""
+    """使用 SSE transport 运行 MCP server（面向 web clients）。"""
     logging.basicConfig(
         level=os.environ.get("RDX_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",

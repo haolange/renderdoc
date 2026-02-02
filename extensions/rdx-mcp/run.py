@@ -2,26 +2,26 @@
 """
 RDX-MCP: RenderDoc GPU Debug MCP Server
 
-Entry point for running the MCP server.
+运行 MCP server 的入口。
 
 Usage:
-    # stdio transport (default, for Claude Desktop / Claude Code / agent integration)
+    # stdio transport（默认，适用于 Claude Desktop / Claude Code / agent integration）
     python run.py
 
-    # SSE transport (for web clients)
+    # SSE transport（用于 web clients）
     python run.py --transport sse --host 127.0.0.1 --port 8765
 
 Environment variables:
-    RDX_RENDERDOC_PATH  - Path to directory containing renderdoc Python module
-    RDX_ARTIFACT_STORE  - Path to artifact storage directory (default: ./rdx_artifacts)
-    RDX_DATA_DIR        - Path to data directory for DBs (default: ./rdx_data)
-    RDX_REPORT_DIR      - Path to report output directory (default: ./rdx_reports)
-    RDX_LOG_LEVEL       - Logging level (default: INFO)
-    RDX_GPU_VENDOR      - Preferred GPU vendor: nvidia, amd, intel, arm, any
-    RDX_SPIRV_TOOLS_PATH - Path to SPIRV-Tools binaries
-    RDX_HEADLESS        - Force headless mode: 1/true/yes
-    RDX_SSE_HOST        - SSE server host (default: 127.0.0.1)
-    RDX_SSE_PORT        - SSE server port (default: 8765)
+    RDX_RENDERDOC_PATH  - renderdoc Python module 所在目录路径
+    RDX_ARTIFACT_STORE  - artifact 存储目录路径（默认：./rdx_artifacts）
+    RDX_DATA_DIR        - DB 数据目录路径（默认：./rdx_data）
+    RDX_REPORT_DIR      - report 输出目录路径（默认：./rdx_reports）
+    RDX_LOG_LEVEL       - Logging level（默认：INFO）
+    RDX_GPU_VENDOR      - 首选 GPU vendor：nvidia, amd, intel, arm, any
+    RDX_SPIRV_TOOLS_PATH - SPIRV-Tools binaries 路径
+    RDX_HEADLESS        - 强制 headless mode：1/true/yes
+    RDX_SSE_HOST        - SSE server host（默认：127.0.0.1）
+    RDX_SSE_PORT        - SSE server port（默认：8765）
 """
 
 import argparse

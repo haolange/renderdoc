@@ -1,9 +1,8 @@
 """
-Image processing utilities for GPU debug visualisation.
+GPU debug 可视化的图像处理工具。
 
-Every function operates on NumPy arrays in ``(H, W, C)`` layout and/or PIL
-Images.  Both HDR (``float32``) and LDR (``uint8``) pixel formats are
-handled transparently.
+所有函数均在 ``(H, W, C)`` 布局的 NumPy 数组和/或 PIL Images 上工作。
+同时支持 HDR（``float32``）与 LDR（``uint8``）像素格式。
 """
 
 from __future__ import annotations
@@ -15,14 +14,14 @@ import numpy as np
 from PIL import Image
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers（内部辅助）
 # ---------------------------------------------------------------------------
 
 
 def _ensure_float32(pixels: np.ndarray) -> np.ndarray:
-    """Promote *pixels* to ``float32`` if they are integer-typed.
+    """若 *pixels* 为整数类型，则提升为 ``float32``。
 
-    ``uint8`` values are normalised to the ``[0, 1]`` range.
+    ``uint8`` 数值会被归一化到 ``[0, 1]`` 区间。
     """
     if pixels.dtype == np.float32:
         return pixels
@@ -34,7 +33,7 @@ def _ensure_float32(pixels: np.ndarray) -> np.ndarray:
 
 
 def _ensure_uint8(pixels: np.ndarray) -> np.ndarray:
-    """Convert *pixels* to ``uint8`` clamped to ``[0, 255]``."""
+    """将 *pixels* 转换为 ``uint8`` 并裁剪到 ``[0, 255]``。"""
     if pixels.dtype == np.uint8:
         return pixels
     arr = np.clip(pixels, 0.0, 1.0) * 255.0
@@ -42,10 +41,10 @@ def _ensure_uint8(pixels: np.ndarray) -> np.ndarray:
 
 
 def _ensure_3ch(pixels: np.ndarray) -> np.ndarray:
-    """Ensure *pixels* has exactly 3 colour channels (H, W, 3).
+    """确保 *pixels* 拥有 3 个颜色通道（H, W, 3）。
 
-    - Single-channel (H, W) or (H, W, 1) data is replicated to greyscale RGB.
-    - RGBA (H, W, 4) data has its alpha channel stripped.
+    - 单通道 (H, W) 或 (H, W, 1) 会复制为灰度 RGB。
+    - RGBA (H, W, 4) 会去除 alpha 通道。
     """
     if pixels.ndim == 2:
         return np.stack([pixels, pixels, pixels], axis=-1)
@@ -58,9 +57,9 @@ def _ensure_3ch(pixels: np.ndarray) -> np.ndarray:
 
 
 def _bbox_from_mask(mask: np.ndarray) -> Optional[Dict[str, int]]:
-    """Compute a tight axis-aligned bounding box from a boolean mask.
+    """从布尔 mask 计算紧致的轴对齐 bounding box。
 
-    Returns ``None`` when the mask is entirely ``False``.
+    当 mask 全为 ``False`` 时返回 ``None``。
     """
     ys, xs = np.nonzero(mask)
     if len(ys) == 0:
@@ -81,24 +80,24 @@ def _bbox_from_mask(mask: np.ndarray) -> Optional[Dict[str, int]]:
 def compute_naninf_mask(
     pixels: np.ndarray,
 ) -> Tuple[np.ndarray, Dict]:
-    """Generate a colour-coded mask highlighting NaN and Inf pixels.
+    """生成用于高亮 NaN 与 Inf 像素的彩色 mask。
 
     Parameters
     ----------
     pixels:
-        Image array ``(H, W, C)`` in any numeric dtype.  For integer images
-        no NaN/Inf values can exist, so the result will be an empty mask.
+        任意数值 dtype 的图像数组 ``(H, W, C)``。整数图像不会出现 NaN/Inf，
+        因此结果将是空 mask。
 
     Returns
     -------
     mask_image:
-        ``uint8`` RGBA array ``(H, W, 4)`` where NaN pixels are drawn in red
-        ``(255, 0, 0, 255)``, Inf pixels in blue ``(0, 0, 255, 255)``, and
-        all other pixels are fully transparent ``(0, 0, 0, 0)``.
+        ``uint8`` RGBA 数组 ``(H, W, 4)``：NaN 像素绘制为红色
+        ``(255, 0, 0, 255)``，Inf 像素为蓝色 ``(0, 0, 255, 255)``，
+        其余像素完全透明 ``(0, 0, 0, 0)``。
     stats:
-        Dictionary with ``nan_count``, ``inf_count``, ``total_pixels``,
-        ``density`` (fraction of bad pixels), and ``bbox`` (tight bounding
-        box dict ``{x0, y0, x1, y1}`` or ``None``).
+        包含 ``nan_count``、``inf_count``、``total_pixels``、
+        ``density``（坏像素占比）与 ``bbox``（紧致 bounding box
+        ``{x0, y0, x1, y1}`` 或 ``None``）的字典。
     """
     h, w = pixels.shape[:2]
     total_pixels = h * w
@@ -107,7 +106,7 @@ def compute_naninf_mask(
 
     fpix = pixels.astype(np.float64, copy=False)
 
-    # Collapse across channels: a pixel is NaN if *any* channel is NaN.
+    # 跨通道汇总：只要 *任一* 通道为 NaN，该像素即为 NaN。
     if fpix.ndim == 3:
         nan_mask = np.any(np.isnan(fpix), axis=2)
         inf_mask = np.any(np.isinf(fpix), axis=2)
@@ -146,37 +145,35 @@ def compute_diff_map(
     img_b: np.ndarray,
     threshold: float = 0.01,
 ) -> Tuple[np.ndarray, Dict]:
-    """Compute a per-pixel L2-distance heatmap between two images.
+    """计算两张图像的逐像素 L2 距离 heatmap。
 
-    Both images are promoted to ``float32`` and must have the same spatial
-    dimensions.  If the channel counts differ they are both reduced to 3
-    channels first.
+    两张图像会提升到 ``float32`` 且必须具有相同的空间尺寸。
+    若通道数不同，则先统一为 3 通道。
 
     Parameters
     ----------
     img_a, img_b:
-        Image arrays ``(H, W, C)``.
+        图像数组 ``(H, W, C)``。
     threshold:
-        Per-pixel L2 distance below which a pixel is considered identical.
+        逐像素 L2 距离阈值，低于该值认为像素一致。
 
     Returns
     -------
     heatmap:
-        ``uint8`` RGB heatmap ``(H, W, 3)`` ranging from black (no diff) to
-        bright red (maximum diff).
+        ``uint8`` RGB heatmap ``(H, W, 3)``，从黑色（无差异）到亮红（最大差异）。
     stats:
-        Dictionary with ``mean_diff``, ``max_diff``, ``diff_pixel_count``,
-        ``diff_ratio``, and ``bbox``.
+        包含 ``mean_diff``、``max_diff``、``diff_pixel_count``、
+        ``diff_ratio`` 与 ``bbox`` 的字典。
 
     Raises
     ------
     ValueError
-        If the spatial dimensions of the two images do not match.
+        当两张图像的空间尺寸不匹配时抛出。
     """
     a = _ensure_float32(img_a)
     b = _ensure_float32(img_b)
 
-    # Normalise channel count.
+    # 统一通道数。
     a = _ensure_3ch(a)
     b = _ensure_3ch(b)
 
@@ -234,24 +231,23 @@ def overlay_bbox(
     color: Tuple[int, ...] = (255, 0, 0, 180),
     thickness: int = 2,
 ) -> np.ndarray:
-    """Draw an axis-aligned bounding box rectangle onto an image.
+    """在图像上绘制轴对齐的 bounding box 矩形。
 
     Parameters
     ----------
     img:
-        Source image ``(H, W, C)`` in ``uint8``.  The input is **not**
-        mutated; a copy is returned.
+        ``uint8`` 的源图像 ``(H, W, C)``。不会修改原图，返回副本。
     bbox:
-        Dictionary with integer keys ``x0``, ``y0``, ``x1``, ``y1``.
+        具有整数键 ``x0``, ``y0``, ``x1``, ``y1`` 的字典。
     color:
-        RGBA tuple for the rectangle colour.
+        矩形颜色的 RGBA 元组。
     thickness:
-        Line thickness in pixels.
+        线条厚度（像素）。
 
     Returns
     -------
     np.ndarray
-        A copy of *img* with the rectangle drawn.
+        绘制矩形后的 *img* 副本。
     """
     out = img.copy()
     h, w = out.shape[:2]
@@ -262,13 +258,13 @@ def overlay_bbox(
     x1 = min(w - 1, int(bbox["x1"]))
     y1 = min(h - 1, int(bbox["y1"]))
 
-    # Determine the draw colour matching the image channel count.
+    # 根据通道数确定绘制颜色。
     if has_alpha:
         draw_color = np.array(color[:4], dtype=np.uint8)
     elif out.ndim == 3 and out.shape[2] == 3:
         draw_color = np.array(color[:3], dtype=np.uint8)
     else:
-        # Greyscale: use luminance of the colour.
+        # 灰度：使用颜色的亮度值。
         draw_color = np.uint8(
             0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
         )
@@ -316,21 +312,20 @@ def pixel_stats(
     pixels: np.ndarray,
     region: Optional[Dict[str, int]] = None,
 ) -> Dict:
-    """Compute per-channel statistics for pixel data.
+    """计算像素数据的逐通道统计。
 
     Parameters
     ----------
     pixels:
-        Image array ``(H, W, C)`` or ``(H, W)``.
+        图像数组 ``(H, W, C)`` 或 ``(H, W)``。
     region:
-        Optional sub-region ``{x0, y0, x1, y1}``.  When provided only the
-        pixels inside this axis-aligned rectangle are considered.
+        可选子区域 ``{x0, y0, x1, y1}``。提供后仅统计该轴对齐矩形内的像素。
 
     Returns
     -------
     dict
-        Keys: ``min``, ``max``, ``mean``, ``std`` (each a list of per-channel
-        values), ``has_nan``, ``has_inf``.
+        键包括 ``min``、``max``、``mean``、``std``（均为逐通道列表），以及
+        ``has_nan``、``has_inf``。
     """
     arr = pixels
     if region is not None:
@@ -373,25 +368,25 @@ def pixel_stats(
 
 
 # ---------------------------------------------------------------------------
-# PNG serialisation
+# PNG 序列化
 # ---------------------------------------------------------------------------
 
 
 def array_to_png_bytes(arr: np.ndarray) -> bytes:
-    """Convert a NumPy image array to PNG bytes.
+    """将 NumPy 图像数组转换为 PNG 字节。
 
     Parameters
     ----------
     arr:
-        Image array ``(H, W)``, ``(H, W, 1)``, ``(H, W, 3)``, or
-        ``(H, W, 4)`` in ``uint8`` or ``float32`` format.
+        ``uint8`` 或 ``float32`` 的图像数组
+        ``(H, W)``, ``(H, W, 1)``, ``(H, W, 3)``, 或 ``(H, W, 4)``。
 
     Returns
     -------
     bytes
-        PNG-encoded image.
+        PNG 编码图像。
     """
-    # Sanitise float images: clamp NaN/Inf to finite range, then to [0, 1].
+    # 处理 float 图像：将 NaN/Inf 夹到有限范围，再归一化到 [0, 1]。
     if np.issubdtype(arr.dtype, np.floating):
         arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0)
         arr = _ensure_uint8(arr)
@@ -411,21 +406,21 @@ def array_to_png_bytes(arr: np.ndarray) -> bytes:
 
 
 def png_bytes_to_array(data: bytes) -> np.ndarray:
-    """Decode PNG bytes into a NumPy ``uint8`` array.
+    """将 PNG 字节解码为 NumPy ``uint8`` 数组。
 
     Parameters
     ----------
     data:
-        Raw PNG bytes.
+        原始 PNG 字节。
 
     Returns
     -------
     np.ndarray
-        Image array ``(H, W, C)`` with ``dtype=uint8``.
+        ``dtype=uint8`` 的图像数组 ``(H, W, C)``。
     """
     img = Image.open(io.BytesIO(data))
     arr = np.asarray(img, dtype=np.uint8)
-    # Ensure 3-D for consistency (single-channel images become (H, W, 1)).
+    # 确保为 3-D 以保持一致性（单通道图像变为 (H, W, 1)）。
     if arr.ndim == 2:
         arr = arr[:, :, np.newaxis]
     return arr
@@ -440,29 +435,29 @@ def tonemap_hdr(
     pixels: np.ndarray,
     exposure: float = 1.0,
 ) -> np.ndarray:
-    """Apply simple Reinhard tonemapping to HDR pixel data.
+    """对 HDR 像素数据应用简单的 Reinhard tonemapping。
 
     .. math::
 
         L_{\\text{out}} = \\frac{L_{\\text{in}} \\cdot e}{1 + L_{\\text{in}} \\cdot e}
 
-    where *e* is the *exposure* multiplier.
+    其中 *e* 为 *exposure* 乘数。
 
     Parameters
     ----------
     pixels:
-        HDR image array ``(H, W, C)`` in ``float32``.  Non-float input is
-        returned unchanged (it is already LDR).
+        ``float32`` 的 HDR 图像数组 ``(H, W, C)``。非浮点输入将原样返回
+        （已是 LDR）。
     exposure:
-        Exposure multiplier applied before tonemapping.
+        tonemapping 前的曝光倍增系数。
 
     Returns
     -------
     np.ndarray
-        ``uint8`` LDR image ``(H, W, C)`` after tonemapping.
+        tonemapping 后的 ``uint8`` LDR 图像 ``(H, W, C)``。
     """
     if not np.issubdtype(pixels.dtype, np.floating):
-        # Already LDR; nothing to do.
+        # 已是 LDR；无需处理。
         return pixels
 
     fp = pixels.astype(np.float32, copy=True)

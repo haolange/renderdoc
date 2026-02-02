@@ -1,20 +1,17 @@
-"""Report bundle builder for RDX-MCP.
+"""RDX-MCP 的 report bundle 构建器。
 
-Generates a self-contained debug report bundle from a completed
-:class:`~rdx.models.TaskState`.  The bundle consists of:
+从已完成的 :class:`~rdx.models.TaskState` 生成自包含的 debug report bundle，
+包含：
 
-* ``report.json`` -- machine-readable structured report with all fields
-  from the RDX specification.
-* ``report.md`` -- human-readable Markdown summary.
-* ``index.html`` -- interactive single-file HTML viewer with dark theme,
-  event tree, image comparison, pipeline inspector, and experiments
-  timeline.
-* ``assets/`` -- copies of referenced artifacts (images, snapshots, etc.).
-* ``experiments/`` -- individual experiment result JSONs.
+* ``report.json`` —— 机器可读的结构化报告，包含 RDX 规范的全部字段。
+* ``report.md`` —— 人类可读的 Markdown 摘要。
+* ``index.html`` —— 单文件交互式 HTML viewer（dark theme、event tree、
+  image comparison、pipeline inspector、experiments timeline）。
+* ``assets/`` —— 引用的 artifacts 副本（images、snapshots 等）。
+* ``experiments/`` —— 单个 experiment 结果 JSON。
 
-The HTML template is embedded as a Python string constant and rendered
-with :mod:`jinja2` so that the output is a single self-contained file
-with no external dependencies.
+HTML template 以内嵌 Python 字符串常量形式存在，并通过 :mod:`jinja2`
+渲染，确保输出为单个自包含文件，无外部依赖。
 """
 
 from __future__ import annotations
@@ -36,7 +33,7 @@ from rdx.models import (
 logger = logging.getLogger("rdx.core.report_builder")
 
 # ---------------------------------------------------------------------------
-# HTML template (embedded Jinja2)
+# HTML template（内嵌 Jinja2）
 # ---------------------------------------------------------------------------
 
 _HTML_TEMPLATE = """\
@@ -461,11 +458,9 @@ pre { background: var(--bg-tertiary); border: 1px solid var(--border-color); bor
 
 
 class ReportBuilder:
-    """Generates a self-contained debug report bundle from task state.
+    """从 task state 生成自包含的 debug report bundle。
 
-    The builder is stateless: all data flows through the method
-    arguments.  It can safely be reused across multiple report
-    generations.
+    构建器无状态：所有数据通过方法参数传入，可安全复用于多次 report 生成。
     """
 
     # ------------------------------------------------------------------
@@ -478,9 +473,9 @@ class ReportBuilder:
         artifact_store: Any,
         output_dir: Path,
     ) -> Dict[str, Any]:
-        """Build a complete report bundle on disk.
+        """在磁盘上构建完整的 report bundle。
 
-        Creates the following directory layout under *output_dir*::
+        在 *output_dir* 下创建如下目录结构::
 
             bundle/
               report.json
@@ -494,30 +489,28 @@ class ReportBuilder:
         Parameters
         ----------
         task_state:
-            The fully populated :class:`~rdx.models.TaskState` from a
-            completed debug session.
+            已完成 debug session 的完整 :class:`~rdx.models.TaskState`。
         artifact_store:
-            The :class:`~rdx.utils.artifact_store.ArtifactStore` instance
-            used during the session (for retrieving artifact blobs).
+            会话中使用的 :class:`~rdx.utils.artifact_store.ArtifactStore`
+            实例（用于获取 artifact blobs）。
         output_dir:
-            Parent directory where the ``bundle/`` folder will be
-            created.
+            将创建 ``bundle/`` 目录的父路径。
 
         Returns
         -------
         dict
             Keys: ``bundle_path``, ``report_json_path``,
-            ``report_html_path``, ``report_md_path``.
+            ``report_html_path``, ``report_md_path``。
         """
         bundle_dir = Path(output_dir) / "bundle"
         assets_dir = bundle_dir / "assets"
         experiments_dir = bundle_dir / "experiments"
 
-        # Create directory structure.
+        # 创建目录结构。
         for d in (bundle_dir, assets_dir, experiments_dir):
             d.mkdir(parents=True, exist_ok=True)
 
-        # -- Copy artifacts ------------------------------------------------
+        # -- 拷贝 artifacts ------------------------------------------------
         asset_mapping = await self._copy_artifacts(
             task_state, artifact_store, assets_dir,
         )
@@ -569,31 +562,31 @@ class ReportBuilder:
     # ------------------------------------------------------------------
 
     def _generate_json(self, task_state: TaskState) -> Dict[str, Any]:
-        """Build the full ``report.json`` structure from task state.
+        """从 task state 构建完整的 ``report.json`` 结构。
 
-        Includes every field specified in the RDX report schema:
-        task_id, bugType, capture info, bisect boundaries, bounding box,
-        verifier metrics, hypotheses, fix candidate, confidence,
-        evidence artifacts, pipeline snapshot, and experiments.
+        包含 RDX report schema 的全部字段：
+        task_id、bugType、capture info、bisect boundaries、bounding box、
+        verifier metrics、hypotheses、fix candidate、confidence、
+        evidence artifacts、pipeline snapshot 以及 experiments。
         """
-        # Determine primary bug type.
+        # 确定 primary bug type。
         bug_types = []
         for hyp in task_state.hypotheses:
             bug_types.extend(bt.value for bt in hyp.bug_types)
         if not bug_types:
-            # Infer from input hints.
+            # 从输入提示中推断。
             bug_types = [bt.value for bt in task_state.input.bug_type_hints]
         if not bug_types:
             bug_types = ["unknown"]
         primary_bug_type = bug_types[0]
 
-        # Bisect info.
+        # Bisect 信息。
         bisect = task_state.bisect_result
         first_bad = bisect.first_bad_event_id if bisect else None
         first_good = bisect.first_good_event_id if bisect else None
         confidence = bisect.confidence if bisect else 0.0
 
-        # Bounding box from first anomaly.
+        # 从第一个 anomaly 提取 bounding box。
         bbox_data: Optional[Dict[str, int]] = None
         if task_state.anomalies:
             bbox_obj = task_state.anomalies[0].bbox
@@ -711,12 +704,12 @@ class ReportBuilder:
         task_state: TaskState,
         report_data: Dict[str, Any],
     ) -> str:
-        """Generate a human-readable Markdown summary of the debug run."""
+        """生成可读的 Markdown 调试摘要。"""
         lines: List[str] = []
         confidence_pct = round(report_data.get("confidence", 0) * 100, 1)
         bug_type = report_data.get("bugType", "unknown")
 
-        # -- Title ---------------------------------------------------------
+        # -- Title（标题）------------------------------------------------
         lines.append(
             f"# RDX Debug Report: {bug_type.upper()} "
             f"({confidence_pct}% confidence)"
@@ -729,7 +722,7 @@ class ReportBuilder:
         )
         lines.append("")
 
-        # -- Summary -------------------------------------------------------
+        # -- Summary（摘要）-----------------------------------------------
         lines.append("## Summary")
         lines.append("")
         lines.append(f"- **Bug type:** {bug_type}")
@@ -865,16 +858,15 @@ class ReportBuilder:
         report_data: Dict[str, Any],
         asset_mapping: Dict[str, str],
     ) -> str:
-        """Render the interactive HTML report from the embedded template.
+        """使用内嵌模板渲染交互式 HTML report。
 
-        Uses Jinja2 if available; falls back to basic string substitution
-        for critical fields if Jinja2 is not installed.
+        优先使用 Jinja2；若未安装 Jinja2，则对关键字段进行基础字符串替换。
         """
         confidence = report_data.get("confidence", 0)
         confidence_pct = round(confidence * 100, 1)
         bug_type = report_data.get("bugType", "unknown")
 
-        # Confidence badge colour.
+        # Confidence badge 颜色。
         if confidence >= 0.8:
             confidence_color = "var(--accent-green)"
         elif confidence >= 0.5:
@@ -882,7 +874,7 @@ class ReportBuilder:
         else:
             confidence_color = "var(--accent-red)"
 
-        # Build event path for sidebar.
+        # 构建侧边栏的 event path。
         event_path = self._build_event_path(task_state)
         first_bad = report_data.get("firstBadEventId")
         sidebar_nodes = []
@@ -894,14 +886,14 @@ class ReportBuilder:
                 "is_bad": ep.get("event_id") == first_bad,
             })
 
-        # Resolve asset filenames for the viewer.
+        # 解析 viewer 使用的 asset 文件名。
         assets = {
             "final_image": asset_mapping.get("final_image", ""),
             "mask_image": asset_mapping.get("mask_image", ""),
             "diff_image": asset_mapping.get("diff_image", ""),
         }
 
-        # Build experiment cards.
+        # 构建 experiment cards。
         exp_cards = []
         for exp in task_state.experiments:
             verdict = "N/A"
@@ -914,7 +906,7 @@ class ReportBuilder:
                 verdict_class = exp.evidence.verdict.value.lower().replace(" ", "")
                 notes = exp.evidence.notes or ""
 
-                # Build metric delta strings.
+                # 构建 metric delta 字符串。
                 before = exp.evidence.before_metrics or {}
                 after = exp.evidence.after_metrics or {}
                 all_keys = sorted(
@@ -1011,11 +1003,9 @@ class ReportBuilder:
         report_data: Dict[str, Any],
         asset_mapping: Dict[str, str],
     ) -> str:
-        """Produce a minimal HTML report without Jinja2.
+        """在不使用 Jinja2 的情况下生成最小 HTML report。
 
-        This is only used when Jinja2 is not installed.  The output is
-        functional but lacks the full interactive features of the
-        templated version.
+        仅在未安装 Jinja2 时使用。输出可用，但缺少模板版本的完整交互特性。
         """
         confidence_pct = round(
             report_data.get("confidence", 0) * 100, 1,
@@ -1085,14 +1075,14 @@ h1 {{ color: #7aa2f7; }} h2 {{ color: #7dcfff; margin-top: 24px; }}
         artifact_store: Any,
         assets_dir: Path,
     ) -> Dict[str, str]:
-        """Copy referenced artifacts to the ``assets/`` directory.
+        """将引用的 artifacts 拷贝到 ``assets/`` 目录。
 
-        Returns a mapping of logical names to filenames within assets_dir
-        (e.g. ``{"final_image": "render_evt42.png", ...}``).
+        返回 logical name 到 assets_dir 内文件名的映射
+        （例如 ``{"final_image": "render_evt42.png", ...}``）。
         """
         mapping: Dict[str, str] = {}
 
-        # Collect all artifact refs from experiments.
+        # 收集 experiments 中的所有 artifact refs。
         artifact_refs: List[tuple] = []  # (logical_name, ArtifactRef)
 
         for i, exp in enumerate(task_state.experiments):
@@ -1107,22 +1097,22 @@ h1 {{ color: #7aa2f7; }} h2 {{ color: #7dcfff; margin-top: 24px; }}
                     (f"exp{i}_after", exp.evidence.after_artifact),
                 )
 
-        # Collect anomaly mask artifacts.
+        # 收集 anomaly mask artifacts。
         for i, anom in enumerate(task_state.anomalies):
             if anom.mask_artifact is not None:
                 artifact_refs.append(
                     (f"anomaly{i}_mask", anom.mask_artifact),
                 )
 
-        # Copy each artifact.
+        # 逐个拷贝 artifact。
         for logical_name, ref in artifact_refs:
             try:
-                # Determine file extension from MIME type.
+                # 依据 MIME type 确定文件扩展名。
                 ext = _mime_to_ext(ref.mime)
                 dest_filename = f"{logical_name}{ext}"
                 dest_path = assets_dir / dest_filename
 
-                # Try to get the source path from the artifact store.
+                # 尝试从 artifact store 获取源路径。
                 sha = ref.sha256
                 if hasattr(artifact_store, "get_path"):
                     src_path = artifact_store.get_path(sha)
@@ -1131,7 +1121,7 @@ h1 {{ color: #7aa2f7; }} h2 {{ color: #7dcfff; margin-top: 24px; }}
                         mapping[logical_name] = dest_filename
                         continue
 
-                # Fallback: retrieve bytes and write directly.
+                # 回退：直接读取字节并写入。
                 if hasattr(artifact_store, "retrieve"):
                     data = await artifact_store.retrieve(sha)
                     dest_path.write_bytes(data)
@@ -1171,16 +1161,15 @@ h1 {{ color: #7aa2f7; }} h2 {{ color: #7dcfff; margin-top: 24px; }}
 
     @staticmethod
     def _build_event_path(task_state: TaskState) -> List[Dict[str, Any]]:
-        """Build a flat list of event-path entries for the sidebar.
+        """构建用于侧边栏的扁平 event-path 列表。
 
-        Extracts key events from the bisect result evidence chain and
-        the task's anomalies / experiments to create a navigable
-        timeline of significant events.
+        从 bisect 结果的 evidence chain 以及任务中的 anomalies / experiments
+        提取关键事件，形成可导航的重要事件时间线。
         """
         events: List[Dict[str, Any]] = []
         seen: set = set()
 
-        # Bisect boundary events.
+        # Bisect 边界事件。
         if task_state.bisect_result is not None:
             br = task_state.bisect_result
             if br.first_good_event_id not in seen:
@@ -1198,7 +1187,7 @@ h1 {{ color: #7aa2f7; }} h2 {{ color: #7dcfff; margin-top: 24px; }}
                 })
                 seen.add(br.first_bad_event_id)
 
-        # Pipeline event.
+        # Pipeline 事件。
         if task_state.pipeline is not None:
             eid = task_state.pipeline.event_id
             if eid not in seen:
@@ -1238,7 +1227,7 @@ h1 {{ color: #7aa2f7; }} h2 {{ color: #7dcfff; margin-top: 24px; }}
 
 
 def _mime_to_ext(mime: str) -> str:
-    """Map a MIME type to a file extension."""
+    """将 MIME type 映射为文件扩展名。"""
     table: Dict[str, str] = {
         "image/png": ".png",
         "image/jpeg": ".jpg",
@@ -1252,7 +1241,7 @@ def _mime_to_ext(mime: str) -> str:
 
 
 def _truncate(text: str, max_len: int) -> str:
-    """Truncate *text* to *max_len* characters, adding ellipsis if needed."""
+    """将 *text* 截断为 *max_len* 字符，必要时添加省略号。"""
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."

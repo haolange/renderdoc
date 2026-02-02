@@ -1,14 +1,13 @@
 """
-Skill workflows for RDX-MCP automated GPU debugging.
+RDX-MCP 自动化 GPU debugging 的技能工作流。
 
-Defines eight composable skills (S0--S7) that form the building blocks of an
-automated debug pipeline.  Each skill is an ``async`` function that receives a
-:class:`SkillContext` (holding service references and the current
-:class:`~rdx.models.TaskState`) and returns the updated ``TaskState``.
+定义了 8 个可组合技能（S0--S7），作为自动化 debug pipeline 的构建块。
+每个技能是一个 ``async`` 函数，接收 :class:`SkillContext`
+（包含服务引用与当前 :class:`~rdx.models.TaskState`）并返回更新后的
+``TaskState``。
 
-Skills are **not** MCP tools; they are higher-level workflow compositions that
-an orchestrating agent calls in sequence or selectively to perform a full
-end-to-end GPU debug session.
+Skills **不是** MCP tools；它们是更高层的 workflow 组合，
+由编排 agent 按顺序或选择性调用，以完成端到端 GPU debug session。
 
 Skill index
 -----------
@@ -71,11 +70,11 @@ logger = logging.getLogger("rdx.skills.workflows")
 
 
 # ---------------------------------------------------------------------------
-# Timestamp helper
+# Timestamp helper（时间戳辅助）
 # ---------------------------------------------------------------------------
 
 def _ts() -> float:
-    """Current wall-clock time as a POSIX timestamp."""
+    """当前墙钟时间（POSIX timestamp）。"""
     return time.time()
 
 
@@ -114,15 +113,14 @@ _DEFAULT_MAX_HYPOTHESES = 5
 
 @dataclass
 class SkillContext:
-    """Holds references to all services and the current task state.
+    """保存所有服务引用与当前 task state。
 
-    Passed to each skill function.  The ``task`` field is mutated in-place
-    as the pipeline progresses.  Transient working data that does not fit
-    into the strict ``TaskState`` Pydantic model is kept in auxiliary
-    fields on the context itself.
+    该对象会传递给每个 skill 函数。随着 pipeline 推进，``task`` 字段会
+    原地更新。无法放入严格 ``TaskState`` Pydantic model 的临时数据
+    会保存在 context 的辅助字段中。
     """
 
-    # Core services
+    # Core services（核心服务）
     session_manager: Any
     event_graph_service: Any
     render_service: Any
@@ -133,16 +131,16 @@ class SkillContext:
     debug_service: Any
     perf_service: Any
 
-    # Reporting and knowledge services
+    # Reporting and knowledge services（报告与知识服务）
     report_builder: Any
     fingerprint_store: Any
     kb_connector: Any
     artifact_store: Any
 
-    # Current task state (mutated by skills)
+    # Current task state（由 skills 修改）
     task: TaskState
 
-    # Transient working data (not persisted in TaskState)
+    # Transient working data（不持久化到 TaskState）
     event_tree: List[EventNode] = field(default_factory=list)
     capture_info: Optional[CaptureInfo] = None
     shader_exports: Dict[str, ShaderExportBundle] = field(default_factory=dict)
@@ -1534,25 +1532,25 @@ async def build_report(ctx: SkillContext) -> TaskState:
 
 
 # =========================================================================
-# Orchestrator
+# Orchestrator（编排器）
 # =========================================================================
 
 async def run_full_debug_pipeline(
     task_input: TaskInput,
     services: dict,
 ) -> TaskState:
-    """Run the complete S0--S7 debug pipeline end-to-end.
+    """端到端运行完整的 S0--S7 debug pipeline。
 
-    Creates a :class:`SkillContext` from the provided *services* dict,
-    then executes each skill in sequence.  If a skill raises an exception
-    it is logged and the pipeline continues with degraded results.
+    使用提供的 *services* 字典创建 :class:`SkillContext`，
+    并按顺序执行每个 skill。若某个 skill 抛出异常，将记录日志并
+    以降级结果继续流程。
 
     Parameters
     ----------
     task_input:
-        User-provided task input (capture path, description, hints).
+        用户提供的任务输入（capture 路径、描述、提示）。
     services:
-        Dictionary mapping service names to instances.  Expected keys::
+        服务名到实例的映射字典。预期键包括::
 
             session_manager, event_graph_service, render_service,
             pipeline_service, verifier_engine, patch_engine,
@@ -1563,8 +1561,8 @@ async def run_full_debug_pipeline(
     Returns
     -------
     TaskState
-        The final task state after all skills have executed (or partially
-        executed on failure).
+        所有 skills 执行完成后的最终 task state
+        （若失败则为部分执行结果）。
     """
     task = TaskState(input=task_input)
 

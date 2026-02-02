@@ -1,21 +1,19 @@
 """
-Knowledge base connector for RAG (Retrieval-Augmented Generation) integration.
+RAG（Retrieval-Augmented Generation）集成的知识库连接器。
 
-Provides a simple interface to search and retrieve knowledge from:
+提供统一接口，用于从以下来源搜索与检索知识：
 
-- **Local documentation files** -- Markdown, plain-text, and header files are
-  recursively indexed and searchable via BM25 scoring.
-- **Code repositories** -- C++, HLSL (``.usf`` / ``.ush``), and Python sources
-  are indexed alongside documentation so that implementation details surface
-  in search results.
-- **Unreal Engine module mapping** -- A specialised heuristic mapper
-  (:func:`map_shader_to_ue_module`) translates shader/binding patterns into
-  likely UE rendering modules, aiding root-cause analysis.
+- **Local documentation files** —— Markdown、纯文本与头文件将被递归索引，
+  并通过 BM25 评分检索。
+- **Code repositories** —— C++、HLSL（``.usf`` / ``.ush``）与 Python 源码
+  与文档一起索引，以便搜索结果包含实现细节。
+- **Unreal Engine module mapping** —— 专用启发式映射器
+  (:func:`map_shader_to_ue_module`) 将 shader/binding 模式映射到可能的
+  UE 渲染模块，辅助根因分析。
 
-The connector builds a lightweight inverted index over configured directories,
-persisted in SQLite.  Queries are scored using the Okapi BM25 relevance
-function.  An optional ``project_id`` tag lets multiple projects share a
-single index while keeping results filterable.
+连接器在配置的目录上构建轻量倒排索引，并持久化到 SQLite。
+查询采用 Okapi BM25 相关性评分。可选的 ``project_id`` 标签允许多个
+project 共享索引，同时保持结果可过滤。
 """
 
 from __future__ import annotations
@@ -38,25 +36,25 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Data classes
+# Data classes（数据类）
 # ---------------------------------------------------------------------------
 
 @dataclass
 class KBSearchResult:
-    """A single search result from the knowledge base.
+    """知识库中的单条搜索结果。
 
     Attributes
     ----------
     doc_id:
-        Internal document identifier in the index.
+        索引中的内部文档标识。
     path:
-        Filesystem path to the source file.
+        源文件的文件系统路径。
     score:
-        BM25 relevance score (higher is better).
+        BM25 相关性得分（越高越好）。
     snippet:
-        Short context string around the first match position.
+        首次匹配位置周围的简短上下文。
     line_number:
-        1-based line number of the first match.
+        首次匹配的 1-based 行号。
     """
 
     doc_id: str
@@ -68,20 +66,20 @@ class KBSearchResult:
 
 @dataclass
 class UEModuleMapping:
-    """Mapping from a shader/binding pattern to an Unreal Engine module.
+    """从 shader/binding 模式到 Unreal Engine 模块的映射。
 
     Attributes
     ----------
     module_name:
-        Canonical UE module or pass name (e.g. ``"BasePassPixelShader"``).
+        规范化的 UE module 或 pass 名称（如 ``"BasePassPixelShader"``）。
     confidence:
-        Heuristic confidence in ``[0.0, 1.0]``.
+        启发式置信度 ``[0.0, 1.0]``。
     evidence:
-        Human-readable reasons supporting this mapping.
+        支持该映射的人类可读理由。
     usf_files:
-        Potential ``.usf`` / ``.ush`` files associated with the module.
+        可能关联的 ``.usf`` / ``.ush`` 文件。
     material_nodes:
-        Potential material-graph node names relevant to this module.
+        可能关联的 material-graph node 名称。
     """
 
     module_name: str
@@ -92,35 +90,34 @@ class UEModuleMapping:
 
 
 # ---------------------------------------------------------------------------
-# Constants
+# Constants（常量）
 # ---------------------------------------------------------------------------
 
-# File extensions indexed by the KB connector.
+# KB connector 索引的文件扩展名。
 _INDEXABLE_EXTENSIONS: Set[str] = {
     ".md", ".txt", ".h", ".cpp", ".usf", ".ush", ".py",
 }
 
-# BM25 tuning parameters (Okapi BM25 defaults).
+# BM25 调参参数（Okapi BM25 默认值）。
 _BM25_K1 = 1.5
 _BM25_B = 0.75
 
-# Snippet context: number of characters either side of the first match.
+# Snippet 上下文：首个匹配位置左右的字符数。
 _SNIPPET_CONTEXT = 120
 
-# Tokeniser pattern: word-like tokens of length >= 2.
+# Tokeniser 模式：长度 >= 2 的类单词 token。
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{1,}")
 
 
 def _new_id(prefix: str) -> str:
-    """Generate a short unique identifier with the given *prefix*."""
+    """生成带 *prefix* 的短唯一标识符。"""
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
 def _tokenize(text: str) -> List[str]:
-    """Extract lowercase word tokens from *text*.
+    """从 *text* 中提取小写单词 tokens。
 
-    Tokens are sequences of ``[A-Za-z0-9_]`` starting with a letter or
-    underscore, with a minimum length of 2.
+    tokens 是以字母或下划线开头的 ``[A-Za-z0-9_]`` 序列，最小长度为 2。
     """
     return [m.group().lower() for m in _TOKEN_RE.finditer(text)]
 
@@ -168,20 +165,19 @@ _CREATE_POSTING_INDEX = (
 # ---------------------------------------------------------------------------
 
 class KBConnector:
-    """Knowledge base connector with BM25 search and UE module mapping.
+    """具备 BM25 搜索与 UE 模块映射的知识库连接器。
 
-    Builds a lightweight inverted index over local documentation and source
-    files, persisted in SQLite.  Queries are scored using the Okapi BM25
-    relevance function.
+    在本地文档与源码上构建轻量倒排索引，并持久化到 SQLite。
+    查询使用 Okapi BM25 相关性评分。
 
     Parameters
     ----------
     index_dirs:
-        Directories to index on :meth:`initialize`.  May be ``None``
-        if directories will be added later via :meth:`index_directory`.
+        在 :meth:`initialize` 时索引的目录。若稍后通过
+        :meth:`index_directory` 添加目录，可为 ``None``。
     db_path:
-        Path to the SQLite database used for the inverted index.  When
-        ``None`` an in-memory database is used (useful for tests).
+        倒排索引使用的 SQLite 数据库路径。为 ``None`` 时使用内存库
+        （便于测试）。
     """
 
     def __init__(
@@ -196,10 +192,9 @@ class KBConnector:
     # -- lifecycle ----------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Create tables and index all configured directories.
+        """创建表并索引所有配置目录。
 
-        This is safe to call multiple times; existing documents whose
-        modification time has not changed are skipped.
+        可多次调用；修改时间未变化的文档会被跳过。
         """
         loop = get_running_loop()
         self._conn = await loop.run_in_executor(None, self._open_db)
@@ -214,7 +209,7 @@ class KBConnector:
         )
 
     def _open_db(self) -> sqlite3.Connection:
-        """Open the SQLite connection and create tables (sync)."""
+        """打开 SQLite 连接并创建表（同步）。"""
         if self._db_path is not None:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
@@ -245,18 +240,16 @@ class KBConnector:
         dir_path: Path,
         project_id: str = "",
     ) -> None:
-        """Walk *dir_path* recursively and index all supported files.
+        """递归遍历 *dir_path* 并索引所有支持的文件。
 
-        Files whose modification time matches the stored value are
-        skipped.  New or changed files are fully re-indexed.
+        修改时间与已存值一致的文件会被跳过；新增或变更文件会被完全重建索引。
 
         Parameters
         ----------
         dir_path:
-            Root directory to walk.
+            要遍历的根目录。
         project_id:
-            Project identifier attached to every document from this
-            directory.
+            该目录下所有文档的 project 标识。
         """
         dir_path = Path(dir_path)
         if not dir_path.is_dir():
@@ -274,7 +267,7 @@ class KBConnector:
         dir_path: Path,
         project_id: str,
     ) -> None:
-        """Synchronous indexing implementation (run in executor)."""
+        """同步索引实现（在 executor 中运行）。"""
         conn = self._ensure_conn()
         indexed_count = 0
 
@@ -289,7 +282,7 @@ class KBConnector:
                 except OSError:
                     continue
 
-                # Check whether this file is already indexed and unchanged.
+                # 检查该文件是否已索引且未变化。
                 existing = conn.execute(
                     "SELECT doc_id, mtime FROM documents WHERE path = ?",
                     (str(fpath),),
@@ -412,25 +405,25 @@ class KBConnector:
         filters: Optional[Dict[str, str]] = None,
         limit: int = 10,
     ) -> List[KBSearchResult]:
-        """Search the indexed corpus using BM25 scoring.
+        """使用 BM25 评分搜索已索引语料。
 
         Parameters
         ----------
         query:
-            Free-text search query.
+            自然语言查询。
         filters:
-            Optional key/value filters.  Recognised keys:
+            可选键值过滤器。支持的键：
 
             - ``file_type`` -- extension without dot (e.g. ``"cpp"``).
             - ``path_prefix`` -- only documents under this path prefix.
             - ``project_id`` -- exact match on the project tag.
         limit:
-            Maximum number of results to return.
+            返回结果的最大数量。
 
         Returns
         -------
         list[KBSearchResult]
-            Results sorted by BM25 score descending.
+            按 BM25 分数降序排序的结果。
         """
         tokens = _tokenize(query)
         if not tokens:
@@ -453,10 +446,10 @@ class KBConnector:
         filters: Dict[str, str],
         limit: int,
     ) -> List[KBSearchResult]:
-        """BM25 search implementation (sync, run in executor)."""
+        """BM25 搜索实现（同步，executor 中运行）。"""
         conn = self._ensure_conn()
 
-        # Corpus statistics.
+        # 语料统计。
         total_docs_row = conn.execute(
             "SELECT value FROM corpus_stats WHERE key = 'total_docs'"
         ).fetchone()
@@ -878,34 +871,31 @@ async def map_shader_to_ue_module(
     bindings: List[Any],
     artifact_store: Any = None,
 ) -> List[UEModuleMapping]:
-    """Map shader and binding patterns to Unreal Engine modules.
+    """将 shader 与 binding 模式映射到 Unreal Engine 模块。
 
-    Uses a set of heuristics based on resource naming conventions,
-    shader source file paths, and material parameter names to produce
-    a ranked list of potential UE module mappings.
+    使用基于资源命名约定、shader 源文件路径与 material 参数名的
+    启发式规则，生成潜在 UE 模块映射的排序列表。
 
     Parameters
     ----------
     shader_info:
-        Dictionary describing the shader.  Expected keys include:
+        描述 shader 的字典，常见键包括：
 
-        - ``"source_path"`` -- virtual path to the shader source file.
-        - ``"resource_names"`` -- list of bound resource names.
-        - ``"stage"`` -- shader stage string (e.g. ``"ps"``, ``"cs"``).
-        - ``"entry_point"`` -- shader entry-point name.
+        - ``"source_path"`` —— shader 源文件的虚拟路径。
+        - ``"resource_names"`` —— 绑定资源名称列表。
+        - ``"stage"`` —— shader stage 字符串（如 ``"ps"``, ``"cs"``）。
+        - ``"entry_point"`` —— shader entry-point 名称。
     bindings:
-        List of resource binding entries.  Each element should expose
-        ``resource_name`` and ``type`` as dictionary keys or object
-        attributes.
+        资源绑定条目列表。每个元素应以字典键或对象属性形式
+        暴露 ``resource_name`` 与 ``type``。
     artifact_store:
-        Optional artifact store for fetching shader source text if
-        needed for deeper analysis.  Currently unused but reserved
-        for future expansion.
+        可选的 artifact store，用于获取 shader 源文本以进行更深入分析。
+        当前未使用，预留扩展。
 
     Returns
     -------
     list[UEModuleMapping]
-        Possible module mappings sorted by confidence descending.
+        按置信度降序排序的可能模块映射。
     """
     loop = get_running_loop()
     return await loop.run_in_executor(
@@ -918,7 +908,7 @@ def _map_shader_to_ue_module_sync(
     shader_info: Dict[str, Any],
     bindings: List[Any],
 ) -> List[UEModuleMapping]:
-    """Synchronous implementation of UE module mapping heuristics."""
+    """UE 模块映射启发式的同步实现。"""
     # candidates[module_name] -> accumulated evidence dict
     candidates: Dict[str, Dict[str, Any]] = {}
 
@@ -929,11 +919,10 @@ def _map_shader_to_ue_module_sync(
         usf: Optional[List[str]] = None,
         nodes: Optional[List[str]] = None,
     ) -> None:
-        """Accumulate evidence for a candidate module.
+        """为候选模块累计证据。
 
-        Confidences are combined using the independent-evidence formula:
-        ``1 - (1 - a) * (1 - b)`` so that multiple weak signals
-        converge towards certainty without exceeding 1.0.
+        置信度采用独立证据组合公式：
+        ``1 - (1 - a) * (1 - b)``，使多个弱信号逐步收敛而不超过 1.0。
         """
         if module not in candidates:
             candidates[module] = {

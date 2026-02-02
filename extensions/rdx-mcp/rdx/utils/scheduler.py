@@ -1,16 +1,16 @@
 """
-GPU worker scheduler for RDX-MCP.
+RDX-MCP 的 GPU worker 调度器。
 
-Manages replay worker slots as scarce resources.  Each worker slot represents
-exclusive access to a GPU replay context (either local or remote).  The
-scheduler uses :class:`asyncio.Semaphore` per backend type so that callers
-block until a slot becomes available, respecting a simple priority scheme:
+将 replay worker slots 作为稀缺资源管理。每个 slot 表示对 GPU replay
+context（本地或远程）的独占访问。调度器对每种 backend 使用
+:class:`asyncio.Semaphore`，调用方会阻塞直到 slot 可用，并遵循简单
+优先级方案：
 
-    0 = interactive  (highest -- user-initiated single actions)
-    1 = batch        (medium  -- automated experiment loops)
-    2 = regression   (lowest  -- background regression sweeps)
+    0 = interactive  （最高 —— 用户触发的单次操作）
+    1 = batch        （中等 —— 自动化实验循环）
+    2 = regression   （最低 —— 后台回归巡检）
 
-Lower numeric values are served first.
+数值越小优先级越高。
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Priority constants
+# Priority constants（优先级常量）
 # ---------------------------------------------------------------------------
 
 PRIORITY_INTERACTIVE: int = 0
@@ -38,22 +38,22 @@ PRIORITY_REGRESSION: int = 2
 
 @dataclass
 class WorkerSlot:
-    """Represents a single GPU replay worker.
+    """表示单个 GPU replay worker。
 
     Attributes
     ----------
     slot_id:
-        Unique identifier for this slot (auto-generated if not supplied).
+        该 slot 的唯一标识（未提供时自动生成）。
     gpu_index:
-        Index of the GPU device this slot is bound to.
+        该 slot 绑定的 GPU 设备索引。
     backend_type:
-        ``"local"`` or ``"remote"``.
+        ``"local"`` 或 ``"remote"``。
     busy:
-        Whether the slot is currently acquired.
+        是否已被占用。
     current_task_id:
-        Identifier of the task currently holding the slot, or ``None``.
+        当前占用该 slot 的任务标识，或 ``None``。
     device_info:
-        Arbitrary device metadata (driver version, device name, etc.).
+        任意设备元数据（driver 版本、设备名称等）。
     """
 
     slot_id: str = field(default_factory=lambda: f"slot_{uuid.uuid4().hex[:8]}")
@@ -65,20 +65,20 @@ class WorkerSlot:
 
 
 # ---------------------------------------------------------------------------
-# Internal priority-aware waiter queue
+# Internal priority-aware waiter queue（内部优先级等待队列）
 # ---------------------------------------------------------------------------
 
 
 class _PriorityWaiter:
-    """A single waiter in the priority queue.
+    """优先级队列中的单个等待者。
 
-    Each waiter carries a *priority* (lower is higher priority) and an
-    :class:`asyncio.Event` that is set when a slot becomes available.
+    每个等待者带有 *priority*（数值越小优先级越高），并持有一个
+    :class:`asyncio.Event`，当 slot 可用时被置位。
     """
 
     __slots__ = ("priority", "event", "_id")
 
-    # Monotonic counter used to break ties in FIFO order.
+    # 单调计数器，用于按 FIFO 顺序打破优先级相同的并列。
     _counter: int = 0
 
     def __init__(self, priority: int) -> None:
@@ -99,14 +99,14 @@ class _PriorityWaiter:
 
 
 class WorkerScheduler:
-    """Async-safe scheduler for GPU replay worker slots.
+    """GPU replay worker slots 的 async-safe 调度器。
 
     Parameters
     ----------
     max_local_workers:
-        Maximum number of concurrently acquired *local* worker slots.
+        可同时获取的 *local* worker slots 最大数量。
     max_remote_workers:
-        Maximum number of concurrently acquired *remote* worker slots.
+        可同时获取的 *remote* worker slots 最大数量。
     """
 
     def __init__(
@@ -140,19 +140,18 @@ class WorkerScheduler:
     # -- slot registration --------------------------------------------------
 
     def register_slot(self, slot: WorkerSlot) -> None:
-        """Add a worker slot to the pool.
+        """向池中添加一个 worker slot。
 
         Parameters
         ----------
         slot:
-            The :class:`WorkerSlot` to register.  Its ``backend_type`` must
-            be ``"local"`` or ``"remote"``.
+            要注册的 :class:`WorkerSlot`。其 ``backend_type`` 必须为
+            ``"local"`` 或 ``"remote"``。
 
         Raises
         ------
         ValueError
-            If the backend type is unsupported or a slot with the same
-            ``slot_id`` is already registered.
+            当 backend 类型不支持或已有相同 ``slot_id`` 时抛出。
         """
         if slot.backend_type not in self._semaphores:
             raise ValueError(
@@ -176,29 +175,28 @@ class WorkerScheduler:
         backend_type: str = "local",
         priority: int = PRIORITY_INTERACTIVE,
     ) -> WorkerSlot:
-        """Acquire a free worker slot, blocking until one is available.
+        """获取空闲的 worker slot，若无则阻塞等待。
 
-        Higher-priority waiters (lower numeric value) are served before
-        lower-priority ones.
+        高优先级等待者（更小数值）优先于低优先级。
 
         Parameters
         ----------
         backend_type:
-            ``"local"`` or ``"remote"``.
+            ``"local"`` 或 ``"remote"``。
         priority:
-            Priority level (0 = interactive, 1 = batch, 2 = regression).
+            优先级（0 = interactive，1 = batch，2 = regression）。
 
         Returns
         -------
         WorkerSlot
-            The acquired slot with ``busy=True``.
+            已获取的 slot，``busy=True``。
 
         Raises
         ------
         ValueError
-            If *backend_type* is not recognised.
+            当 *backend_type* 不被识别时抛出。
         RuntimeError
-            If no slots of the requested backend type have been registered.
+            当未注册该 backend 类型的 slot 时抛出。
         """
         if backend_type not in self._semaphores:
             raise ValueError(
@@ -208,15 +206,15 @@ class WorkerScheduler:
 
         sem = self._semaphores[backend_type]
 
-        # Fast path: try to acquire without blocking.
+        # 快速路径：尝试无阻塞获取。
         acquired = sem._value > 0  # noqa: SLF001 -- peek at semaphore value
         if not acquired:
-            # Slow path: register a priority waiter and wait.
+            # 慢路径：注册优先级等待者并等待。
             waiter = _PriorityWaiter(priority)
             async with self._lock:
                 self._waiters[backend_type].append(waiter)
                 self._waiters[backend_type].sort()
-            # Wait until we are the *first* waiter and a slot is free.
+            # 等待直到成为 *首位* 等待者且有 slot 空闲。
             while True:
                 await waiter.event.wait()
                 waiter.event.clear()
@@ -261,19 +259,19 @@ class WorkerScheduler:
             return virtual
 
     async def release(self, slot_id: str) -> None:
-        """Release a previously acquired worker slot back to the pool.
+        """将已获取的 worker slot 释放回池中。
 
         Parameters
         ----------
         slot_id:
-            The ``slot_id`` of the slot to release.
+            要释放的 slot 的 ``slot_id``。
 
         Raises
         ------
         KeyError
-            If the slot id is not known.
+            当 slot id 未知时抛出。
         RuntimeError
-            If the slot is not currently busy.
+            当 slot 当前不处于 busy 时抛出。
         """
         async with self._lock:
             slot = self._slots.get(slot_id)
@@ -295,7 +293,7 @@ class WorkerScheduler:
                 "Released slot %s (was task %s)", slot_id, prev_task
             )
 
-            # Wake the highest-priority waiter for this backend type.
+            # 唤醒该 backend 类型的最高优先级等待者。
             queue = self._waiters[backend]
             if queue:
                 queue[0].event.set()
@@ -303,13 +301,13 @@ class WorkerScheduler:
     # -- status -------------------------------------------------------------
 
     def status(self) -> Dict[str, Any]:
-        """Return current pool status per backend type.
+        """返回各 backend 类型的当前池状态。
 
         Returns
         -------
         dict
-            Mapping of backend type to ``{"total", "busy", "free"}`` counts,
-            plus an ``"all"`` aggregate.
+            backend 类型到 ``{"total", "busy", "free"}`` 计数的映射，
+            并包含 ``"all"`` 汇总。
 
         Example::
 

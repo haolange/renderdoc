@@ -1,10 +1,9 @@
 """
-Event tree construction and navigation service.
+Event tree 构建与导航 service。
 
-Converts the flat/recursive ``ActionDescription`` tree from a RenderDoc replay
-controller into a serialisable :class:`~rdx.models.EventNode` tree, and
-provides helpers for querying, flattening, and inferring render-pass
-boundaries when explicit debug markers are absent.
+将 RenderDoc replay controller 的扁平/递归 ``ActionDescription`` 树
+转换为可序列化的 :class:`~rdx.models.EventNode` 树，并提供查询、展开、
+以及在缺少显式 debug markers 时推断 render-pass 边界的辅助方法。
 
 Usage::
 
@@ -27,26 +26,26 @@ from rdx.models import EventFlags, EventNode
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy import
+# Lazy import（延迟导入）
 # ---------------------------------------------------------------------------
 
 
 def _get_rd():
-    """Return the ``renderdoc`` module, importing it on first call."""
+    """返回 ``renderdoc`` module，并在首次调用时导入。"""
     import renderdoc as rd
     return rd
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers（内部辅助）
 # ---------------------------------------------------------------------------
 
 
 def _has_flag(flags: Any, flag: Any) -> bool:
-    """Safely test whether a bitfield *flags* contains *flag*.
+    """安全判断 bitfield *flags* 是否包含 *flag*。
 
-    Works with both Python :class:`enum.IntFlag` and the SWIG-generated
-    ``ActionFlags`` type exposed by the renderdoc module.
+    同时支持 Python :class:`enum.IntFlag` 与 renderdoc module
+    暴露的 SWIG 生成 ``ActionFlags`` 类型。
     """
     try:
         return bool(flags & flag)
@@ -55,7 +54,7 @@ def _has_flag(flags: Any, flag: Any) -> bool:
 
 
 def _map_action_flags(flags: Any) -> EventFlags:
-    """Convert a RenderDoc ``ActionFlags`` bitfield to :class:`EventFlags`."""
+    """将 RenderDoc ``ActionFlags`` bitfield 转换为 :class:`EventFlags`。"""
     rd = _get_rd()
     af = rd.ActionFlags
     return EventFlags(
@@ -74,7 +73,7 @@ def _map_action_flags(flags: Any) -> EventFlags:
 
 
 def _resource_id_str(rid: Any) -> str:
-    """Convert a RenderDoc ``ResourceId`` to a deterministic string key."""
+    """将 RenderDoc ``ResourceId`` 转成确定性的字符串 key。"""
     try:
         return str(int(rid))
     except (TypeError, ValueError):
@@ -82,10 +81,10 @@ def _resource_id_str(rid: Any) -> str:
 
 
 def _query_output_targets(controller: Any, event_id: int) -> Tuple[str, ...]:
-    """Navigate to *event_id* and read the current output targets.
+    """跳转到 *event_id* 并读取当前 output targets。
 
-    Falls back gracefully when the pipeline-state accessors are not
-    available (e.g. on older RenderDoc builds or for certain API backends).
+    当 pipeline-state 访问器不可用时（例如旧版本 RenderDoc
+    或特定 API backend），会优雅降级。
     """
     try:
         rd = _get_rd()
@@ -123,38 +122,37 @@ def _query_output_targets(controller: Any, event_id: int) -> Tuple[str, ...]:
 
 
 # ---------------------------------------------------------------------------
-# Public service
+# Public service（对外服务）
 # ---------------------------------------------------------------------------
 
 class EventGraphService:
-    """Builds and queries the event tree for a RenderDoc capture.
+    """构建并查询 RenderDoc capture 的 event tree。
 
-    All methods are synchronous; the caller is expected to offload them to
-    a thread pool if needed (the ``SessionManager`` already does this for
-    its own internal calls).
+    所有方法均为同步；如有需要，调用方应将其提交到 thread pool
+    （``SessionManager`` 已对内部调用做了处理）。
     """
 
-    # -- Tree construction --------------------------------------------------
+    # -- Tree construction（树构建）-----------------------------------------
 
     def build_event_tree(
         self,
         session_id: str,
         session_manager: Any,
     ) -> List[EventNode]:
-        """Build an :class:`EventNode` tree from the replay controller.
+        """从 replay controller 构建 :class:`EventNode` 树。
 
         Parameters
         ----------
         session_id:
-            Active session that already has an open capture.
+            已打开 capture 的活跃 session。
         session_manager:
-            A :class:`~rdx.core.session_manager.SessionManager` instance
-            used to obtain the ``IReplayController``.
+            用于获取 ``IReplayController`` 的
+            :class:`~rdx.core.session_manager.SessionManager` 实例。
 
         Returns
         -------
         list[EventNode]
-            Top-level nodes whose ``children`` form the full tree.
+            顶层节点列表，其 ``children`` 组成完整树。
         """
         controller = session_manager.get_controller(session_id)
         root_actions = controller.GetRootActions()
@@ -168,12 +166,12 @@ class EventGraphService:
         )
         return nodes
 
-    # -- Querying -----------------------------------------------------------
+    # -- Querying（查询）----------------------------------------------------
 
     def get_draw_events(self, event_tree: List[EventNode]) -> List[EventNode]:
-        """Flatten the tree and return only draw and dispatch events.
+        """展开树并只返回 draw/dispatch events。
 
-        The returned list preserves document order (depth-first pre-order).
+        返回列表保持文档顺序（depth-first pre-order）。
         """
         result: List[EventNode] = []
         self._collect_draws(event_tree, result)
@@ -183,9 +181,9 @@ class EventGraphService:
         self,
         event_tree: List[EventNode],
     ) -> Tuple[int, int]:
-        """Return ``(min_event_id, max_event_id)`` across the whole tree.
+        """返回全树范围内的 ``(min_event_id, max_event_id)``。
 
-        Returns ``(0, 0)`` for an empty tree.
+        对空树返回 ``(0, 0)``。
         """
         ids: List[int] = []
         self._collect_ids(event_tree, ids)
@@ -198,9 +196,9 @@ class EventGraphService:
         event_tree: List[EventNode],
         event_id: int,
     ) -> Optional[EventNode]:
-        """Depth-first search for an :class:`EventNode` by *event_id*.
+        """按 *event_id* 深度优先搜索 :class:`EventNode`。
 
-        Returns ``None`` if the event is not present in the tree.
+        若 event 不存在则返回 ``None``。
         """
         for node in event_tree:
             if node.event_id == event_id:
@@ -215,18 +213,17 @@ class EventGraphService:
         event_tree: List[EventNode],
         event_id: int,
     ) -> List[int]:
-        """Return the path from the tree root to *event_id*.
+        """返回从树根到 *event_id* 的路径。
 
-        The returned list contains the ``event_id`` of every ancestor from
-        the top-level node down to (and including) the target.  Returns an
-        empty list when *event_id* is not found.
+        返回列表包含从顶层节点到目标节点（含目标）的所有 ``event_id``。
+        若找不到 *event_id* 则返回空列表。
         """
         path: List[int] = []
         if self._build_path(event_tree, event_id, path):
             return path
         return []
 
-    # -- Pass inference -----------------------------------------------------
+    # -- Pass inference（Pass 推断）----------------------------------------
 
     def infer_passes(
         self,
@@ -234,31 +231,29 @@ class EventGraphService:
         session_id: str,
         session_manager: Any,
     ) -> List[EventNode]:
-        """Infer render-pass boundaries from output-target changes.
+        """根据 output-target 的变化推断 render-pass 边界。
 
-        When a capture lacks explicit debug markers, this method groups
-        consecutive draw/dispatch calls that share the same set of render
-        targets into logical passes.  Each group is assigned a synthetic
-        label (``pass_1``, ``pass_2``, ...) written to
-        :attr:`EventNode.inferred_pass`.
+        当 capture 缺少显式 debug markers 时，本方法会把连续的
+        draw/dispatch 调用按相同 render targets 分组为逻辑 pass。
+        每个分组都会分配一个合成 label（``pass_1``, ``pass_2`` ...），
+        并写入 :attr:`EventNode.inferred_pass`。
 
-        The *event_tree* is mutated in-place and also returned for
-        convenience.
+        *event_tree* 会被原地修改，并同时返回以便使用。
 
         Parameters
         ----------
         event_tree:
-            Tree previously built by :meth:`build_event_tree`.
+            由 :meth:`build_event_tree` 构建的树。
         session_id:
-            Active session (used to query pipeline state when the
-            ``output_targets`` list on a node is empty).
+            活跃 session（当节点的 ``output_targets`` 为空时，
+            用于查询 pipeline state）。
         session_manager:
-            A :class:`~rdx.core.session_manager.SessionManager` instance.
+            :class:`~rdx.core.session_manager.SessionManager` 实例。
 
         Returns
         -------
         list[EventNode]
-            The same *event_tree* with ``inferred_pass`` fields populated.
+            填充了 ``inferred_pass`` 字段的同一份 *event_tree*。
         """
         draws = self.get_draw_events(event_tree)
         if not draws:
@@ -266,7 +261,7 @@ class EventGraphService:
 
         controller = session_manager.get_controller(session_id)
 
-        # Resolve the effective output-target set for every draw.
+        # 解析每个 draw 的有效 output-target 集合。
         resolved: List[Tuple[EventNode, Tuple[str, ...]]] = []
         for node in draws:
             targets = tuple(sorted(node.output_targets))
@@ -274,8 +269,7 @@ class EventGraphService:
                 targets = _query_output_targets(controller, node.event_id)
             resolved.append((node, targets))
 
-        # Walk the list and bump the pass counter whenever the target set
-        # changes between consecutive draws.
+        # 遍历列表，当相邻 draw 的 target 集变化时递增 pass 计数。
         pass_index = 0
         prev_targets: Optional[Tuple[str, ...]] = None
         for node, targets in resolved:
@@ -290,10 +284,10 @@ class EventGraphService:
         )
         return event_tree
 
-    # -- Private helpers: tree walking --------------------------------------
+    # -- Private helpers: tree walking（树遍历）------------------------------
 
     def _build_node(self, action: Any, depth: int) -> EventNode:
-        """Recursively convert an ``ActionDescription`` to an ``EventNode``."""
+        """递归地将 ``ActionDescription`` 转换为 ``EventNode``。"""
         flags = _map_action_flags(action.flags)
 
         raw_outputs = getattr(action, "outputs", None) or []
@@ -321,7 +315,7 @@ class EventGraphService:
         nodes: List[EventNode],
         result: List[EventNode],
     ) -> None:
-        """Depth-first collection of draw/dispatch nodes."""
+        """深度优先收集 draw/dispatch 节点。"""
         for node in nodes:
             if node.flags.is_draw or node.flags.is_dispatch:
                 result.append(node)
@@ -332,14 +326,14 @@ class EventGraphService:
         nodes: List[EventNode],
         ids: List[int],
     ) -> None:
-        """Depth-first collection of every event ID."""
+        """深度优先收集所有 event ID。"""
         for node in nodes:
             ids.append(node.event_id)
             EventGraphService._collect_ids(node.children, ids)
 
     @staticmethod
     def _count_nodes(nodes: List[EventNode]) -> int:
-        """Return the total number of nodes in the tree."""
+        """返回树中的节点总数。"""
         total = 0
         for node in nodes:
             total += 1
@@ -352,11 +346,10 @@ class EventGraphService:
         target_id: int,
         path: List[int],
     ) -> bool:
-        """Populate *path* with event IDs from root to *target_id*.
+        """用从 root 到 *target_id* 的 event IDs 填充 *path*。
 
-        Returns ``True`` when the target is found, ``False`` otherwise.
-        The caller should treat *path* as valid only when the return
-        value is ``True``.
+        找到目标返回 ``True``，否则返回 ``False``。调用方仅应在
+        返回值为 ``True`` 时将 *path* 视为有效。
         """
         for node in nodes:
             path.append(node.event_id)

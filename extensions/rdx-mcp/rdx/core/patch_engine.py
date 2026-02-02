@@ -1,24 +1,21 @@
 """
-Shader patch engine for RDX-MCP.
+RDX-MCP 的 shader patch engine。
 
-Applies source-level modifications to shaders in the RenderDoc replay
-environment, manages replacement resources, and tracks active patches
-for clean revert.  Every applied patch is recorded so the original shader
-can be restored at any time.
+在 RenderDoc replay 环境中对 shader 执行源级别修改，管理替换资源，
+并跟踪活动 patch 以便干净回滚。每个已应用的 patch 都会被记录，
+以便随时恢复原始 shader。
 
-The engine operates on disassembled / decompiled shader text obtained from
-the replay controller.  Three categories of patch operations are supported:
+该引擎操作的是从 replay controller 获取的反汇编/反编译 shader 文本。
+支持三类 patch 操作：
 
-* **force_full_precision** -- promote reduced-precision types and add
-  ``precise`` qualifiers (HLSL), upgrade precision qualifiers (GLSL),
-  or strip ``RelaxedPrecision`` decorations (SPIR-V assembly).
-* **insert_guard** -- wrap an expression with ``isnan`` / ``isinf`` guards
-  so that NaN or Inf values are replaced by a safe fallback.
-* **replace_expr** -- perform a direct textual substitution inside the
-  shader source.
+* **force_full_precision** —— 提升低精度类型并添加 ``precise`` 关键字（HLSL），
+  升级精度限定符（GLSL），或移除 ``RelaxedPrecision`` 装饰（SPIR-V assembly）。
+* **insert_guard** —— 用 ``isnan`` / ``isinf`` guards 包裹表达式，
+  使 NaN 或 Inf 替换为安全的 fallback。
+* **replace_expr** —— 在 shader 源码中直接进行文本替换。
 
-After modification the patched source is compiled back through the replay
-controller (``BuildTargetShader``) and hot-swapped via ``ReplaceResource``.
+修改后会通过 replay controller（``BuildTargetShader``）重新编译，
+并通过 ``ReplaceResource`` 进行热替换。
 """
 
 from __future__ import annotations
@@ -42,18 +39,17 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Lazy renderdoc import
+# Lazy renderdoc import（延迟导入）
 # ---------------------------------------------------------------------------
 
 _rd_module: Any = None
 
 
 def _get_rd() -> Any:
-    """Return the ``renderdoc`` module, importing it lazily.
+    """返回 ``renderdoc`` module，并在需要时延迟导入。
 
-    The module is only available inside a RenderDoc host process or when
-    the library path has been added to ``sys.path``.  Importing eagerly at
-    module load time would break tools that merely introspect this package.
+    该 module 仅在 RenderDoc host process 中可用，或当库路径已加入
+    ``sys.path``。在模块加载阶段提前导入会影响仅做包探查的工具。
     """
     global _rd_module
     if _rd_module is None:
@@ -63,16 +59,15 @@ def _get_rd() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers（内部辅助）
 # ---------------------------------------------------------------------------
 
 def _new_id(prefix: str) -> str:
-    """Generate a short unique identifier with the given *prefix*."""
+    """生成带 *prefix* 的短唯一标识符。"""
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
-# Map our string-enum ShaderStage to the integer values used by the
-# renderdoc.ShaderStage C++ enum.
+# 将字符串枚举 ShaderStage 映射到 renderdoc.ShaderStage C++ enum 的整数值。
 _STAGE_TO_RD_INDEX: Dict[ShaderStage, int] = {
     ShaderStage.VS: 0,   # Vertex
     ShaderStage.HS: 1,   # Hull / Tessellation Control
@@ -84,10 +79,10 @@ _STAGE_TO_RD_INDEX: Dict[ShaderStage, int] = {
 
 
 def _to_rd_stage(stage: ShaderStage) -> Any:
-    """Convert an ``rdx.models.ShaderStage`` value to a ``renderdoc.ShaderStage``.
+    """将 ``rdx.models.ShaderStage`` 转换为 ``renderdoc.ShaderStage``。
 
-    Raises ``ValueError`` for stages that the RenderDoc enum does not
-    cover (e.g. mesh / amplification shaders).
+    若 RenderDoc enum 不覆盖该 stage（例如 mesh / amplification shaders），
+    将抛出 ``ValueError``。
     """
     rd = _get_rd()
     idx = _STAGE_TO_RD_INDEX.get(stage)
@@ -105,10 +100,9 @@ def _to_rd_stage(stage: ShaderStage) -> Any:
 
 @dataclass
 class PatchRecord:
-    """Internal bookkeeping for a single applied shader patch.
+    """单个已应用 shader patch 的内部记录。
 
-    Stores all the information needed to revert the patch and free the
-    replacement resource that was allocated by the replay controller.
+    保存回滚 patch 与释放 replay controller 分配的替换资源所需信息。
     """
 
     patch_id: str
@@ -125,7 +119,7 @@ class PatchRecord:
 # ---------------------------------------------------------------------------
 
 class PatchEngine:
-    """Apply, track, and revert shader patches in a RenderDoc replay session.
+    """在 RenderDoc replay session 中应用、跟踪并回滚 shader patches。
 
     Usage::
 
@@ -142,7 +136,7 @@ class PatchEngine:
         self._patches: Dict[str, PatchRecord] = {}
 
     # ------------------------------------------------------------------
-    # Public async API
+    # Public async API（公开异步接口）
     # ------------------------------------------------------------------
 
     async def apply_patch(
@@ -153,27 +147,27 @@ class PatchEngine:
         session_manager: Any,
         patch_spec: PatchSpec,
     ) -> PatchResult:
-        """Apply *patch_spec* to the shader bound at *stage* for *event_id*.
+        """将 *patch_spec* 应用到 *event_id* 上 *stage* 绑定的 shader。
 
         Steps
         -----
-        1. Navigate the replay to *event_id*.
-        2. Read the pipeline state and obtain the bound shader + reflection.
-        3. Disassemble the shader in the best editable encoding.
-        4. Apply each ``PatchOp`` from *patch_spec* to the source text.
-        5. Compile the modified source via ``BuildTargetShader``.
-        6. Hot-swap the shader via ``ReplaceResource``.
-        7. Record the patch for later revert.
+        1. 将 replay 导航到 *event_id*。
+        2. 读取 pipeline state 并获取绑定的 shader + reflection。
+        3. 以最佳可编辑编码反汇编 shader。
+        4. 逐个应用 *patch_spec* 中的 ``PatchOp`` 到源码文本。
+        5. 通过 ``BuildTargetShader`` 编译修改后的源码。
+        6. 使用 ``ReplaceResource`` 热替换 shader。
+        7. 记录 patch 以便后续回滚。
 
-        Returns a :class:`PatchResult` indicating success or failure.
+        返回 :class:`PatchResult` 表示成功或失败。
         """
         try:
             controller = session_manager.get_controller(session_id)
 
-            # 1 -- navigate to the target event
+            # 1 -- 导航到目标 event
             controller.SetFrameEvent(event_id, True)
 
-            # 2 -- pipeline state and shader identification
+            # 2 -- pipeline state 与 shader 标识
             pipe = controller.GetPipelineState()
             rd_stage = _to_rd_stage(stage)
             shader_id = pipe.GetShader(rd_stage)
@@ -189,7 +183,7 @@ class PatchEngine:
                     ),
                 )
 
-            # 3 -- disassemble in the best editable encoding
+            # 3 -- 以最佳可编辑编码进行反汇编
             encoding, disasm_target = self._get_best_encoding(
                 controller, session_id,
             )
@@ -210,7 +204,7 @@ class PatchEngine:
             ).hexdigest()
             encoding_name = self._encoding_name(encoding)
 
-            # 4 -- apply every PatchOp sequentially
+            # 4 -- 顺序应用每个 PatchOp
             modified = source
             for op in patch_spec.ops:
                 modified = self._apply_op(modified, encoding_name, op)
@@ -222,7 +216,7 @@ class PatchEngine:
                     patch_spec.patch_id, stage.value, event_id,
                 )
 
-            # 5 -- compile the modified source
+            # 5 -- 编译修改后的源码
             rd = _get_rd()
             entry_point = refl.entryPoint if refl.entryPoint else "main"
             source_bytes = modified.encode("utf-8")
@@ -235,9 +229,8 @@ class PatchEngine:
             )
 
             if errors:
-                # Distinguish between a hard failure (null resource) and
-                # mere warnings (resource allocated, but compiler emitted
-                # diagnostic text).
+                # 区分硬失败（null resource）与仅有警告
+                # （资源已分配但 compiler 输出诊断信息）。
                 null_id = rd.ResourceId()
                 if new_id == null_id or new_id is None:
                     return PatchResult(
@@ -246,20 +239,20 @@ class PatchEngine:
                         success=False,
                         error_message=f"Shader build failed: {errors}",
                     )
-                # Non-fatal warnings -- log and continue.
+                # 非致命警告 —— 记录日志并继续。
                 logger.warning(
                     "Shader build for patch %s produced warnings: %s",
                     patch_spec.patch_id, errors,
                 )
 
-            # 6 -- hot-swap the resource
+            # 6 -- 热替换资源
             controller.ReplaceResource(shader_id, new_id)
 
             applied_hash = hashlib.sha256(
                 modified.encode("utf-8"),
             ).hexdigest()
 
-            # 7 -- record for future revert
+            # 7 -- 记录以便未来回滚
             record = PatchRecord(
                 patch_id=patch_spec.patch_id,
                 session_id=session_id,
@@ -300,13 +293,11 @@ class PatchEngine:
         patch_id: str,
         session_manager: Any,
     ) -> bool:
-        """Revert a previously applied patch.
+        """回滚先前应用的 patch。
 
-        Removes the resource replacement, frees the compiled replacement
-        resource, and deletes the internal record.
+        移除资源替换、释放已编译的替换资源，并删除内部记录。
 
-        Returns ``True`` on success, ``False`` if the patch was not found
-        or the revert operation failed.
+        成功返回 ``True``；若 patch 不存在或回滚失败则返回 ``False``。
         """
         record = self._patches.get(patch_id)
         if record is None:
@@ -336,11 +327,10 @@ class PatchEngine:
         session_id: str,
         session_manager: Any,
     ) -> int:
-        """Revert every active patch for *session_id*.
+        """回滚 *session_id* 的所有活动 patch。
 
-        Returns the number of patches successfully reverted.  Patches that
-        fail to revert are logged but do not prevent the remaining patches
-        from being attempted.
+        返回成功回滚的 patch 数量。回滚失败的 patch 会记录日志，
+        但不会阻止其它 patch 的回滚尝试。
         """
         target_ids = [
             pid for pid, rec in self._patches.items()
@@ -361,10 +351,9 @@ class PatchEngine:
         self,
         session_id: Optional[str] = None,
     ) -> List[PatchSpec]:
-        """Return the :class:`PatchSpec` for every active patch.
+        """返回所有活动 patch 的 :class:`PatchSpec`。
 
-        If *session_id* is given, only patches belonging to that session
-        are returned.
+        若提供 *session_id*，则仅返回该 session 的 patch。
         """
         return [
             rec.spec
@@ -373,7 +362,7 @@ class PatchEngine:
         ]
 
     # ------------------------------------------------------------------
-    # Patch-op dispatch
+    # Patch-op dispatch（PatchOp 分派）
     # ------------------------------------------------------------------
 
     def _apply_op(
@@ -382,7 +371,7 @@ class PatchEngine:
         encoding_name: str,
         op: PatchOp,
     ) -> str:
-        """Dispatch a single :class:`PatchOp` to the appropriate handler."""
+        """将单个 :class:`PatchOp` 分派到对应处理器。"""
         if op.op == "force_full_precision":
             return self._apply_precision_patch(
                 source, encoding_name, op.variables,
@@ -404,7 +393,7 @@ class PatchEngine:
         return source
 
     # ------------------------------------------------------------------
-    # Precision patch
+    # Precision patch（精度提升）
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -413,29 +402,28 @@ class PatchEngine:
         encoding: str,
         variables: List[str],
     ) -> str:
-        """Force full precision for the listed *variables* (or globally).
+        """对列出的 *variables*（或全局）强制 full precision。
 
         **HLSL**
-            * Replace reduced-precision types (``min16float``, ``half``,
-              ``min10float``, ``min16int``, ``min12int``, ``min16uint``)
-              with their full-width equivalents.
-            * Insert the ``precise`` keyword before declarations of each
-              variable in *variables*.
+            * 将低精度类型（``min16float``, ``half``, ``min10float``,
+              ``min16int``, ``min12int``, ``min16uint``）替换为全精度等价类型。
+            * 在 *variables* 中每个变量声明前插入 ``precise`` 关键字。
 
         **GLSL**
-            * Replace ``mediump`` and ``lowp`` qualifiers with ``highp``
-              for the listed *variables*, or globally if none are given.
+            * 对列出的 *variables* 将 ``mediump``/``lowp`` 替换为 ``highp``，
+              若未提供变量则全局替换。
 
         **SPIR-V assembly**
-            * Remove ``OpDecorate %<var> RelaxedPrecision`` lines for the
-              listed *variables*, or all such decorations if none are given.
+            * 移除列出的 *variables* 对应的
+              ``OpDecorate %<var> RelaxedPrecision`` 行；若未提供变量，
+              则移除所有此类装饰。
         """
         modified = source
         enc = encoding.lower()
 
         # ---- HLSL ---------------------------------------------------------
         if "hlsl" in enc:
-            # Promote reduced-precision types to full width.
+            # 将低精度类型提升为全精度。
             _hlsl_type_map = {
                 "min16float": "float",
                 "min10float": "float",
@@ -447,11 +435,11 @@ class PatchEngine:
             for old_type, new_type in _hlsl_type_map.items():
                 modified = modified.replace(old_type, new_type)
 
-            # Add ``precise`` to targeted variable declarations.
+            # 为目标变量声明添加 ``precise``。
             for var in variables:
-                # Matches: <type> <var>   (not already preceded by ``precise``)
-                # <type> is a common HLSL numeric type, possibly with vector
-                # or matrix dimension suffixes (e.g. float4, float4x4).
+                # 匹配：<type> <var>（且前面未有 ``precise``）
+                # <type> 是常见 HLSL 数值类型，可能带向量/矩阵维度后缀
+                #（如 float4, float4x4）。
                 pattern = re.compile(
                     r"(?<!\bprecise\s)"
                     r"(\b(?:float|double|int|uint|dword)"
@@ -464,15 +452,14 @@ class PatchEngine:
         elif "glsl" in enc:
             if variables:
                 for var in variables:
-                    # Replace the precision qualifier on the line where *var*
-                    # is declared.
+                    # 替换声明 *var* 的那一行上的精度限定符。
                     pattern = re.compile(
                         rf"(\b(?:mediump|lowp)\b)"
                         rf"(\s+\w+\s+{re.escape(var)}\b)",
                     )
                     modified = pattern.sub(r"highp\2", modified)
             else:
-                # Global promotion -- replace every qualifier.
+                # 全局提升 —— 替换所有精度限定符。
                 modified = re.sub(r"\bmediump\b", "highp", modified)
                 modified = re.sub(r"\blowp\b", "highp", modified)
 
@@ -487,7 +474,7 @@ class PatchEngine:
                     )
                     modified = pattern.sub("", modified)
             else:
-                # Strip *all* RelaxedPrecision decorations.
+                # 移除 *所有* RelaxedPrecision 装饰。
                 modified = re.sub(
                     r"^\s*OpDecorate\s+%\w+\s+RelaxedPrecision\s*$",
                     "",
@@ -498,7 +485,7 @@ class PatchEngine:
         return modified
 
     # ------------------------------------------------------------------
-    # Guard patch
+    # Guard patch（防护插入）
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -508,34 +495,33 @@ class PatchEngine:
         expr: str,
         guard: str,
     ) -> str:
-        """Wrap every occurrence of *expr* with a NaN / Inf guard.
+        """对 *expr* 的每次出现加上 NaN / Inf guard。
 
         The guarded form replaces *expr* with::
 
             (isnan(expr) || isinf(expr)) ? guard : expr
 
-        for HLSL and GLSL sources.  For SPIR-V assembly a comment marker
-        is emitted because instruction-level rewriting requires external
-        SPIR-V tooling.
+        适用于 HLSL 与 GLSL 源码。对于 SPIR-V assembly，会输出注释 marker，
+        因为指令级改写需要外部 SPIR-V tooling。
 
         Parameters
         ----------
         source:
-            Shader source text.
+            Shader 源码文本。
         encoding:
-            Lowercase encoding identifier (``"hlsl"``, ``"glsl"``, ...).
+            小写 encoding 标识（``"hlsl"``, ``"glsl"`` 等）。
         expr:
-            The expression to guard.
+            要加 guard 的表达式。
         guard:
-            Replacement value used when *expr* is NaN or Inf (e.g.
-            ``"0.0"`` or ``"float3(0,0,0)"``).
+            当 *expr* 为 NaN 或 Inf 时使用的替代值
+            （如 ``"0.0"`` 或 ``"float3(0,0,0)"``）。
         """
         if not expr:
             return source
 
         enc = encoding.lower()
         escaped = re.escape(expr)
-        # Negative look-around prevents replacing inside identifiers.
+        # 负向环视避免在标识符内部被替换。
         token_pattern = rf"(?<![a-zA-Z0-9_.]){escaped}(?![a-zA-Z0-9_.])"
 
         if "hlsl" in enc or "glsl" in enc:
@@ -545,9 +531,8 @@ class PatchEngine:
             return re.sub(token_pattern, replacement, source)
 
         if "spirv" in enc or "spv" in enc:
-            # Full instruction rewriting is outside the scope of textual
-            # patching.  Emit a structured comment so that an external
-            # SPIR-V assembler pass can pick it up.
+            # 指令级改写超出文本 patch 范畴。输出结构化注释，便于外部
+            # SPIR-V assembler pass 识别处理。
             marker = f"; RDX_GUARD: {expr} -> {guard}\n"
             if marker not in source:
                 idx = source.find("OpFunction")
@@ -556,14 +541,14 @@ class PatchEngine:
                 return marker + source
             return source
 
-        # Unknown / generic encoding -- best-effort literal replacement.
+        # 未知/通用 encoding —— 尽力做字面替换。
         replacement = (
             f"(isnan({expr}) || isinf({expr}) ? {guard} : {expr})"
         )
         return source.replace(expr, replacement)
 
     # ------------------------------------------------------------------
-    # Expression replacement
+    # Expression replacement（表达式替换）
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -572,17 +557,17 @@ class PatchEngine:
         expr_from: str,
         expr_to: str,
     ) -> str:
-        """Perform a direct textual substitution in shader source.
+        """在 shader 源码中执行直接文本替换。
 
-        Every occurrence of *expr_from* is replaced with *expr_to*.
-        Returns the original *source* unchanged if *expr_from* is empty.
+        将所有 *expr_from* 替换为 *expr_to*。若 *expr_from* 为空，
+        则返回原始 *source* 不变。
         """
         if not expr_from:
             return source
         return source.replace(expr_from, expr_to)
 
     # ------------------------------------------------------------------
-    # Encoding selection
+    # Encoding selection（编码选择）
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -590,37 +575,34 @@ class PatchEngine:
         controller: Any,
         session_id: str,
     ) -> Tuple[Any, str]:
-        """Choose the best editable shader encoding for the current session.
+        """为当前 session 选择最易编辑的 shader encoding。
 
-        Queries the replay controller for available disassembly targets
-        (human-readable forms such as ``"HLSL"``, ``"GLSL 460"``, or
-        ``"SPIR-V (Human-readable)"``) and for the shader encodings that
-        ``BuildTargetShader`` accepts.
+        该方法向 replay controller 查询可用的 disassembly targets
+        （如 ``"HLSL"``, ``"GLSL 460"``, ``"SPIR-V (Human-readable)"``），
+        以及 ``BuildTargetShader`` 可接受的 shader encodings。
 
-        The preference order is **HLSL > GLSL > SPIRVAsm** because
-        high-level languages are easier to patch textually.
+        优先级为 **HLSL > GLSL > SPIRVAsm**，因为高层语言更易文本化修改。
 
         Returns
         -------
         tuple[ShaderEncoding, str]
-            A ``(ShaderEncoding, disassembly_target_name)`` pair that can
-            be passed to ``DisassembleShader`` and ``BuildTargetShader``
-            respectively.
+            ``(ShaderEncoding, disassembly_target_name)``，分别用于
+            ``DisassembleShader`` 与 ``BuildTargetShader``。
 
         Raises
         ------
         RuntimeError
-            If no suitable encoding / target pair is available.
+            当不存在合适的 encoding / target 组合时抛出。
         """
         rd = _get_rd()
 
         targets: List[str] = [str(t) for t in controller.GetDisassemblyTargets(True)]
         encodings = list(controller.GetTargetShaderEncodings())
 
-        # Build a fast set of encoding values for membership tests.
+        # 构建 encoding 集合用于快速 membership 测试。
         encoding_set = set(encodings)
 
-        # (ShaderEncoding, keyword used to match a disassembly target name)
+        # (ShaderEncoding, 用于匹配 disassembly target name 的关键字)
         preferences = [
             (rd.ShaderEncoding.HLSL,     "hlsl"),
             (rd.ShaderEncoding.GLSL,     "glsl"),
@@ -634,7 +616,7 @@ class PatchEngine:
                 if keyword in target_name.lower():
                     return enc, target_name
 
-        # No preferred match found -- fall back to whatever is available.
+        # 未找到首选项时，回退到可用项。
         if encodings and targets:
             logger.warning(
                 "No preferred encoding matched for session %s; falling "
@@ -651,10 +633,10 @@ class PatchEngine:
 
     @staticmethod
     def _encoding_name(encoding: Any) -> str:
-        """Derive a lowercase name string from a ``ShaderEncoding`` enum.
+        """从 ``ShaderEncoding`` enum 派生小写名称字符串。
 
-        Handles both ``ShaderEncoding.HLSL`` and bare ``"HLSL"`` forms
-        that different renderdoc versions may expose.
+        兼容不同 renderdoc 版本暴露的 ``ShaderEncoding.HLSL`` 或裸
+        ``"HLSL"`` 形式。
         """
         name = str(encoding)
         if "." in name:

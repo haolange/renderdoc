@@ -1,12 +1,10 @@
-"""Pipeline state inspection and shader artifact export service.
+"""Pipeline state 检查与 shader artifact 导出 service。
 
-Wraps RenderDoc's pipeline state introspection and shader disassembly
-APIs into async operations that return structured Pydantic models and
-versioned artifacts.
+将 RenderDoc 的 pipeline state introspection 与 shader disassembly
+APIs 封装为 async 操作，返回结构化的 Pydantic models 与版本化 artifacts。
 
-All blocking RenderDoc calls are dispatched to a thread via
-``asyncio.to_thread``.  The ``renderdoc`` module is imported lazily --
-it is only available inside a RenderDoc replay context.
+所有阻塞的 RenderDoc 调用都会通过 ``asyncio.to_thread`` 分派到线程。
+``renderdoc`` module 采用延迟导入——仅在 RenderDoc replay context 中可用。
 """
 
 from __future__ import annotations
@@ -33,14 +31,14 @@ from rdx.models import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy renderdoc import
+# Lazy renderdoc import（延迟导入）
 # ---------------------------------------------------------------------------
 
 _rd_module: Any = None
 
 
 def _get_rd() -> Any:
-    """Return the ``renderdoc`` module, importing it on first access."""
+    """返回 ``renderdoc`` module，并在首次访问时导入。"""
     global _rd_module
     if _rd_module is None:
         try:
@@ -57,26 +55,26 @@ def _get_rd() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Dependency protocols
+# Dependency protocols（依赖协议）
 # ---------------------------------------------------------------------------
 
 
 @runtime_checkable
 class SessionManager(Protocol):
-    """Minimal structural contract for the session lifecycle manager."""
+    """session lifecycle manager 的最小结构化约定。"""
 
     def get_controller(self, session_id: str) -> Any:
-        """Return the ``ReplayController`` bound to *session_id*."""
+        """返回绑定到 *session_id* 的 ``ReplayController``。"""
         ...
 
     def get_output(self, session_id: str) -> Any:
-        """Return the ``ReplayOutput`` bound to *session_id*."""
+        """返回绑定到 *session_id* 的 ``ReplayOutput``。"""
         ...
 
 
 @runtime_checkable
 class ArtifactStore(Protocol):
-    """Minimal structural contract for the artifact persistence layer."""
+    """artifact persistence layer 的最小结构化约定。"""
 
     async def store(
         self,
@@ -86,16 +84,15 @@ class ArtifactStore(Protocol):
         suffix: str,
         meta: Optional[Dict[str, Any]] = None,
     ) -> ArtifactRef:
-        """Persist *data* and return a tracking :class:`ArtifactRef`."""
+        """持久化 *data* 并返回追踪用的 :class:`ArtifactRef`。"""
         ...
 
 
 # ---------------------------------------------------------------------------
-# Shader stage enumeration helpers
+# Shader stage enumeration helpers（shader stage 枚举辅助）
 # ---------------------------------------------------------------------------
 
-# The graphics stages to iterate over when enumerating bound shaders.
-# Order matches a typical graphics pipeline.
+# 枚举绑定 shader 时遍历的 graphics stages，顺序与典型 graphics pipeline 一致。
 _GRAPHICS_STAGES: Tuple[str, ...] = (
     "Vertex",
     "Hull",
@@ -108,8 +105,7 @@ _COMPUTE_STAGES: Tuple[str, ...] = ("Compute",)
 
 
 def _rd_shader_stages() -> List[Any]:
-    """Return the list of ``rd.ShaderStage`` values for all graphics and
-    compute stages."""
+    """返回所有 graphics 与 compute stages 的 ``rd.ShaderStage`` 列表。"""
     rd = _get_rd()
     return [
         rd.ShaderStage.Vertex,
@@ -122,7 +118,7 @@ def _rd_shader_stages() -> List[Any]:
 
 
 def _map_shader_stage(rd_stage: Any) -> ShaderStage:
-    """Map a RenderDoc ``ShaderStage`` enum value to our ``ShaderStage``."""
+    """将 RenderDoc ``ShaderStage`` enum 映射为我们的 ``ShaderStage``。"""
     rd = _get_rd()
     mapping: Dict[Any, ShaderStage] = {
         rd.ShaderStage.Vertex: ShaderStage.VS,
@@ -136,7 +132,7 @@ def _map_shader_stage(rd_stage: Any) -> ShaderStage:
 
 
 def _our_stage_to_rd(stage: ShaderStage) -> Any:
-    """Map our ``ShaderStage`` back to a RenderDoc ``ShaderStage``."""
+    """将我们的 ``ShaderStage`` 映射回 RenderDoc ``ShaderStage``。"""
     rd = _get_rd()
     mapping: Dict[ShaderStage, Any] = {
         ShaderStage.VS: rd.ShaderStage.Vertex,
@@ -153,12 +149,12 @@ def _our_stage_to_rd(stage: ShaderStage) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Graphics API mapping
+# Graphics API mapping（Graphics API 映射）
 # ---------------------------------------------------------------------------
 
 
 def _map_graphics_api(rd_api: Any) -> GraphicsAPI:
-    """Map ``rd.GraphicsAPI`` to our ``GraphicsAPI`` enum."""
+    """将 ``rd.GraphicsAPI`` 映射为我们的 ``GraphicsAPI`` enum。"""
     rd = _get_rd()
     mapping: Dict[Any, GraphicsAPI] = {
         rd.GraphicsAPI.D3D11: GraphicsAPI.D3D11,
@@ -170,12 +166,12 @@ def _map_graphics_api(rd_api: Any) -> GraphicsAPI:
 
 
 # ---------------------------------------------------------------------------
-# Null ResourceId helper
+# Null ResourceId helper（空 ResourceId 判断）
 # ---------------------------------------------------------------------------
 
 
 def _is_null_id(resource_id: Any) -> bool:
-    """Return ``True`` when *resource_id* is null / empty."""
+    """当 *resource_id* 为空/null 时返回 ``True``。"""
     rd = _get_rd()
     try:
         return resource_id == rd.ResourceId()
@@ -184,14 +180,14 @@ def _is_null_id(resource_id: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# API-specific state retrieval
+# API-specific state retrieval（API 特定 state 获取）
 # ---------------------------------------------------------------------------
 
 
 def _get_api_specific_state(controller: Any, rd_api: Any) -> Any:
-    """Return the API-specific pipeline state object.
+    """返回 API 特定的 pipeline state 对象。
 
-    Returns ``None`` when the API is not recognised.
+    若 API 无法识别则返回 ``None``。
     """
     rd = _get_rd()
     if rd_api == rd.GraphicsAPI.D3D11:
@@ -206,14 +202,14 @@ def _get_api_specific_state(controller: Any, rd_api: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Blend state extraction (API-specific)
+# Blend state extraction（API 特定）
 # ---------------------------------------------------------------------------
 
 
 def _extract_blend_state(api_state: Any, api: GraphicsAPI) -> List[BlendState]:
-    """Extract per-RT blend configuration from the API-specific state.
+    """从 API 特定 state 中提取每个 RT 的 blend 配置。
 
-    Returns one :class:`BlendState` per render target slot.
+    每个 render target slot 返回一个 :class:`BlendState`。
     """
     blends: List[BlendState] = []
     if api_state is None:
@@ -246,7 +242,7 @@ def _extract_blend_state(api_state: Any, api: GraphicsAPI) -> List[BlendState]:
 
 
 # ---------------------------------------------------------------------------
-# Depth / stencil extraction (API-specific)
+# Depth / stencil extraction（API 特定）
 # ---------------------------------------------------------------------------
 
 
@@ -254,7 +250,7 @@ def _extract_depth_stencil(
     api_state: Any,
     api: GraphicsAPI,
 ) -> DepthStencilState:
-    """Extract depth/stencil configuration from the API-specific state."""
+    """从 API 特定 state 中提取 depth/stencil 配置。"""
     ds = DepthStencilState()
     if api_state is None:
         return ds
@@ -284,7 +280,7 @@ def _extract_depth_stencil(
 
 
 # ---------------------------------------------------------------------------
-# Render target extraction
+# Render target extraction（渲染目标提取）
 # ---------------------------------------------------------------------------
 
 
@@ -293,12 +289,12 @@ async def _extract_render_targets(
     api: GraphicsAPI,
     controller: Any,
 ) -> Tuple[List[RenderTargetInfo], Optional[RenderTargetInfo]]:
-    """Extract colour render targets and the depth target.
+    """提取 colour render targets 与 depth target。
 
-    Uses the common (abstracted) ``PipeState.GetOutputTargets()`` and
-    ``PipeState.GetDepthTarget()`` so the logic is API-agnostic.
+    使用抽象接口 ``PipeState.GetOutputTargets()`` 与
+    ``PipeState.GetDepthTarget()``，因此逻辑与 API 无关。
 
-    Returns ``(colour_targets, depth_target)``.
+    返回 ``(colour_targets, depth_target)``。
     """
     colour_targets: List[RenderTargetInfo] = []
     depth_target: Optional[RenderTargetInfo] = None
@@ -319,7 +315,7 @@ async def _extract_render_targets(
                 rt.format = str(tex.format.Name()) if hasattr(tex.format, "Name") else str(tex.format)
                 rt.width = int(tex.width)
                 rt.height = int(tex.height)
-                # Heuristic: check for sRGB in the format name.
+                # 经验判断：检查 format 名称中是否包含 sRGB。
                 rt.is_srgb = "srgb" in rt.format.lower()
             colour_targets.append(rt)
     except (AttributeError, TypeError) as exc:
@@ -344,12 +340,12 @@ async def _extract_render_targets(
 
 
 # ---------------------------------------------------------------------------
-# Viewport / scissor extraction (API-specific)
+# Viewport / scissor extraction（API 特定）
 # ---------------------------------------------------------------------------
 
 
 def _extract_viewport(api_state: Any, api: GraphicsAPI) -> Dict[str, float]:
-    """Return the first viewport as ``{x, y, width, height, minDepth, maxDepth}``."""
+    """返回第一个 viewport，格式为 ``{x, y, width, height, minDepth, maxDepth}``。"""
     try:
         if api in (GraphicsAPI.D3D11, GraphicsAPI.D3D12, GraphicsAPI.OPENGL):
             vp = api_state.rasterizer.viewports[0]
@@ -378,7 +374,7 @@ def _extract_viewport(api_state: Any, api: GraphicsAPI) -> Dict[str, float]:
 
 
 def _extract_scissor(api_state: Any, api: GraphicsAPI) -> Dict[str, int]:
-    """Return the first scissor rect as ``{x, y, width, height}``."""
+    """返回第一个 scissor rect，格式为 ``{x, y, width, height}``。"""
     try:
         if api in (GraphicsAPI.D3D11, GraphicsAPI.D3D12, GraphicsAPI.OPENGL):
             sc = api_state.rasterizer.scissors[0]
@@ -403,12 +399,12 @@ def _extract_scissor(api_state: Any, api: GraphicsAPI) -> Dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# Topology extraction (API-specific)
+# Topology extraction（API 特定）
 # ---------------------------------------------------------------------------
 
 
 def _extract_topology(api_state: Any, api: GraphicsAPI) -> str:
-    """Return the primitive topology as a human-readable string."""
+    """返回可读的 primitive topology 字符串。"""
     try:
         if api in (GraphicsAPI.D3D11, GraphicsAPI.D3D12, GraphicsAPI.VULKAN):
             return str(api_state.inputAssembly.topology)
@@ -420,7 +416,7 @@ def _extract_topology(api_state: Any, api: GraphicsAPI) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Resource binding helpers
+# Resource binding helpers（资源绑定辅助）
 # ---------------------------------------------------------------------------
 
 
@@ -429,10 +425,10 @@ def _collect_bindings_for_stage(
     rd_stage: Any,
     our_stage: ShaderStage,
 ) -> List[ResourceBindingEntry]:
-    """Extract all resource bindings for a single shader stage."""
+    """提取单个 shader stage 的所有资源绑定。"""
     entries: List[ResourceBindingEntry] = []
 
-    # ---- Read-only resources (SRVs, textures, samplers) ----
+    # ---- Read-only resources（SRVs, textures, samplers）----
     try:
         for bound_array in pipe.GetReadOnlyResources(rd_stage):
             bind_point = bound_array.bindPoint
@@ -449,7 +445,7 @@ def _collect_bindings_for_stage(
     except (AttributeError, TypeError):
         pass
 
-    # ---- Read-write resources (UAVs, storage buffers) ----
+    # ---- Read-write resources（UAVs, storage buffers）----
     try:
         for bound_array in pipe.GetReadWriteResources(rd_stage):
             bind_point = bound_array.bindPoint
@@ -466,7 +462,7 @@ def _collect_bindings_for_stage(
     except (AttributeError, TypeError):
         pass
 
-    # ---- Constant buffers ----
+    # ---- Constant buffers（常量缓冲）----
     try:
         for cb_array in pipe.GetConstantBlocks(rd_stage):
             bind_point = cb_array.bindPoint
@@ -487,15 +483,15 @@ def _collect_bindings_for_stage(
 
 
 # ---------------------------------------------------------------------------
-# Shader reflection serialisation
+# Shader reflection serialisation（序列化）
 # ---------------------------------------------------------------------------
 
 
 def _reflection_to_dict(refl: Any) -> Dict[str, Any]:
-    """Convert a ``ShaderReflection`` to a JSON-safe dictionary.
+    """将 ``ShaderReflection`` 转换为 JSON-safe 的字典。
 
-    We capture the parts that are most useful for debugging: signatures,
-    constant blocks, and resource bindings (names, types, bind points).
+    仅保留对调试最有价值的部分：signatures、constant blocks，
+    以及 resource bindings（names、types、bind points）。
     """
     result: Dict[str, Any] = {}
 
@@ -579,10 +575,9 @@ def _reflection_to_dict(refl: Any) -> Dict[str, Any]:
 
 
 class PipelineService:
-    """Pipeline state inspection and shader artifact export.
+    """Pipeline state 检查与 shader artifact 导出。
 
-    All public methods are ``async``, accept explicit dependencies, and
-    return structured Pydantic models.
+    所有公开方法均为 ``async``，接收显式依赖，并返回结构化的 Pydantic models。
     """
 
     # ------------------------------------------------------------------
@@ -595,22 +590,22 @@ class PipelineService:
         event_id: int,
         session_manager: SessionManager,
     ) -> PipelineSnapshot:
-        """Capture a full pipeline state snapshot at the given event.
+        """在指定 event 捕获完整的 pipeline state snapshot。
 
         Parameters
         ----------
         session_id:
-            Active replay session id.
+            活跃 replay session id。
         event_id:
-            API event to inspect.
+            需要检查的 API event。
         session_manager:
-            Provides the ``ReplayController``.
+            提供 ``ReplayController``。
 
         Returns
         -------
         PipelineSnapshot
-            Complete pipeline state with shaders, render targets, blend,
-            depth/stencil, viewport, scissor, topology, and bindings.
+            包含 shaders、render targets、blend、depth/stencil、
+            viewport、scissor、topology 与 bindings 的完整 pipeline state。
         """
         rd = _get_rd()
         controller = session_manager.get_controller(session_id)
@@ -626,7 +621,7 @@ class PipelineService:
             _get_api_specific_state, controller, api_props.pipelineType,
         )
 
-        # ---- Shaders -------------------------------------------------
+        # ---- Shaders（着色器）-----------------------------------------
         shaders: List[ShaderInfo] = []
         for rd_stage in _rd_shader_stages():
             try:
@@ -655,12 +650,12 @@ class PipelineService:
                     rd_stage, exc,
                 )
 
-        # ---- Render targets and depth target -------------------------
+        # ---- Render targets 与 depth target -------------------------
         render_targets, depth_target = await _extract_render_targets(
             pipe, api, controller,
         )
 
-        # ---- Blend state ---------------------------------------------
+        # ---- Blend state（混合状态）-----------------------------------
         blend_states = _extract_blend_state(api_state, api)
 
         # ---- Depth / stencil state -----------------------------------
@@ -673,7 +668,7 @@ class PipelineService:
         # ---- Topology ------------------------------------------------
         topology = _extract_topology(api_state, api)
 
-        # ---- Resource bindings (all stages) --------------------------
+        # ---- Resource bindings（all stages）--------------------------
         bindings: List[ResourceBindingEntry] = []
         for rd_stage in _rd_shader_stages():
             try:
@@ -713,27 +708,26 @@ class PipelineService:
         session_manager: SessionManager,
         artifact_store: ArtifactStore,
     ) -> ShaderExportBundle:
-        """Export the shader bound at *stage* as reflection + disassembly
-        artifacts.
+        """导出 *stage* 绑定的 shader：包含 reflection + disassembly artifacts。
 
         Parameters
         ----------
         session_id:
-            Active replay session id.
+            活跃 replay session id。
         event_id:
-            API event to inspect.
+            需要检查的 API event。
         stage:
-            Our ``ShaderStage`` enum value (e.g. ``ShaderStage.PS``).
+            我们的 ``ShaderStage`` enum 值（例如 ``ShaderStage.PS``）。
         session_manager:
-            Provides the ``ReplayController``.
+            提供 ``ReplayController``。
         artifact_store:
-            Persistence layer for generated artifacts.
+            生成 artifacts 的持久化层。
 
         Returns
         -------
         ShaderExportBundle
-            Contains artifact references for the shader reflection JSON
-            and the disassembly text, plus metadata.
+            包含 shader reflection JSON 与 disassembly 文本的 artifact 引用，
+            以及相关 metadata。
         """
         rd = _get_rd()
         controller = session_manager.get_controller(session_id)
@@ -756,7 +750,7 @@ class PipelineService:
                 f"at event {event_id}"
             )
 
-        # Determine the pipeline object ResourceId for disassembly calls.
+        # 确定用于 disassembly 的 pipeline object ResourceId。
         pipeline_rid = rd.ResourceId()
         try:
             if stage == ShaderStage.CS:
@@ -764,10 +758,10 @@ class PipelineService:
             else:
                 pipeline_rid = pipe.GetGraphicsPipelineObject()
         except (AttributeError, TypeError):
-            # Fallback: null pipeline (works for most APIs).
+            # 回退：null pipeline（多数 API 可用）。
             pass
 
-        # Resolve entry point.
+        # 解析 entry point。
         entry_point = "main"
         encoding = ""
         if hasattr(refl, "entryPoint"):
@@ -775,7 +769,7 @@ class PipelineService:
         if hasattr(refl, "encoding"):
             encoding = str(refl.encoding)
 
-        # ---- Reflection JSON artifact --------------------------------
+        # ---- Reflection JSON artifact（反射）---------------------------
         refl_dict = _reflection_to_dict(refl)
         refl_dict["_meta"] = {
             "event_id": event_id,
@@ -796,7 +790,7 @@ class PipelineService:
             },
         )
 
-        # ---- Disassembly artifact ------------------------------------
+        # ---- Disassembly artifact（反汇编）------------------------------
         disasm_artifact: Optional[ArtifactRef] = None
         try:
             targets: List[str] = await asyncio.to_thread(
@@ -804,10 +798,8 @@ class PipelineService:
             )
 
             if targets:
-                # Prefer the first available disassembly target.  Collect
-                # all successful disassemblies into a single text with
-                # section headers so that downstream consumers can pick
-                # the representation they prefer.
+                # 优先使用第一个可用的 disassembly target；同时将所有
+                # 成功的反汇编合并成一个带分区标题的文本，便于下游选择。
                 sections: List[str] = []
                 for target_name in targets:
                     try:
@@ -848,7 +840,7 @@ class PipelineService:
         # ---- Compute a content hash for the shader -------------------
         shader_hash = ""
         try:
-            # Hash the reflection JSON as a stable identity.
+            # 将 reflection JSON 的 hash 作为稳定 identity。
             shader_hash = hashlib.sha256(refl_bytes).hexdigest()[:16]
         except Exception:
             pass
@@ -872,21 +864,21 @@ class PipelineService:
         event_id: int,
         session_manager: SessionManager,
     ) -> List[ResourceBindingEntry]:
-        """Return all resource bindings across active shader stages.
+        """返回所有活跃 shader stages 的资源绑定。
 
         Parameters
         ----------
         session_id:
-            Active replay session id.
+            活跃 replay session id。
         event_id:
-            API event to inspect.
+            需要检查的 API event。
         session_manager:
-            Provides the ``ReplayController``.
+            提供 ``ReplayController``。
 
         Returns
         -------
         list[ResourceBindingEntry]
-            Flat list of bound resources across all active stages.
+            所有活跃 stages 的绑定资源扁平列表。
         """
         rd = _get_rd()
         controller = session_manager.get_controller(session_id)
@@ -907,8 +899,7 @@ class PipelineService:
                     pipe, rd_stage, our_stage,
                 )
 
-                # Enrich entries with resource names from reflection when
-                # available.
+                # 若可用，则用 reflection 填充 resource names。
                 refl = pipe.GetShaderReflection(rd_stage)
                 if refl is not None:
                     _enrich_binding_names(stage_entries, refl)
@@ -923,7 +914,7 @@ class PipelineService:
 
 
 # ---------------------------------------------------------------------------
-# Post-processing helpers
+# Post-processing helpers（后处理辅助）
 # ---------------------------------------------------------------------------
 
 
@@ -931,12 +922,11 @@ def _enrich_binding_names(
     entries: List[ResourceBindingEntry],
     refl: Any,
 ) -> None:
-    """Fill in ``resource_name`` and ``format`` from shader reflection.
+    """从 shader reflection 填充 ``resource_name`` 与 ``format``。
 
-    Matches by binding index against the reflection's resource lists.
-    Modifies *entries* in place.
+    通过 binding index 与 reflection 的资源列表匹配，并原地修改 *entries*。
     """
-    # Build quick look-ups from reflection.
+    # 从 reflection 构建快速查找表。
     ro_by_bind: Dict[int, Any] = {}
     rw_by_bind: Dict[int, Any] = {}
     cb_by_bind: Dict[int, Any] = {}

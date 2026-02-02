@@ -1,16 +1,13 @@
-"""Headless render and readback service.
+"""Headless render 与 readback service。
 
-Wraps RenderDoc's texture display, readback, and pixel inspection APIs
-into async operations that produce versioned artifacts stored via the
-artifact-store abstraction.
+将 RenderDoc 的 texture display、readback 和 pixel inspection APIs
+封装为 async 操作，生成版本化 artifacts，并通过 artifact-store 抽象存储。
 
-All blocking RenderDoc calls are dispatched to a thread via
-``asyncio.to_thread`` so that the service can live on an async event
-loop without stalling other coroutines.
+所有阻塞的 RenderDoc 调用都会通过 ``asyncio.to_thread`` 分派到线程，
+确保服务可在 async event loop 中运行而不阻塞其他协程。
 
-The ``renderdoc`` module is imported lazily -- it is only available
-inside a RenderDoc replay context or when the shared library has been
-placed on ``sys.path``.
+``renderdoc`` module 采用延迟导入——仅在 RenderDoc replay context 中可用，
+或当 shared library 已放入 ``sys.path`` 时可用。
 """
 
 from __future__ import annotations
@@ -28,17 +25,16 @@ from rdx.models import ArtifactRef
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Lazy renderdoc import
+# Lazy renderdoc import（延迟导入）
 # ---------------------------------------------------------------------------
 
 _rd_module: Any = None
 
 
 def _get_rd() -> Any:
-    """Return the ``renderdoc`` module, importing it on first access.
+    """返回 ``renderdoc`` module，并在首次访问时导入。
 
-    Raises ``ImportError`` with a descriptive message when the module
-    cannot be loaded.
+    当 module 无法加载时抛出带描述信息的 ``ImportError``。
     """
     global _rd_module
     if _rd_module is None:
@@ -56,26 +52,26 @@ def _get_rd() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Dependency protocols
+# Dependency protocols（依赖协议）
 # ---------------------------------------------------------------------------
 
 
 @runtime_checkable
 class SessionManager(Protocol):
-    """Minimal structural contract for the session lifecycle manager."""
+    """session lifecycle manager 的最小结构化约定。"""
 
     def get_controller(self, session_id: str) -> Any:
-        """Return the ``ReplayController`` bound to *session_id*."""
+        """返回绑定到 *session_id* 的 ``ReplayController``。"""
         ...
 
     def get_output(self, session_id: str) -> Any:
-        """Return the ``ReplayOutput`` bound to *session_id*."""
+        """返回绑定到 *session_id* 的 ``ReplayOutput``。"""
         ...
 
 
 @runtime_checkable
 class ArtifactStore(Protocol):
-    """Minimal structural contract for the artifact persistence layer."""
+    """artifact persistence layer 的最小结构化约定。"""
 
     async def store(
         self,
@@ -85,12 +81,12 @@ class ArtifactStore(Protocol):
         suffix: str,
         meta: Optional[Dict[str, Any]] = None,
     ) -> ArtifactRef:
-        """Persist *data* and return a tracking :class:`ArtifactRef`."""
+        """持久化 *data* 并返回追踪用的 :class:`ArtifactRef`。"""
         ...
 
 
 # ---------------------------------------------------------------------------
-# Constants / look-up tables
+# Constants / look-up tables（常量/查找表）
 # ---------------------------------------------------------------------------
 
 _MIME_MAP: Dict[str, str] = {
@@ -113,7 +109,7 @@ _SUFFIX_MAP: Dict[str, str] = {
 
 
 def _resolve_overlay(name: str) -> Any:
-    """Map a human-friendly overlay name to a ``rd.DebugOverlay`` value."""
+    """将易读的 overlay 名称映射到 ``rd.DebugOverlay`` 值。"""
     rd = _get_rd()
     key = name.lower().replace("-", "_").replace(" ", "_")
     table: Dict[str, Any] = {
@@ -133,7 +129,7 @@ def _resolve_overlay(name: str) -> Any:
 
 
 def _is_null_resource_id(resource_id: Any) -> bool:
-    """Return ``True`` when *resource_id* represents a null / empty ID."""
+    """当 *resource_id* 为空/null ID 时返回 ``True``。"""
     rd = _get_rd()
     try:
         return resource_id == rd.ResourceId()
@@ -142,7 +138,7 @@ def _is_null_resource_id(resource_id: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Image encoding
+# Image encoding（图像编码）
 # ---------------------------------------------------------------------------
 
 
@@ -152,11 +148,10 @@ def _encode_image(
     height: int,
     fmt: str,
 ) -> Tuple[bytes, str]:
-    """Encode raw RGBA-8 *rgba_bytes* into the requested image format.
+    """将原始 RGBA-8 *rgba_bytes* 编码为指定图像格式。
 
-    Returns ``(encoded_bytes, actual_format_used)``.  The actual format
-    may differ from the requested one when an optional codec (imageio for
-    EXR / HDR) is not installed.
+    返回 ``(encoded_bytes, actual_format_used)``。当可选 codec
+    （如 EXR / HDR 的 imageio）未安装时，实际格式可能与请求不同。
     """
     from PIL import Image  # type: ignore[import-untyped]
 
@@ -194,7 +189,7 @@ def _encode_image(
             arr = np.frombuffer(rgba_bytes, dtype=np.uint8).reshape(
                 height, width, 4,
             )
-            # HDR is 3-channel only (RGB).
+            # HDR 仅支持 3 通道（RGB）。
             arr_f = arr[:, :, :3].astype(np.float32) / 255.0
             encoded = iio.imwrite("<bytes>", arr_f, extension=".hdr")
             return bytes(encoded), "hdr"
@@ -215,11 +210,10 @@ def _encode_image(
 
 
 class RenderService:
-    """Headless render, readback, and pixel inspection service.
+    """Headless render、readback 与 pixel inspection service。
 
-    Every public method is ``async`` and receives explicit
-    *session_manager* / *artifact_store* dependencies so the service
-    itself is stateless and straightforward to unit-test with fakes.
+    所有公开方法均为 ``async``，并显式接收 *session_manager* /
+    *artifact_store* 依赖，因此服务本身无状态且易于用 fakes 进行单元测试。
     """
 
     # ------------------------------------------------------------------
@@ -236,44 +230,44 @@ class RenderService:
         view_config: Optional[Dict[str, Any]] = None,
         output_format: str = "png",
     ) -> Tuple[ArtifactRef, Dict[str, Any]]:
-        """Render an event and store the result as an image artifact.
+        """渲染指定 event 并将结果保存为图像 artifact。
 
         Parameters
         ----------
         session_id:
-            Active replay session id.
+            活跃 replay session id。
         event_id:
-            Draw-call / API event to navigate to.
+            需要导航到的 draw-call / API event。
         session_manager:
-            Provides the ``ReplayController`` and ``ReplayOutput``.
+            提供 ``ReplayController`` 与 ``ReplayOutput``。
         artifact_store:
-            Persistence layer for generated images.
+            生成图像的持久化层。
         source_config:
-            Selects **what** to render:
+            选择 **渲染对象**：
 
-            * ``{"source": "final_output"}`` *(default)* -- the last
-              bound colour output render-target of the current draw.
+            * ``{"source": "final_output"}`` *(默认)* —— 当前 draw 的最后一个
+              bound colour output render-target。
             * ``{"source": "texture", "texture_id": <int|ResourceId>}``
-              -- an explicit texture.
+              —— 指定 texture。
         view_config:
-            Visual presentation tweaks (all optional):
+            可视化展示配置（均可选）：
 
-            * ``scale`` *(float)* -- zoom factor, ``0`` means fit.
-            * ``channels`` *(dict)* -- ``{"r": bool, "g": bool, ...}``.
-            * ``overlay`` *(str)* -- debug overlay name (``nan``,
-              ``clipping``, ``wireframe``, ...).
-            * ``hdr`` *(bool)* -- enable HDR multiplier.
-            * ``hdr_multiplier`` *(float)* -- HDR multiplier value.
-            * ``range_min`` / ``range_max`` *(float)* -- display range.
-            * ``flip_y`` *(bool)* -- vertical flip.
-            * ``raw_output`` *(bool)* -- skip sRGB conversion.
+            * ``scale`` *(float)* —— 缩放因子，``0`` 表示 fit。
+            * ``channels`` *(dict)* —— ``{"r": bool, "g": bool, ...}``。
+            * ``overlay`` *(str)* —— debug overlay 名称（``nan``、
+              ``clipping``、``wireframe`` 等）。
+            * ``hdr`` *(bool)* —— 启用 HDR multiplier。
+            * ``hdr_multiplier`` *(float)* —— HDR multiplier 值。
+            * ``range_min`` / ``range_max`` *(float)* —— 显示范围。
+            * ``flip_y`` *(bool)* —— 垂直翻转。
+            * ``raw_output`` *(bool)* —— 跳过 sRGB 转换。
         output_format:
-            Image file format (``png``, ``exr``, ``hdr``, ``jpg``).
+            图像格式（``png``, ``exr``, ``hdr``, ``jpg``）。
 
         Returns
         -------
         tuple[ArtifactRef, dict]
-            The stored artifact reference and a view-metadata dict.
+            存储的 artifact 引用与 view-metadata 字典。
         """
         rd = _get_rd()
         source_config = source_config or {"source": "final_output"}
@@ -282,13 +276,13 @@ class RenderService:
         controller = session_manager.get_controller(session_id)
         output = session_manager.get_output(session_id)
 
-        # Navigate to the requested event.
+        # 导航到指定 event。
         await asyncio.to_thread(controller.SetFrameEvent, event_id, True)
 
-        # Determine target texture.
+        # 确定目标 texture。
         tex_id = await self._resolve_source_texture(controller, source_config)
 
-        # ---- Build TextureDisplay ------------------------------------
+        # ---- 构建 TextureDisplay ------------------------------------
         tex_display = rd.TextureDisplay()
         tex_display.resourceId = tex_id
         tex_display.subresource = rd.Subresource()
@@ -383,43 +377,42 @@ class RenderService:
         subresource: Optional[Dict[str, int]] = None,
         region: Optional[Dict[str, int]] = None,
     ) -> Tuple[ArtifactRef, Dict[str, Any]]:
-        """Read back raw texture data and store it as a NumPy ``.npz``.
+        """读取原始 texture 数据并保存为 NumPy ``.npz``。
 
         Parameters
         ----------
         session_id, event_id:
-            Replay coordinates.
+            Replay 坐标。
         texture_id:
-            ``ResourceId`` (or integer form) of the texture to read.
+            要读取的 texture 的 ``ResourceId``（或其整数形式）。
         session_manager, artifact_store:
-            Injected dependencies.
+            注入的依赖。
         subresource:
-            ``{"mip": int, "slice": int, "sample": int}`` -- defaults to
-            mip 0 / slice 0 / sample 0.
+            ``{"mip": int, "slice": int, "sample": int}`` —— 默认
+            mip 0 / slice 0 / sample 0。
         region:
-            ``{"x": int, "y": int, "width": int, "height": int}`` crop
-            rectangle in texels.  When omitted the full mip level is
-            returned.
+            ``{"x": int, "y": int, "width": int, "height": int}`` 的
+            texel 裁剪矩形。省略时返回完整 mip level。
 
         Returns
         -------
         tuple[ArtifactRef, dict]
-            Artifact reference and a statistics dict containing shape,
-            dtype, per-channel min/max, nan_count, and inf_count.
+            artifact 引用与统计信息字典（shape、dtype、每通道 min/max、
+            nan_count、inf_count）。
         """
         rd = _get_rd()
         controller = session_manager.get_controller(session_id)
 
         await asyncio.to_thread(controller.SetFrameEvent, event_id, True)
 
-        # Build subresource descriptor.
+        # 构建 subresource 描述符。
         sub = rd.Subresource()
         if subresource:
             sub.mip = int(subresource.get("mip", 0))
             sub.slice = int(subresource.get("slice", 0))
             sub.sample = int(subresource.get("sample", 0))
 
-        # Resolve texture dimensions from the capture metadata.
+        # 从 capture 元数据解析 texture 尺寸。
         resolved_id = await self._resolve_texture_id(controller, texture_id)
         tex_desc = await self._find_texture_desc(controller, resolved_id)
         if tex_desc is None:
@@ -430,15 +423,14 @@ class RenderService:
         tex_width = max(1, tex_desc.width >> sub.mip)
         tex_height = max(1, tex_desc.height >> sub.mip)
 
-        # Fetch raw data from the GPU readback.
+        # 从 GPU readback 获取原始数据。
         raw_data: bytes = await asyncio.to_thread(
             controller.GetTextureData, resolved_id, sub,
         )
 
-        # ---- Interpret the byte layout -------------------------------
-        # RenderDoc returns tightly-packed pixel data whose component
-        # layout matches the resource format.  We use simple heuristics
-        # to pick float32-RGBA vs uint8-RGBA based on the buffer size.
+        # ---- 解析字节布局 ---------------------------------------------
+        # RenderDoc 返回紧密打包的像素数据，其分量布局与资源格式一致。
+        # 这里使用简单启发式基于 buffer 大小选择 float32-RGBA 或 uint8-RGBA。
         expected_pixels = tex_width * tex_height
         bytes_per_pixel_f32 = 16  # 4 channels x 4 bytes
         bytes_per_pixel_u8 = 4   # 4 channels x 1 byte
@@ -536,7 +528,7 @@ class RenderService:
         y: int,
         session_manager: SessionManager,
     ) -> Dict[str, Any]:
-        """Pick a single pixel from a texture at the given event.
+        """在指定 event 的 texture 中读取单个像素。
 
         Returns
         -------
@@ -561,8 +553,8 @@ class RenderService:
             rd.CompType.Typeless,
         )
 
-        # PixelValue exposes .floatValue, .uintValue, and .intValue
-        # arrays.  Float covers the vast majority of use cases.
+        # PixelValue 暴露 .floatValue、.uintValue、.intValue 数组；
+        # Float 覆盖绝大多数用例。
         fv: List[float] = list(pixel_value.floatValue[:4])
 
         result: Dict[str, Any] = {
@@ -579,7 +571,7 @@ class RenderService:
             "has_inf": any(math.isinf(v) for v in fv),
         }
 
-        # Also expose integer interpretations for integer-format textures.
+        # 对整数格式的 texture 也提供整数解释。
         try:
             uv = list(pixel_value.uintValue[:4])
             result["r_uint"] = uv[0]
@@ -602,10 +594,9 @@ class RenderService:
         texture_id: Any,
         session_manager: SessionManager,
     ) -> Dict[str, Any]:
-        """Compute per-channel min/max statistics for a texture.
+        """计算 texture 的逐通道 min/max 统计值。
 
-        Uses RenderDoc's GPU-accelerated ``GetMinMax`` to avoid a full
-        CPU-side readback.
+        使用 RenderDoc 的 GPU 加速 ``GetMinMax``，避免完整的 CPU 端 readback。
 
         Returns
         -------
@@ -641,7 +632,7 @@ class RenderService:
                 "has_inf": math.isinf(min_f[i]) or math.isinf(max_f[i]),
             }
 
-        # Aggregate statistics across finite channel values.
+        # 汇总有限（非 NaN/Inf）通道值的统计。
         finite_mins = [
             v for v in min_f if not (math.isnan(v) or math.isinf(v))
         ]
@@ -674,11 +665,11 @@ class RenderService:
         controller: Any,
         source_config: Dict[str, Any],
     ) -> Any:
-        """Determine which texture ResourceId to render.
+        """确定需要渲染的 texture ResourceId。
 
-        For ``"final_output"`` the method inspects the pipeline state's
-        output targets and returns the last non-null colour attachment.
-        For ``"texture"`` it looks up the explicit *texture_id*.
+        对于 ``"final_output"``，会检查 pipeline state 的 output targets，
+        并返回最后一个非空 colour attachment。
+        对于 ``"texture"``，会使用显式的 *texture_id*。
         """
         rd = _get_rd()
         source = source_config.get("source", "final_output")
@@ -690,7 +681,7 @@ class RenderService:
                     "source_config with source='texture' requires a "
                     "'texture_id' field"
                 )
-            # If caller passed an integer, look it up in the texture list.
+            # 若调用方传入整数，则在 texture 列表中查找。
             if isinstance(tex_id_raw, int):
                 textures = await asyncio.to_thread(controller.GetTextures)
                 for tex in textures:
@@ -699,18 +690,17 @@ class RenderService:
                 raise ValueError(
                     f"No texture found matching id {tex_id_raw}"
                 )
-            # Assume it is already a ResourceId.
+            # 否则假定已是 ResourceId。
             return tex_id_raw
 
-        # "final_output" -- last non-null colour output of the current
-        # draw call.
+        # "final_output" —— 当前 draw call 的最后一个非空 colour output。
         pipe_state = await asyncio.to_thread(controller.GetPipelineState)
         targets = pipe_state.GetOutputTargets()
         for target in reversed(targets):
             if not _is_null_resource_id(target.resourceId):
                 return target.resourceId
 
-        # Fallback: first texture in the capture.
+        # 回退：使用 capture 中的第一张 texture。
         textures = await asyncio.to_thread(controller.GetTextures)
         if textures:
             logger.warning(
@@ -728,10 +718,9 @@ class RenderService:
         controller: Any,
         texture_id: Any,
     ) -> Any:
-        """Coerce *texture_id* to a RenderDoc ``ResourceId``.
+        """将 *texture_id* 转换为 RenderDoc ``ResourceId``。
 
-        Accepts an ``int`` (scans textures) or an already-resolved
-        ``ResourceId``.
+        支持 ``int``（扫描 textures）或已解析的 ``ResourceId``。
         """
         if isinstance(texture_id, int):
             textures = await asyncio.to_thread(controller.GetTextures)
@@ -746,9 +735,9 @@ class RenderService:
         controller: Any,
         resource_id: Any,
     ) -> Any:
-        """Find the ``TextureDescription`` for *resource_id*.
+        """查找 *resource_id* 对应的 ``TextureDescription``。
 
-        Returns ``None`` when the texture is not present in the capture.
+        若该 texture 不在 capture 中，则返回 ``None``。
         """
         textures = await asyncio.to_thread(controller.GetTextures)
         for tex in textures:
