@@ -74,6 +74,22 @@ def get_local_authtoken() -> str:
     return str(token).strip()
 
 
+def get_local_rdc_dirs() -> list[str]:
+    cfg = load_local_config()
+    value = cfg.get("rdc_dirs", [])
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, str):
+        return split_dirs(value)
+    return []
+
+
+def set_local_rdc_dirs(dirs: list[str]) -> None:
+    data = load_local_config()
+    data["rdc_dirs"] = dirs
+    save_local_config(data)
+
+
 def pick_port(preferred: int = 8765) -> int:
     """Pick preferred port if free; otherwise choose an ephemeral free port."""
     s = socket.socket()
@@ -229,6 +245,21 @@ def read_ngrok_config_authtoken() -> str:
     return ""
 
 
+def split_dirs(value: str) -> list[str]:
+    v = (value or "").strip()
+    if not v:
+        return []
+    if ";" in v:
+        parts = v.split(";")
+    elif "|" in v:
+        parts = v.split("|")
+    elif "\n" in v:
+        parts = v.splitlines()
+    else:
+        parts = [v]
+    return [p.strip() for p in parts if p.strip()]
+
+
 def resolve_ngrok_authtoken(interactive: bool) -> str:
     env_token = os.environ.get("NGROK_AUTHTOKEN", "").strip()
     if env_token:
@@ -290,9 +321,42 @@ def validate_public_url(url: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["lan", "internet"], required=True)
+    parser.add_argument("--mode", choices=["lan", "internet"])
     parser.add_argument("--env", required=True, help="Path to .bat env file to write")
+    parser.add_argument(
+        "--prepare-rdc",
+        action="store_true",
+        help="Prompt for RDX_RDC_DIRS and write to env file only.",
+    )
     args = parser.parse_args()
+
+    # Resolve RDX_RDC_DIRS (env > local config > prompt)
+    rdc_dirs: list[str] = []
+    env_dirs = os.environ.get("RDX_RDC_DIRS", "").strip()
+    if env_dirs:
+        rdc_dirs = split_dirs(env_dirs)
+    else:
+        rdc_dirs = get_local_rdc_dirs()
+
+    if not rdc_dirs and sys.stdin.isatty():
+        print("[RDX-MCP] Optional: set default capture directories (RDX_RDC_DIRS).")
+        print("[RDX-MCP] Use ';' to separate multiple folders. Leave empty to skip.")
+        user_dirs = input("[RDX-MCP] RDC dirs: ").strip()
+        if user_dirs:
+            rdc_dirs = split_dirs(user_dirs)
+            set_local_rdc_dirs(rdc_dirs)
+
+    if args.prepare_rdc:
+        lines = []
+        if rdc_dirs:
+            rdc_join = ";".join(rdc_dirs)
+            lines.append(f"set RDX_RDC_DIRS={rdc_join}")
+        with open(args.env, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines))
+        return
+
+    if not args.mode:
+        raise RuntimeError("--mode is required unless --prepare-rdc is used.")
 
     port = pick_port()
     lan_ip = get_lan_ip()
@@ -341,6 +405,9 @@ def main() -> None:
         f"set MANUS_TRANSPORT={manus_transport}",
         f"set MANUS_URL={manus_url}",
     ]
+    if rdc_dirs:
+        rdc_join = ";".join(rdc_dirs)
+        lines.append(f"set RDX_RDC_DIRS={rdc_join}")
 
     if args.mode == "internet" and public_host:
         allowed_hosts = f"{public_host},{public_host}:*,127.0.0.1:*,localhost:*"

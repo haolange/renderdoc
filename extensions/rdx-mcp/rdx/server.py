@@ -149,6 +149,46 @@ def _split_path_list(value: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _local_config_path() -> Path:
+    # extensions/rdx-mcp/.rdx_mcp.json
+    return Path(__file__).resolve().parents[1] / ".rdx_mcp.json"
+
+
+def _load_local_config() -> Dict[str, Any]:
+    path = _local_config_path()
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_local_config(data: Dict[str, Any]) -> None:
+    path = _local_config_path()
+    try:
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _resolve_rdc_dirs(dirs: str) -> List[str]:
+    if dirs.strip():
+        return _split_path_list(dirs)
+
+    env_dirs = os.environ.get("RDX_RDC_DIRS", "").strip()
+    if env_dirs:
+        return _split_path_list(env_dirs)
+
+    cfg = _load_local_config()
+    value = cfg.get("rdc_dirs", [])
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, str):
+        return _split_path_list(value)
+    return []
+
+
 def _stat_file(p: Path) -> Dict[str, Any]:
     st = p.stat()
     mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
@@ -459,8 +499,7 @@ async def capture_list(
     """
     trace_id = _new_id("trc")
     try:
-        raw = dirs.strip() or os.environ.get("RDX_RDC_DIRS", "").strip()
-        roots = [Path(p) for p in _split_path_list(raw)] if raw else []
+        roots = [Path(p) for p in _resolve_rdc_dirs(dirs)]
 
         if not roots:
             return _err_response(
@@ -491,6 +530,51 @@ async def capture_list(
     except Exception as exc:
         logger.exception("rd.capture.list failed")
         return _err_response("CAPTURE_LIST_ERROR", str(exc), trace_id=trace_id)
+
+
+# ===================================================================
+# Tool: rd.capture.set_dirs
+# ===================================================================
+
+@mcp.tool(name="rd.capture.set_dirs")
+async def capture_set_dirs(dirs: str) -> str:
+    """设置默认 .rdc 搜索目录，并保存到本地配置文件。
+
+    Args:
+        dirs: 目录列表（Windows 推荐用 ';' 分隔）。
+    Returns:
+        JSON ToolResponse，包含已保存目录与不存在目录列表。
+    """
+    trace_id = _new_id("trc")
+    try:
+        entries = _split_path_list(dirs)
+        if not entries:
+            return _err_response(
+                "RDC_DIRS_EMPTY",
+                "dirs is empty. Provide one or more directories.",
+                trace_id=trace_id,
+            )
+
+        missing: List[str] = []
+        for p in entries:
+            if not Path(p).exists():
+                missing.append(p)
+
+        cfg = _load_local_config()
+        cfg["rdc_dirs"] = entries
+        _save_local_config(cfg)
+
+        # Also update current process env for immediate effect.
+        os.environ["RDX_RDC_DIRS"] = ";".join(entries) if os.name == "nt" else ":".join(entries)
+
+        return _ok_response(
+            trace_id=trace_id,
+            dirs=entries,
+            missing=missing,
+        )
+    except Exception as exc:
+        logger.exception("rd.capture.set_dirs failed")
+        return _err_response("CAPTURE_SET_DIRS_ERROR", str(exc), trace_id=trace_id)
 
 
 # ===================================================================

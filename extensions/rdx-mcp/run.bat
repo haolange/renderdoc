@@ -142,6 +142,19 @@ rem Override by passing args, e.g.:
 rem   run.bat --transport stdio
 rem   run.bat --transport sse --host 127.0.0.1 --port 8765
 set "RDX_ARGS=%*"
+
+rem Optional: prompt for default rdc capture directories (stored in local .rdx_mcp.json).
+set "RDX_SETUP_ENV=%TEMP%\\rdx_mcp_setup_env.bat"
+%PY_CMD% "%SCRIPT_DIR%run_autoconfig.py" --prepare-rdc --env "%RDX_SETUP_ENV%"
+if errorlevel 1 (
+  echo [RDX-MCP] WARNING: Failed to prepare RDC directories; continuing.
+) else (
+  if exist "%RDX_SETUP_ENV%" (
+    call "%RDX_SETUP_ENV%"
+    del "%RDX_SETUP_ENV%" >nul 2>&1
+  )
+)
+
 if "%~1"=="" goto :select_mode
 :after_auto_sse
 

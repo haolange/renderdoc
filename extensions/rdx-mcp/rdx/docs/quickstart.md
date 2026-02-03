@@ -45,6 +45,7 @@ python -m pip install -e .
 
 脚本会做基础自检（IP 类型、ngrok 安装/授权），并把最终 URL 复制到剪贴板，直接粘贴到客户端即可。
 如需强制 SSE 或 HTTP，可在 `run.env.bat` 里设置 `RDX_TRANSPORT=sse` 或 `RDX_TRANSPORT=http`。
+首次运行时会询问默认 `.rdc` 目录，并保存到 `extensions/rdx-mcp/.rdx_mcp.json`（已忽略提交）。
 
 ngrok 安装方式（Windows，任选其一）：
 
@@ -100,7 +101,8 @@ rdx-mcp
 为了减少手动输入路径，可以：
 
 - 在 `run.env.bat` 设置 `RDX_RDC_DIRS`（Windows 用 `;` 分隔多个目录）
-- 然后让 Agent 先调用 `rd.capture.list` 选择文件，再把返回的 `path` 传给 `rd.capture.open`
+- 或让 Agent 调 `rd.capture.set_dirs` 保存默认目录（会写入 `extensions/rdx-mcp/.rdx_mcp.json`）
+- 然后让 Agent 调 `rd.capture.list` 选择文件，再把返回的 `path` 传给 `rd.capture.open`
 
 ## 第一次调用：一键端到端
 
