@@ -7,6 +7,12 @@ RDX-MCP（`rdx-mcp`）是一个基于 Model Context Protocol（MCP）的 RenderD
 - **使用者（集成到 Agent / 桌面客户端 / Web 客户端）**：想快速把 RenderDoc 调试能力接入 MCP，并用工具完成分析与产出报告。
 - **开发者（扩展与维护）**：想新增 verifier / patch 逻辑 / KB 索引来源，或补全 pipeline 步骤。
 
+## 使用前提
+
+- Python `>= 3.10`。
+- 需要本仓库的 RenderDoc 源码并完成本地编译，生成 `renderdoc.pyd` 与 `renderdoc.dll`。
+- 启动时需能 `import renderdoc`：在默认构建布局下 `run.bat` 会自动探测；否则设置 `RDX_RENDERDOC_PATH`。
+
 ## 目录
 
 - 快速开始：`quickstart.md`（见 [quickstart.md](quickstart.md)）

@@ -13,6 +13,7 @@ RDX-MCP Server —— 用于 GPU debug automation 的主 MCP server。
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -183,9 +184,19 @@ async def _lifespan(server: FastMCP):
     )
 
     # -- Worker scheduler ----------------------------------------------------
+    max_local_workers = getattr(
+        _config.worker,
+        "max_local_workers",
+        getattr(_config.worker, "max_workers_per_gpu", 1),
+    )
+    max_remote_workers = getattr(
+        _config.worker,
+        "max_remote_workers",
+        getattr(_config.worker, "max_remote_controllers", 1),
+    )
     _scheduler = WorkerScheduler(
-        max_local_workers=_config.worker.max_local_workers,
-        max_remote_workers=_config.worker.max_remote_workers,
+        max_local_workers=max_local_workers,
+        max_remote_workers=max_remote_workers,
     )
 
     # -- Knowledge services --------------------------------------------------
@@ -228,16 +239,40 @@ async def _lifespan(server: FastMCP):
 # MCP server instance
 # ---------------------------------------------------------------------------
 
-mcp = FastMCP(
-    "rdx-mcp",
-    description=(
+def _create_mcp() -> FastMCP:
+    description = (
         "RDX-MCP: RenderDoc GPU Debug Server. "
         "Provides 21 tools for automated GPU capture analysis, "
         "shader debugging, anomaly detection, bisect search, "
         "experiment management, and report generation."
-    ),
-    lifespan=_lifespan,
-)
+    )
+
+    kwargs: Dict[str, Any] = {}
+    try:
+        params = set(inspect.signature(FastMCP.__init__).parameters)
+        if "description" in params:
+            kwargs["description"] = description
+        if "lifespan" in params:
+            kwargs["lifespan"] = _lifespan
+        # Older/newer FastMCP versions configure SSE host/port via init() not run().
+        if "host" in params:
+            kwargs["host"] = os.environ.get("RDX_SSE_HOST", "127.0.0.1")
+        if "port" in params:
+            kwargs["port"] = int(os.environ.get("RDX_SSE_PORT", "8765"))
+    except (TypeError, ValueError):
+        # Signature inspection can fail on some implementations; fall back to try/except.
+        kwargs["description"] = description
+        kwargs["lifespan"] = _lifespan
+
+    try:
+        return FastMCP("rdx-mcp", **kwargs)
+    except TypeError:
+        logger.warning("FastMCP init signature incompatible; retrying without description.")
+        kwargs.pop("description", None)
+        return FastMCP("rdx-mcp", **kwargs)
+
+
+mcp = _create_mcp()
 
 
 # ===================================================================
@@ -1383,9 +1418,8 @@ def main_sse() -> None:
         level=os.environ.get("RDX_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
-    host = os.environ.get("RDX_SSE_HOST", "0.0.0.0")
-    port = int(os.environ.get("RDX_SSE_PORT", "8765"))
-    mcp.run(transport="sse", host=host, port=port)
+    # Host/port are configured via FastMCP settings (FASTMCP_*/init args) in some versions.
+    mcp.run(transport="sse")
 
 
 if __name__ == "__main__":

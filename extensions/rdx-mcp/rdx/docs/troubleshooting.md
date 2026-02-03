@@ -11,11 +11,15 @@
 **原因**
 
 - RenderDoc 的 Python module 没有在当前进程的 `sys.path` 中（见 `extensions/rdx-mcp/rdx/core/render_service.py` 的错误信息）。
+- RenderDoc 源码未编译完成，导致 `renderdoc.pyd` 不存在或路径不在默认输出目录。
 
 **处理**
 
 - 设置 `RDX_RENDERDOC_PATH` 指向 RenderDoc 的 Python module 所在目录（`run.py` 会把它加入 `sys.path`）。
 - 确认该目录下确实能 `import renderdoc`（可在同环境下手动验证）。
+- 在 Windows 上编译 `renderdoc.sln` 的 `pyrenderdoc_module`（`x64` + `Development`），默认输出：
+  - `x64\Development\pymodules\renderdoc.pyd`
+  - `x64\Development\renderdoc.dll`
 
 ## SSE 监听不符合预期（host/port）
 
@@ -90,4 +94,3 @@
 **处理**
 
 - 先将 `task_state_json` 保存到文件并用 Python 验证能否被 `TaskState` 反序列化（定位是 JSON 结构问题还是文件系统问题）。
-

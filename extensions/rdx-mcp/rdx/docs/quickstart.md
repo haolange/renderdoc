@@ -7,8 +7,10 @@
 **必需**
 
 - Python `>= 3.10`（见 `extensions/rdx-mcp/pyproject.toml`）。
+- 需要本仓库的 RenderDoc 源码并完成本地编译，生成 `renderdoc.pyd` 与 `renderdoc.dll`（Windows 默认输出见下）。
 - RenderDoc 的 Python module 可被导入：`import renderdoc`。
   - 常见做法：设置 `RDX_RENDERDOC_PATH`，将 RenderDoc 的 Python module 所在目录加入 `sys.path`（`extensions/rdx-mcp/run.py` 会读取它）。
+  - Windows 下 `run.bat` 会自动探测默认输出布局（例如 `x64\Development\pymodules`），未命中时再手动设置即可。
 
 **可选（按需）**
 
@@ -23,6 +25,14 @@ RDX-MCP 本质上是一个 Python 包 + MCP server 入口。你可以不安装�
 cd extensions/rdx-mcp
 python -m pip install -e .
 ```
+
+## RenderDoc 源码构建（必需，Windows 示例）
+
+- 打开仓库根目录的 `renderdoc.sln`。
+- 选择 `x64` + `Development`，编译 `pyrenderdoc_module`（会联动生成 `renderdoc.dll`）。
+- 默认输出：
+  - `x64\Development\pymodules\renderdoc.pyd`
+  - `x64\Development\renderdoc.dll`
 
 ## 启动服务
 
@@ -77,4 +87,3 @@ rdx-mcp
 - `bug_type_hints` 是一个 JSON 数组字符串，例如：`["naninf", "precision"]`
 
 后续建议先阅读：`tools.md`（各工具输入输出）、`workflows.md`（S0–S7 过程与可观测数据）。
-

@@ -25,9 +25,11 @@ Environment variables:
 """
 
 import argparse
+import importlib.util
 import logging
 import os
 import sys
+from pathlib import Path
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -42,6 +44,27 @@ def setup_renderdoc_path() -> None:
     rdoc_path = os.environ.get("RDX_RENDERDOC_PATH")
     if rdoc_path and rdoc_path not in sys.path:
         sys.path.insert(0, rdoc_path)
+
+
+def ensure_renderdoc_available(logger: logging.Logger) -> None:
+    if importlib.util.find_spec("renderdoc") is not None:
+        return
+
+    rdoc_path = os.environ.get("RDX_RENDERDOC_PATH")
+    module_name = "renderdoc.pyd" if os.name == "nt" else "renderdoc.so"
+    if rdoc_path:
+        expected = Path(rdoc_path) / module_name
+        logger.error("RenderDoc python module not found at %s", expected)
+    else:
+        logger.error("RenderDoc python module not found and RDX_RENDERDOC_PATH is not set.")
+
+    repo_root = Path(__file__).resolve().parents[2]
+    logger.error("RDX-MCP requires a local RenderDoc source build to provide MCP tools.")
+    logger.error(
+        "Build renderdoc.sln -> pyrenderdoc_module (x64 Development) to generate %s",
+        repo_root / "x64" / "Development" / "pymodules" / module_name,
+    )
+    raise SystemExit(1)
 
 
 def main() -> None:
@@ -76,6 +99,7 @@ def main() -> None:
     setup_renderdoc_path()
 
     logger = logging.getLogger("rdx-mcp")
+    ensure_renderdoc_available(logger)
     logger.info("Starting RDX-MCP server (transport=%s)", args.transport)
 
     if args.transport == "stdio":
