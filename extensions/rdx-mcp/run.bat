@@ -142,32 +142,8 @@ rem Override by passing args, e.g.:
 rem   run.bat --transport stdio
 rem   run.bat --transport sse --host 127.0.0.1 --port 8765
 set "RDX_ARGS=%*"
-if "%~1"=="" (
-  set "RDX_PORT=8765"
-  for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "$p=8765; for($i=$p;$i -le 8799;$i++){ if(-not (Get-NetTCPConnection -LocalPort $i -State Listen -ErrorAction SilentlyContinue)){ $p=$i; break } }; Write-Output $p"` ) do set "RDX_PORT=%%P"
-  set "RDX_SSE_HOST=0.0.0.0"
-  set "RDX_SSE_PORT=!RDX_PORT!"
-  set "RDX_ARGS=--transport sse --host 0.0.0.0 --port !RDX_PORT!"
-)
-
-if "%~1"=="" (
-  set "LAN_IP="
-  for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -notlike '26.*' } | Select-Object -First 1 -ExpandProperty IPAddress); if(-not $ip){ $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' } | Select-Object -First 1 -ExpandProperty IPAddress) }; if($ip){ Write-Output $ip }"` ) do set "LAN_IP=%%I"
-
-  if not "!LAN_IP!"=="" (
-    echo [RDX-MCP] Manus config:
-    echo [RDX-MCP]   Transport: SSE
-    echo [RDX-MCP]   URL: http://!LAN_IP!:!RDX_PORT!
-    powershell -NoProfile -Command "Set-Clipboard -Value 'http://!LAN_IP!:!RDX_PORT!'" >nul 2>&1
-    rem Best-effort: open inbound firewall for local network access (may require admin).
-    netsh advfirewall firewall add rule name="RDX-MCP SSE !RDX_PORT!" dir=in action=allow protocol=TCP localport=!RDX_PORT! >nul 2>&1
-  ) else (
-    echo [RDX-MCP] Manus config:
-    echo [RDX-MCP]   Transport: SSE
-    echo [RDX-MCP]   URL: http://127.0.0.1:!RDX_PORT!  ^(same machine only^)
-  )
-  echo.
-)
+if "%~1"=="" goto :auto_sse_config
+:after_auto_sse
 
 %PY_CMD% "%SCRIPT_DIR%run.py" %RDX_ARGS%
 set "EXITCODE=%ERRORLEVEL%"
@@ -181,3 +157,37 @@ popd >nul
 rem One-click friendly: pause unless explicitly disabled.
 if "%RDX_NO_PAUSE%"=="" pause
 exit /b %EXITCODE%
+
+:auto_sse_config
+set "RDX_PORT=8765"
+set "LAN_IP="
+set "RDX_ENV_FILE=%TEMP%\\rdx_mcp_env.bat"
+%PY_CMD% "%SCRIPT_DIR%run_autoconfig.py" "%RDX_ENV_FILE%" >nul 2>&1
+if exist "%RDX_ENV_FILE%" (
+  call "%RDX_ENV_FILE%"
+  del "%RDX_ENV_FILE%" >nul 2>&1
+)
+if "%RDX_PORT%"=="" set "RDX_PORT=8765"
+set "RDX_SSE_HOST=0.0.0.0"
+set "RDX_SSE_PORT=%RDX_PORT%"
+set "RDX_ARGS=--transport sse --host 0.0.0.0 --port %RDX_PORT%"
+
+if not "%LAN_IP%"=="" goto :have_ip
+echo [RDX-MCP] Manus config:
+echo [RDX-MCP]   Transport: SSE
+echo [RDX-MCP]   URL: http://127.0.0.1:%RDX_PORT%/sse  ^(same machine only^)
+goto :after_ip_print
+
+:have_ip
+echo [RDX-MCP] Manus config:
+echo [RDX-MCP]   Transport: SSE
+echo [RDX-MCP]   URL: http://%LAN_IP%:%RDX_PORT%/sse
+powershell -NoProfile -Command "Set-Clipboard -Value 'http://%LAN_IP%:%RDX_PORT%/sse'" >nul 2>&1
+rem Best-effort: open inbound firewall for local network access (may require admin).
+netsh advfirewall firewall add rule name="RDX-MCP SSE %RDX_PORT%" dir=in action=allow protocol=TCP localport=%RDX_PORT% >nul 2>&1
+if "%ERRORLEVEL%"=="0" goto :after_firewall_note
+echo [RDX-MCP] NOTE: Could not add firewall rule (may require admin). If Manus can't connect, allow port %RDX_PORT% in Windows Firewall.
+:after_firewall_note
+:after_ip_print
+echo.
+goto :after_auto_sse
