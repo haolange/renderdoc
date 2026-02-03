@@ -2,8 +2,8 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem RDX-MCP one-click runner (Windows)
-rem - Double-click to run stdio transport (default)
-rem - Or run from terminal: run.bat --transport sse --host 127.0.0.1 --port 8765
+rem - Double-click to run SSE with a prompt (LAN or Internet via ngrok)
+rem - Or run from terminal: run.bat --transport stdio
 rem
 rem Required (for RenderDoc features):
 rem   RDX_RENDERDOC_PATH = directory that contains the RenderDoc Python module (so `import renderdoc` works)
@@ -142,7 +142,7 @@ rem Override by passing args, e.g.:
 rem   run.bat --transport stdio
 rem   run.bat --transport sse --host 127.0.0.1 --port 8765
 set "RDX_ARGS=%*"
-if "%~1"=="" goto :auto_sse_config
+if "%~1"=="" goto :select_mode
 :after_auto_sse
 
 %PY_CMD% "%SCRIPT_DIR%run.py" %RDX_ARGS%
@@ -158,36 +158,20 @@ rem One-click friendly: pause unless explicitly disabled.
 if "%RDX_NO_PAUSE%"=="" pause
 exit /b %EXITCODE%
 
-:auto_sse_config
-set "RDX_PORT=8765"
-set "LAN_IP="
+:select_mode
+choice /c LI /n /m "[RDX-MCP] Mode: L=LAN, I=INTERNET : "
+set "RDX_MODE=lan"
+if errorlevel 2 set "RDX_MODE=internet"
+echo [RDX-MCP] Mode selected: %RDX_MODE%
 set "RDX_ENV_FILE=%TEMP%\\rdx_mcp_env.bat"
-%PY_CMD% "%SCRIPT_DIR%run_autoconfig.py" "%RDX_ENV_FILE%" >nul 2>&1
+%PY_CMD% "%SCRIPT_DIR%run_autoconfig.py" --mode %RDX_MODE% --env "%RDX_ENV_FILE%"
+if errorlevel 1 (
+  echo [RDX-MCP] ERROR: Failed to prepare SSE config.
+  set "EXITCODE=1"
+  goto :end
+)
 if exist "%RDX_ENV_FILE%" (
   call "%RDX_ENV_FILE%"
   del "%RDX_ENV_FILE%" >nul 2>&1
 )
-if "%RDX_PORT%"=="" set "RDX_PORT=8765"
-set "RDX_SSE_HOST=0.0.0.0"
-set "RDX_SSE_PORT=%RDX_PORT%"
-set "RDX_ARGS=--transport sse --host 0.0.0.0 --port %RDX_PORT%"
-
-if not "%LAN_IP%"=="" goto :have_ip
-echo [RDX-MCP] Manus config:
-echo [RDX-MCP]   Transport: SSE
-echo [RDX-MCP]   URL: http://127.0.0.1:%RDX_PORT%/sse  ^(same machine only^)
-goto :after_ip_print
-
-:have_ip
-echo [RDX-MCP] Manus config:
-echo [RDX-MCP]   Transport: SSE
-echo [RDX-MCP]   URL: http://%LAN_IP%:%RDX_PORT%/sse
-powershell -NoProfile -Command "Set-Clipboard -Value 'http://%LAN_IP%:%RDX_PORT%/sse'" >nul 2>&1
-rem Best-effort: open inbound firewall for local network access (may require admin).
-netsh advfirewall firewall add rule name="RDX-MCP SSE %RDX_PORT%" dir=in action=allow protocol=TCP localport=%RDX_PORT% >nul 2>&1
-if "%ERRORLEVEL%"=="0" goto :after_firewall_note
-echo [RDX-MCP] NOTE: Could not add firewall rule (may require admin). If Manus can't connect, allow port %RDX_PORT% in Windows Firewall.
-:after_firewall_note
-:after_ip_print
-echo.
 goto :after_auto_sse

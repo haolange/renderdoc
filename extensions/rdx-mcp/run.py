@@ -73,7 +73,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--transport",
-        choices=["stdio", "sse"],
+        choices=["stdio", "sse", "streamable-http", "http"],
         default="stdio",
         help="MCP transport protocol (default: stdio)",
     )
@@ -102,14 +102,23 @@ def main() -> None:
     ensure_renderdoc_available(logger)
     logger.info("Starting RDX-MCP server (transport=%s)", args.transport)
 
-    if args.transport == "stdio":
+    transport = args.transport
+    if transport == "http":
+        transport = "streamable-http"
+
+    if transport == "stdio":
         from rdx.server import main as server_main
         server_main()
-    elif args.transport == "sse":
+    elif transport == "sse":
         os.environ["RDX_SSE_HOST"] = args.host
         os.environ["RDX_SSE_PORT"] = str(args.port)
         from rdx.server import main_sse
         main_sse()
+    elif transport == "streamable-http":
+        os.environ["RDX_SSE_HOST"] = args.host
+        os.environ["RDX_SSE_PORT"] = str(args.port)
+        from rdx.server import main_streamable_http
+        main_streamable_http()
 
 
 if __name__ == "__main__":

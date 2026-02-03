@@ -18,11 +18,13 @@ import json
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from rdx.config import RdxConfig
 from rdx.models import (
@@ -127,6 +129,35 @@ def _err_response(
         error=ErrorDetail(code=code, message=message, details=details),
     )
     return json.dumps(resp.model_dump(mode="json", exclude_none=True))
+
+
+def _split_path_list(value: str) -> List[str]:
+    """
+    Split a user-provided path list.
+
+    Windows drive letters conflict with ':' separators, so we prefer ';' (and also allow '|').
+    """
+    v = (value or "").strip()
+    if not v:
+        return []
+    if ";" in v:
+        parts = v.split(";")
+    elif "|" in v:
+        parts = v.split("|")
+    else:
+        parts = v.split(":") if os.name != "nt" else [v]
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _stat_file(p: Path) -> Dict[str, Any]:
+    st = p.stat()
+    mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).isoformat()
+    return {
+        "path": str(p),
+        "name": p.name,
+        "size_bytes": int(st.st_size),
+        "mtime_utc": mtime,
+    }
 
 
 def _session_err_response(exc: SessionError) -> str:
@@ -247,6 +278,30 @@ def _create_mcp() -> FastMCP:
         "experiment management, and report generation."
     )
 
+    def build_transport_security() -> Optional[TransportSecuritySettings]:
+        allowed_hosts_env = os.environ.get("RDX_ALLOWED_HOSTS", "").strip()
+        allowed_origins_env = os.environ.get("RDX_ALLOWED_ORIGINS", "").strip()
+        enable_env = os.environ.get("RDX_DNS_REBINDING_PROTECTION", "").strip()
+
+        if not allowed_hosts_env and not allowed_origins_env and not enable_env:
+            return None
+
+        def split_csv(value: str) -> List[str]:
+            return [item.strip() for item in value.split(",") if item.strip()]
+
+        allowed_hosts = split_csv(allowed_hosts_env) if allowed_hosts_env else []
+        allowed_origins = split_csv(allowed_origins_env) if allowed_origins_env else []
+
+        enable = True
+        if enable_env:
+            enable = enable_env.lower() not in ("0", "false", "no")
+
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=enable,
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        )
+
     kwargs: Dict[str, Any] = {}
     try:
         params = set(inspect.signature(FastMCP.__init__).parameters)
@@ -259,6 +314,10 @@ def _create_mcp() -> FastMCP:
             kwargs["host"] = os.environ.get("RDX_SSE_HOST", "127.0.0.1")
         if "port" in params:
             kwargs["port"] = int(os.environ.get("RDX_SSE_PORT", "8765"))
+        if "transport_security" in params:
+            transport_security = build_transport_security()
+            if transport_security is not None:
+                kwargs["transport_security"] = transport_security
     except (TypeError, ValueError):
         # Signature inspection can fail on some implementations; fall back to try/except.
         kwargs["description"] = description
@@ -376,6 +435,62 @@ async def capture_open(session_id: str, rdc_path: str) -> str:
     except Exception as exc:
         logger.exception("rd.capture.open failed")
         return _err_response("CAPTURE_OPEN_ERROR", str(exc), trace_id=trace_id)
+
+
+# ===================================================================
+# Tool: rd.capture.list
+# ===================================================================
+
+@mcp.tool(name="rd.capture.list")
+async def capture_list(
+    dirs: str = "",
+    recursive: bool = False,
+    limit: int = 100,
+) -> str:
+    """列出本机可访问的 .rdc capture 文件，供远程 agent 选择并传给 rd.capture.open。
+
+    Args:
+        dirs: 可选目录列表。为空时使用环境变量 RDX_RDC_DIRS。
+              Windows 推荐用 ';' 分隔（例如 'D:\\captures;E:\\rdc'）。
+        recursive: 是否递归扫描子目录（大目录可能很慢）。
+        limit: 最大返回条数（默认 100）。
+    Returns:
+        JSON ToolResponse，包含 captures 列表。
+    """
+    trace_id = _new_id("trc")
+    try:
+        raw = dirs.strip() or os.environ.get("RDX_RDC_DIRS", "").strip()
+        roots = [Path(p) for p in _split_path_list(raw)] if raw else []
+
+        if not roots:
+            return _err_response(
+                "RDC_DIRS_NOT_SET",
+                "No capture directories configured. Set RDX_RDC_DIRS or pass dirs.",
+                trace_id=trace_id,
+            )
+
+        def scan() -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            for root in roots:
+                if not root.exists() or not root.is_dir():
+                    continue
+                it = root.rglob("*.rdc") if recursive else root.glob("*.rdc")
+                for p in it:
+                    try:
+                        if p.is_file():
+                            out.append(_stat_file(p))
+                    except Exception:
+                        continue
+                    if len(out) >= max(1, limit):
+                        return out
+            return out
+
+        loop = asyncio.get_running_loop()
+        captures = await loop.run_in_executor(None, scan)
+        return _ok_response(trace_id=trace_id, captures=captures, total=len(captures))
+    except Exception as exc:
+        logger.exception("rd.capture.list failed")
+        return _err_response("CAPTURE_LIST_ERROR", str(exc), trace_id=trace_id)
 
 
 # ===================================================================
@@ -1420,6 +1535,15 @@ def main_sse() -> None:
     )
     # Host/port are configured via FastMCP settings (FASTMCP_*/init args) in some versions.
     mcp.run(transport="sse")
+
+
+def main_streamable_http() -> None:
+    """浣跨敤 Streamable HTTP transport 杩愯 MCP server锛堥潰鍚?web clients锛夈€?"""
+    logging.basicConfig(
+        level=os.environ.get("RDX_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+    mcp.run(transport="streamable-http")
 
 
 if __name__ == "__main__":

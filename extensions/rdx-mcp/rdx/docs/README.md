@@ -12,6 +12,7 @@ RDX-MCP（`rdx-mcp`）是一个基于 Model Context Protocol（MCP）的 RenderD
 - Python `>= 3.10`。
 - 需要本仓库的 RenderDoc 源码并完成本地编译，生成 `renderdoc.pyd` 与 `renderdoc.dll`。
 - 启动时需能 `import renderdoc`：在默认构建布局下 `run.bat` 会自动探测；否则设置 `RDX_RENDERDOC_PATH`。
+- 远程客户端（如 Manus）访问本地 SSE 时，建议使用 `run.bat` 的 **INTERNET** 模式自动启用 ngrok（需先执行 `ngrok config add-authtoken <TOKEN>`）。
 
 ## 目录
 

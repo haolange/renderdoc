@@ -36,6 +36,25 @@ python -m pip install -e .
 
 ## 启动服务
 
+### 一键启动（Windows）
+
+双击 `extensions/rdx-mcp/run.bat`，脚本会提示选择：
+
+- `L`（LAN）：默认输出 SSE 内网 URL（例如 `http://192.168.x.x:PORT/sse`）
+- `I`（INTERNET）：默认输出 **HTTP** 公网 URL（`https://.../mcp`），更稳定地穿透代理/隧道
+
+脚本会做基础自检（IP 类型、ngrok 安装/授权），并把最终 URL 复制到剪贴板，直接粘贴到客户端即可。
+如需强制 SSE 或 HTTP，可在 `run.env.bat` 里设置 `RDX_TRANSPORT=sse` 或 `RDX_TRANSPORT=http`。
+
+ngrok 安装方式（Windows，任选其一）：
+
+- `winget install ngrok.ngrok`
+- 或手动下载 `ngrok.exe` 并放到 `extensions/rdx-mcp/`（与 `run.bat` 同目录）或仓库根目录
+
+安装后需执行一次：`ngrok config add-authtoken <TOKEN>`（否则 INTERNET 模式会自检失败）。
+
+如果未配置 authtoken，脚本会提示你粘贴并将其保存到 `extensions/rdx-mcp/.rdx_mcp.json`（已加入 `.gitignore`，避免意外提交）。
+
 ### 方式 A：stdio（默认，适合桌面客户端/Agent 集成）
 
 ```powershell
@@ -72,6 +91,16 @@ rdx-mcp
   }
 }
 ```
+
+## 远程 Agent 如何打开你本机的 .rdc？
+
+远程/云端 Agent 调用 `rd.capture.open` 时，传入的 `rdc_path` 会在 **运行 RDX-MCP 的这台机器**上读取，
+所以它必须是你本机可访问的路径（例如 `D:\captures\foo.rdc`）。
+
+为了减少手动输入路径，可以：
+
+- 在 `run.env.bat` 设置 `RDX_RDC_DIRS`（Windows 用 `;` 分隔多个目录）
+- 然后让 Agent 先调用 `rd.capture.list` 选择文件，再把返回的 `path` 传给 `rd.capture.open`
 
 ## 第一次调用：一键端到端
 

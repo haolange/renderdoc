@@ -37,6 +37,40 @@
 - 检查环境变量是否被其他启动脚本覆盖。
 - 端口冲突时更换 `--port` 或终止占用进程。
 
+## 远程客户端（Manus 等）无法连接 SSE
+
+**现象**
+
+- Manus 提示无法访问 `http://192.168.x.x:PORT/sse`，或连接超时 / OAuth 失败。
+
+**原因**
+
+- `192.168.* / 10.* / 172.16.*` 属于内网地址，远程沙箱无法直接访问你的局域网。
+
+**处理**
+
+- 使用 `run.bat` 的 **INTERNET** 模式，自动启用 ngrok 并获得公网 URL。
+- 确保已执行：`ngrok config add-authtoken <TOKEN>`，且 `ngrok` 在 PATH 中。
+- 连接时使用 `run.bat` 输出并复制的 URL（形如 `https://xxxx.ngrok-free.app/sse`）。
+
+**补充**
+
+- INTERNET 模式默认使用 **HTTP/streamable**（`/mcp`），比 SSE 更稳定。Manus 中请选择 **HTTP** 并粘贴 `https://.../mcp`。
+
+### 报错 `HTTP 421` / `Invalid Host header`
+
+**现象**
+
+- 日志出现 `Invalid Host header: <ngrok域名>`，并返回 `HTTP 421`。
+
+**原因**
+
+- MCP 的 DNS rebinding 保护拒绝了 ngrok 域名的 Host 头。
+
+**处理**
+
+- 重新运行 `run.bat` 的 **INTERNET** 模式（脚本会自动注入 `RDX_ALLOWED_HOSTS`）。
+
 ## `rd.event.bisect_first_bad` 结果不稳定/置信度低
 
 **常见原因**
