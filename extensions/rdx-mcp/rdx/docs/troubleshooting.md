@@ -21,6 +21,25 @@
   - `x64\Development\pymodules\renderdoc.pyd`
   - `x64\Development\renderdoc.dll`
 
+## `ImportError: DLL load failed while importing renderdoc: The specified module could not be found.`
+
+**现象**
+
+- MCP 能启动、客户端也能“看到 tools”，但一调用需要 RenderDoc 的工具就报上述错误。
+
+**原因（常见）**
+
+- **编译时用错 Python 版本**：`renderdoc.pyd` 链接的还是 `python36.dll`，但你运行 MCP 用的是 3.10+/3.11+/3.14…
+- **Windows DLL 搜索路径问题（Python 3.8+）**：即使版本匹配，`renderdoc.pyd` 依赖的 `renderdoc.dll`（以及同目录的其它 DLL）也可能因为安全策略导致 **PATH 不生效**，需要用 `os.add_dll_directory()` 显式加入 DLL 目录。
+
+**处理**
+
+- 确认 `renderdoc.pyd` 依赖的 Python DLL（示例会输出 `python314.dll` / `python36.dll` 等）：
+  - `py -3 -c "import pathlib,re; b=pathlib.Path(r'x64\\Development\\pymodules\\renderdoc.pyd').read_bytes(); print(sorted(set(m.group(0).decode('ascii','ignore') for m in re.finditer(rb'python\\d{2,3}\\.dll', b, re.I))))"`
+- 确认你是通过 `extensions/rdx-mcp/run.py` 启动（它会把 `RDX_RENDERDOC_PATH` 及其父目录通过 `os.add_dll_directory()` 加入 DLL 搜索路径）。
+- 若你自行启动/嵌入 Python，请在导入前显式加 DLL 目录：
+  - `py -3 -c "import os; os.add_dll_directory(r'x64\\Development'); os.add_dll_directory(r'x64\\Development\\pymodules'); import sys; sys.path.insert(0,r'x64\\Development\\pymodules'); import renderdoc"`
+
 ## SSE 监听不符合预期（host/port）
 
 **现象**

@@ -1781,7 +1781,7 @@
     <None Include="Resources\README.md" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="$(PythonStandardLibraryZip)">
+    <Content Include="$(PythonStandardLibraryZip)" Condition="Exists('$(PythonStandardLibraryZip)')">
       <Link>python$(PythonMajorMinor).zip</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>false</Visible>
