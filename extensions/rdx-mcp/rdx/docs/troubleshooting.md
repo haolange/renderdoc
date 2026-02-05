@@ -74,7 +74,7 @@
 
 **补充**
 
-- INTERNET 模式默认使用 **HTTP/streamable**（`/mcp`），比 SSE 更稳定。Manus 中请选择 **HTTP** 并粘贴 `https://.../mcp`。
+- INTERNET 模式支持 **HTTP/streamable**（`/mcp`）或 **SSE**（`/sse`）。HTTP 更稳定；一键运行会提示选择。Manus 中请选择 **HTTP** 并粘贴 `https://.../mcp`。
 
 ### 报错 `HTTP 421` / `Invalid Host header`
 

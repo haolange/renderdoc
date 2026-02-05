@@ -47,28 +47,52 @@ def _has_flag(flags: Any, flag: Any) -> bool:
     同时支持 Python :class:`enum.IntFlag` 与 renderdoc module
     暴露的 SWIG 生成 ``ActionFlags`` 类型。
     """
+    if flag is None:
+        return False
     try:
         return bool(flags & flag)
     except TypeError:
         return False
 
 
+def _first_attr(obj: Any, *names: str) -> Any:
+    """Return the first attribute found on *obj* from *names* (or None)."""
+    for name in names:
+        if hasattr(obj, name):
+            return getattr(obj, name)
+    return None
+
+
 def _map_action_flags(flags: Any) -> EventFlags:
     """将 RenderDoc ``ActionFlags`` bitfield 转换为 :class:`EventFlags`。"""
     rd = _get_rd()
     af = rd.ActionFlags
+
+    # RenderDoc bindings expose ActionFlags.Drawcall (C++ name) not ActionFlags.Draw.
+    # Be tolerant to older/alternate naming to avoid hard failures when enumerating actions.
+    drawcall = _first_attr(af, "Drawcall", "Draw")
+    dispatch = _first_attr(af, "Dispatch")
+    mesh_dispatch = _first_attr(af, "MeshDispatch")
+    dispatch_ray = _first_attr(af, "DispatchRay")
+    build_acc_struct = _first_attr(af, "BuildAccStruct")
+    pass_boundary = _first_attr(af, "PassBoundary")
     return EventFlags(
-        is_draw=_has_flag(flags, af.Draw),
-        is_dispatch=_has_flag(flags, af.Dispatch),
-        is_marker=(
-            _has_flag(flags, af.SetMarker)
-            or _has_flag(flags, af.PushMarker)
-            or _has_flag(flags, af.PopMarker)
+        is_draw=_has_flag(flags, drawcall) or _has_flag(flags, mesh_dispatch),
+        is_dispatch=(
+            _has_flag(flags, dispatch)
+            or _has_flag(flags, mesh_dispatch)
+            or _has_flag(flags, dispatch_ray)
+            or _has_flag(flags, build_acc_struct)
         ),
-        is_copy=_has_flag(flags, af.Copy),
-        is_resolve=_has_flag(flags, af.Resolve),
-        is_clear=_has_flag(flags, af.Clear),
-        is_pass_boundary=_has_flag(flags, af.Present),
+        is_marker=(
+            _has_flag(flags, _first_attr(af, "SetMarker"))
+            or _has_flag(flags, _first_attr(af, "PushMarker"))
+            or _has_flag(flags, _first_attr(af, "PopMarker"))
+        ),
+        is_copy=_has_flag(flags, _first_attr(af, "Copy")),
+        is_resolve=_has_flag(flags, _first_attr(af, "Resolve")),
+        is_clear=_has_flag(flags, _first_attr(af, "Clear")),
+        is_pass_boundary=_has_flag(flags, _first_attr(af, "Present")) or _has_flag(flags, pass_boundary),
     )
 
 

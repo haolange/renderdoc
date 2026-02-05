@@ -41,10 +41,10 @@ python -m pip install -e .
 双击 `extensions/rdx-mcp/run.bat`，脚本会提示选择：
 
 - `L`（LAN）：默认输出 SSE 内网 URL（例如 `http://192.168.x.x:PORT/sse`）
-- `I`（INTERNET）：默认输出 **HTTP** 公网 URL（`https://.../mcp`），更稳定地穿透代理/隧道
+- `I`（INTERNET）：会提示选择 **HTTP**（推荐，`https://.../mcp`）或 **SSE**（`https://.../sse`）公网 URL
 
 脚本会做基础自检（IP 类型、ngrok 安装/授权），并把最终 URL 复制到剪贴板，直接粘贴到客户端即可。
-如需强制 SSE 或 HTTP，可在 `run.env.bat` 里设置 `RDX_TRANSPORT=sse` 或 `RDX_TRANSPORT=http`。
+如需跳过提示并强制 SSE 或 HTTP，可在 `run.env.bat` 里设置 `RDX_TRANSPORT=sse` 或 `RDX_TRANSPORT=http`。
 首次运行时会询问默认 `.rdc` 目录，并保存到 `extensions/rdx-mcp/.rdx_mcp.json`（已忽略提交）。
 
 ngrok 安装方式（Windows，任选其一）：

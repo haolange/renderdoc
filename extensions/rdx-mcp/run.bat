@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem RDX-MCP one-click runner (Windows)
-rem - Double-click to run SSE with a prompt (LAN or Internet via ngrok)
+rem - Double-click to run with a prompt (LAN or Internet via ngrok, HTTP/SSE selection for Internet)
 rem - Or run from terminal: run.bat --transport stdio
 rem
 rem Required (for RenderDoc features):

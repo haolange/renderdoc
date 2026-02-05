@@ -588,9 +588,14 @@ class SessionManager:
         # 3. Capture file
         if state.capture_file is not None:
             try:
-                await self._offload(state.capture_file.CloseFile)
+                if hasattr(state.capture_file, "CloseFile"):
+                    await self._offload(state.capture_file.CloseFile)
+                elif hasattr(state.capture_file, "Shutdown"):
+                    await self._offload(state.capture_file.Shutdown)
+                else:
+                    raise AttributeError("capture_file has no CloseFile/Shutdown")
             except Exception as exc:
-                errors.append(f"capture_file.CloseFile: {exc}")
+                errors.append(f"capture_file.CloseFile/Shutdown: {exc}")
             state.capture_file = None
 
         # 4. Remote server connection

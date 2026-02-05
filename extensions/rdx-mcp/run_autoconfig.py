@@ -144,6 +144,16 @@ def is_public_host(host: str) -> bool:
     return not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved)
 
 
+def prompt_transport() -> str:
+    while True:
+        choice = input("[RDX-MCP] Transport: H=HTTP (recommended), S=SSE : ").strip().lower()
+        if choice in ("", "h", "http"):
+            return "streamable-http"
+        if choice in ("s", "sse"):
+            return "sse"
+        print("[RDX-MCP] Invalid choice. Please enter H or S.")
+
+
 def _fetch_tunnels() -> list[dict] | None:
     try:
         with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=2) as resp:
@@ -369,7 +379,10 @@ def main() -> None:
     elif transport_env == "sse":
         transport = "sse"
     else:
-        transport = "streamable-http" if args.mode == "internet" else "sse"
+        if args.mode == "internet" and sys.stdin.isatty():
+            transport = prompt_transport()
+        else:
+            transport = "streamable-http" if args.mode == "internet" else "sse"
 
     sse_host = "0.0.0.0" if args.mode == "lan" else "127.0.0.1"
     rdx_args = f"--transport {transport} --host {sse_host} --port {port}"
