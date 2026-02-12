@@ -108,24 +108,70 @@ _SUFFIX_MAP: Dict[str, str] = {
 }
 
 
+def _normalize_rgba8_bytes(rgba_bytes: bytes, width: int, height: int) -> bytes:
+    expected_rgba8_size = width * height * 4
+    if expected_rgba8_size <= 0:
+        raise ValueError(f"Invalid output dimensions: {width}x{height}")
+
+    if len(rgba_bytes) == expected_rgba8_size:
+        return rgba_bytes
+
+    expected_rgb8_size = width * height * 3
+    if len(rgba_bytes) == expected_rgb8_size:
+        rgb = np.frombuffer(rgba_bytes, dtype=np.uint8).reshape(height, width, 3)
+        alpha = np.full((height, width, 1), 255, dtype=np.uint8)
+        return np.concatenate([rgb, alpha], axis=2).tobytes()
+
+    expected_rgba32f_size = width * height * 16
+    if len(rgba_bytes) == expected_rgba32f_size:
+        arr = np.frombuffer(rgba_bytes, dtype=np.float32).reshape(height, width, 4)
+        arr = np.nan_to_num(arr, nan=0.0, posinf=1.0, neginf=0.0)
+        arr = np.clip(arr, 0.0, 1.0)
+        return (arr * 255.0).astype(np.uint8).tobytes()
+
+    if len(rgba_bytes) < expected_rgba8_size:
+        logger.warning(
+            "Readback buffer too small (%d < %d), padding to RGBA8 size",
+            len(rgba_bytes),
+            expected_rgba8_size,
+        )
+        return rgba_bytes + b"\x00" * (expected_rgba8_size - len(rgba_bytes))
+
+    logger.warning(
+        "Readback buffer too large (%d > %d), truncating to RGBA8 size",
+        len(rgba_bytes),
+        expected_rgba8_size,
+    )
+    return rgba_bytes[:expected_rgba8_size]
+
+
 def _resolve_overlay(name: str) -> Any:
     """将易读的 overlay 名称映射到 ``rd.DebugOverlay`` 值。"""
     rd = _get_rd()
+    no_overlay = getattr(rd.DebugOverlay, "NoOverlay")
+
+    def _pick(*candidates: str) -> Any:
+        for candidate in candidates:
+            value = getattr(rd.DebugOverlay, candidate, None)
+            if value is not None:
+                return value
+        return no_overlay
+
     key = name.lower().replace("-", "_").replace(" ", "_")
     table: Dict[str, Any] = {
-        "none": rd.DebugOverlay.NoOverlay,
-        "nan": rd.DebugOverlay.NaN,
-        "clipping": rd.DebugOverlay.Clipping,
-        "drawcall": rd.DebugOverlay.Drawcall,
-        "wireframe": rd.DebugOverlay.Wireframe,
-        "depth": rd.DebugOverlay.DepthTest,
-        "stencil": rd.DebugOverlay.StencilTest,
-        "backface_cull": rd.DebugOverlay.BackfaceCull,
-        "viewport_scissor": rd.DebugOverlay.ViewportScissor,
-        "quad_overdraw": rd.DebugOverlay.QuadOverdrawDraw,
-        "triangle_size": rd.DebugOverlay.TriangleSizeDraw,
+        "none": no_overlay,
+        "nan": _pick("NaN"),
+        "clipping": _pick("Clipping"),
+        "drawcall": _pick("Drawcall"),
+        "wireframe": _pick("Wireframe"),
+        "depth": _pick("DepthTest", "Depth"),
+        "stencil": _pick("StencilTest", "Stencil"),
+        "backface_cull": _pick("BackfaceCull"),
+        "viewport_scissor": _pick("ViewportScissor"),
+        "quad_overdraw": _pick("QuadOverdrawDraw", "QuadOverdrawPass"),
+        "triangle_size": _pick("TriangleSizeDraw", "TriangleSizePass"),
     }
-    return table.get(key, rd.DebugOverlay.NoOverlay)
+    return table.get(key, no_overlay)
 
 
 def _is_null_resource_id(resource_id: Any) -> bool:
@@ -155,7 +201,8 @@ def _encode_image(
     """
     from PIL import Image  # type: ignore[import-untyped]
 
-    img = Image.frombytes("RGBA", (width, height), rgba_bytes)
+    rgba8_bytes = _normalize_rgba8_bytes(rgba_bytes, width, height)
+    img = Image.frombytes("RGBA", (width, height), rgba8_bytes)
     buf = io.BytesIO()
     upper = fmt.upper()
 
@@ -171,7 +218,7 @@ def _encode_image(
         try:
             import imageio.v3 as iio  # type: ignore[import-untyped]
 
-            arr = np.frombuffer(rgba_bytes, dtype=np.uint8).reshape(
+            arr = np.frombuffer(rgba8_bytes, dtype=np.uint8).reshape(
                 height, width, 4,
             )
             arr_f = arr.astype(np.float32) / 255.0
@@ -186,7 +233,7 @@ def _encode_image(
         try:
             import imageio.v3 as iio  # type: ignore[import-untyped]
 
-            arr = np.frombuffer(rgba_bytes, dtype=np.uint8).reshape(
+            arr = np.frombuffer(rgba8_bytes, dtype=np.uint8).reshape(
                 height, width, 4,
             )
             # HDR 仅支持 3 通道（RGB）。

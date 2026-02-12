@@ -225,7 +225,7 @@ class PerfService:
         try:
             controller = session_manager.get_controller(session_id)
         except Exception as exc:
-            logger.error(
+            logger.warning(
                 "Failed to get controller for session %s: %s",
                 session_id, exc,
             )
@@ -303,7 +303,7 @@ class PerfService:
         try:
             controller = session_manager.get_controller(session_id)
         except Exception as exc:
-            logger.error(
+            logger.warning(
                 "Failed to get controller for session %s: %s",
                 session_id, exc,
             )
@@ -490,7 +490,7 @@ class PerfService:
         try:
             controller = session_manager.get_controller(session_id)
         except Exception as exc:
-            logger.error(
+            logger.warning(
                 "Failed to get controller for session %s: %s",
                 session_id, exc,
             )

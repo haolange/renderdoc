@@ -13,9 +13,12 @@ Artifacts 通过 ``rdx://`` URI 引用，并由 :class:`rdx.models.ArtifactRef`
 from __future__ import annotations
 
 import hashlib
+import io
+import json
 import logging
+import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiofiles
 import aiofiles.os
@@ -97,6 +100,7 @@ class ArtifactStore:
         self,
         data: bytes,
         mime: str = "application/octet-stream",
+        suffix: str = "",
         meta: Optional[Dict[str, Any]] = None,
     ) -> ArtifactRef:
         """存储原始字节并返回 :class:`ArtifactRef`。
@@ -146,13 +150,18 @@ class ArtifactStore:
             sha256=sha,
             mime=mime,
             bytes=len(data),
-            meta=meta or {},
+            meta={
+                **(meta or {}),
+                **({"suffix": suffix} if suffix else {}),
+                "stored_ts": int(time.time() * 1000),
+            },
         )
 
     async def store_file(
         self,
         path: Path,
         mime: str = "application/octet-stream",
+        suffix: str = "",
         meta: Optional[Dict[str, Any]] = None,
     ) -> ArtifactRef:
         """对磁盘文件计算 hash 并存入 CAS。
@@ -215,8 +224,164 @@ class ArtifactStore:
             sha256=sha,
             mime=mime,
             bytes=file_size,
-            meta=meta or {},
+            meta={
+                **(meta or {}),
+                **({"suffix": suffix} if suffix else {}),
+                "stored_ts": int(time.time() * 1000),
+            },
         )
+
+    async def store_json(
+        self,
+        data: Dict[str, Any],
+        *,
+        name: str = "",
+        session_id: Optional[str] = None,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> ArtifactRef:
+        payload = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        merged = dict(meta or {})
+        if name:
+            merged["name"] = name
+        if session_id:
+            merged["session_id"] = session_id
+        return await self.store(
+            payload,
+            mime="application/json",
+            suffix=".json",
+            meta=merged,
+        )
+
+    async def store_text(
+        self,
+        text: str,
+        *,
+        name: str = "",
+        session_id: Optional[str] = None,
+        mime: str = "text/plain",
+        suffix: str = ".txt",
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> ArtifactRef:
+        merged = dict(meta or {})
+        if name:
+            merged["name"] = name
+        if session_id:
+            merged["session_id"] = session_id
+        return await self.store(
+            text.encode("utf-8"),
+            mime=mime,
+            suffix=suffix,
+            meta=merged,
+        )
+
+    async def store_image(
+        self,
+        image: Any,
+        *,
+        name: str = "",
+        session_id: Optional[str] = None,
+        fmt: str = "PNG",
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> ArtifactRef:
+        from PIL import Image
+
+        if isinstance(image, bytes):
+            payload = image
+            suffix = ".png"
+            mime = "image/png"
+        else:
+            img = image if isinstance(image, Image.Image) else Image.fromarray(image)
+            buf = io.BytesIO()
+            fmt_upper = fmt.upper()
+            img.save(buf, format=fmt_upper)
+            payload = buf.getvalue()
+            if fmt_upper == "JPEG":
+                suffix = ".jpg"
+                mime = "image/jpeg"
+            elif fmt_upper == "EXR":
+                suffix = ".exr"
+                mime = "image/x-exr"
+            else:
+                suffix = ".png"
+                mime = "image/png"
+
+        merged = dict(meta or {})
+        if name:
+            merged["name"] = name
+        if session_id:
+            merged["session_id"] = session_id
+        return await self.store(payload, mime=mime, suffix=suffix, meta=merged)
+
+    def list_artifacts(self, prefix: str = "") -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        if not self._root.exists():
+            return items
+        for path in self._root.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix == ".tmp":
+                continue
+            rel = str(path.relative_to(self._root)).replace("\\", "/")
+            if prefix and not rel.startswith(prefix):
+                continue
+            st = path.stat()
+            items.append(
+                {
+                    "path": str(path),
+                    "relative_path": rel,
+                    "byte_size": int(st.st_size),
+                    "created_ts": int(st.st_ctime * 1000),
+                    "modified_ts": int(st.st_mtime * 1000),
+                },
+            )
+        items.sort(key=lambda it: it["modified_ts"], reverse=True)
+        return items
+
+    def cleanup_artifacts(
+        self,
+        *,
+        older_than_ms: Optional[int] = None,
+        prefix: str = "",
+        max_total_bytes: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        now_ms = int(time.time() * 1000)
+        artifacts = self.list_artifacts(prefix=prefix)
+        deleted: List[str] = []
+        freed = 0
+
+        if older_than_ms is not None:
+            for entry in artifacts:
+                age = now_ms - int(entry["modified_ts"])
+                if age < older_than_ms:
+                    continue
+                p = Path(entry["path"])
+                try:
+                    size = int(entry["byte_size"])
+                    p.unlink(missing_ok=True)
+                    deleted.append(str(p))
+                    freed += size
+                except OSError:
+                    continue
+            artifacts = self.list_artifacts(prefix=prefix)
+
+        if max_total_bytes is not None:
+            total = sum(int(it["byte_size"]) for it in artifacts)
+            if total > max_total_bytes:
+                by_oldest = sorted(artifacts, key=lambda it: it["modified_ts"])
+                for entry in by_oldest:
+                    if total <= max_total_bytes:
+                        break
+                    p = Path(entry["path"])
+                    try:
+                        size = int(entry["byte_size"])
+                        p.unlink(missing_ok=True)
+                        deleted.append(str(p))
+                        freed += size
+                        total -= size
+                    except OSError:
+                        continue
+
+        return {"deleted": deleted, "freed_bytes": freed}
 
     async def retrieve(self, sha256: str) -> bytes:
         """按 SHA256 digest 读取 artifact 的原始字节。
