@@ -16,6 +16,9 @@ import asyncio
 import io
 import logging
 import math
+import os
+import tempfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 import numpy as np
@@ -95,6 +98,10 @@ _MIME_MAP: Dict[str, str] = {
     "hdr": "image/vnd.radiance",
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
+    "dds": "image/vnd-ms.dds",
+    "tga": "image/x-tga",
+    "bmp": "image/bmp",
+    "raw": "application/octet-stream",
     "npz": "application/x-npz",
 }
 
@@ -104,8 +111,71 @@ _SUFFIX_MAP: Dict[str, str] = {
     "hdr": ".hdr",
     "jpg": ".jpg",
     "jpeg": ".jpg",
+    "dds": ".dds",
+    "tga": ".tga",
+    "bmp": ".bmp",
+    "raw": ".raw",
     "npz": ".npz",
 }
+
+_FILETYPE_NAME_MAP: Dict[str, str] = {
+    "png": "PNG",
+    "jpg": "JPG",
+    "jpeg": "JPG",
+    "dds": "DDS",
+    "exr": "EXR",
+    "hdr": "HDR",
+    "tga": "TGA",
+    "bmp": "BMP",
+    "raw": "Raw",
+}
+
+
+def _normalize_file_format(file_format: str) -> str:
+    fmt = str(file_format or "png").strip().lower()
+    if fmt == "jpeg":
+        return "jpg"
+    return fmt
+
+
+def _resolve_file_type(file_format: str) -> Tuple[str, Any]:
+    rd = _get_rd()
+    fmt = _normalize_file_format(file_format)
+    enum_name = _FILETYPE_NAME_MAP.get(fmt)
+    if not enum_name:
+        supported = sorted(k for k in _FILETYPE_NAME_MAP.keys() if k != "jpeg")
+        raise ValueError(
+            f"Unsupported texture export format '{file_format}'. "
+            f"Supported: {', '.join(supported)}"
+        )
+    file_type = getattr(rd.FileType, enum_name, None)
+    if file_type is None:
+        raise ValueError(
+            f"RenderDoc FileType '{enum_name}' is unavailable in this runtime"
+        )
+    return fmt, file_type
+
+
+def _save_texture_result(result: Any) -> Tuple[bool, str]:
+    rd = _get_rd()
+    if isinstance(result, bool):
+        return result, ""
+
+    detail = str(getattr(result, "message", "") or getattr(result, "details", ""))
+
+    for attr in ("code", "result", "status"):
+        code = getattr(result, attr, None)
+        if code is None:
+            continue
+        try:
+            return code == rd.ResultCode.Succeeded, detail or str(code)
+        except Exception:
+            return "Succeeded" in str(code), detail or str(code)
+
+    try:
+        return bool(result), detail or str(result)
+    except Exception:
+        return False, detail or str(result)
 
 
 def _normalize_rgba8_bytes(rgba_bytes: bytes, width: int, height: int) -> bytes:
@@ -409,6 +479,109 @@ class RenderService:
             event_id, tex_id, width, height, actual_fmt, artifact_ref.uri,
         )
         return artifact_ref, view_meta
+
+    async def save_texture_file(
+        self,
+        session_id: str,
+        event_id: int,
+        texture_id: Any,
+        session_manager: SessionManager,
+        artifact_store: ArtifactStore,
+        *,
+        output_format: str = "png",
+        output_path: Optional[str] = None,
+        subresource: Optional[Dict[str, int]] = None,
+    ) -> Tuple[ArtifactRef, Dict[str, Any], Optional[str]]:
+        rd = _get_rd()
+        controller = session_manager.get_controller(session_id)
+
+        await asyncio.to_thread(controller.SetFrameEvent, event_id, True)
+        resolved_id = await self._resolve_texture_id(controller, texture_id)
+        fmt, file_type = _resolve_file_type(output_format)
+
+        save_data = rd.TextureSave()
+        save_data.resourceId = resolved_id
+        save_data.destType = file_type
+        sub = subresource or {}
+        save_data.mip = int(sub.get("mip", 0))
+        try:
+            save_data.slice.sliceIndex = max(0, int(sub.get("slice", 0)))
+        except Exception:
+            pass
+        try:
+            save_data.sample.sampleIndex = max(0, int(sub.get("sample", 0)))
+        except Exception:
+            pass
+
+        suffix = _SUFFIX_MAP.get(fmt, f".{fmt}")
+        mime = _MIME_MAP.get(fmt, "application/octet-stream")
+        target_path: Path
+        owns_temp_file = False
+        if output_path:
+            target_path = Path(output_path)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            fd, temp_path = tempfile.mkstemp(prefix="rdx_tex_", suffix=suffix)
+            os.close(fd)
+            target_path = Path(temp_path)
+            owns_temp_file = True
+
+        try:
+            if fmt == "raw":
+                sub = rd.Subresource()
+                sub.mip = int(subresource.get("mip", 0) if subresource else 0)
+                sub.slice = int(subresource.get("slice", 0) if subresource else 0)
+                sub.sample = int(subresource.get("sample", 0) if subresource else 0)
+                raw_data = await asyncio.to_thread(
+                    controller.GetTextureData,
+                    resolved_id,
+                    sub,
+                )
+                await asyncio.to_thread(target_path.write_bytes, bytes(raw_data))
+            else:
+                save_result = await asyncio.to_thread(
+                    controller.SaveTexture,
+                    save_data,
+                    str(target_path),
+                )
+                ok, detail = _save_texture_result(save_result)
+                if not ok:
+                    msg = detail or "unknown error"
+                    raise ValueError(f"SaveTexture failed: {msg}")
+            if not target_path.is_file():
+                raise ValueError(
+                    f"SaveTexture succeeded but file was not created: {target_path}"
+                )
+            byte_size = int(target_path.stat().st_size)
+            if byte_size <= 0:
+                raise ValueError(
+                    f"SaveTexture created an empty file: {target_path}"
+                )
+
+            meta: Dict[str, Any] = {
+                "event_id": event_id,
+                "texture_id": str(resolved_id),
+                "file_format": fmt,
+                "byte_size": byte_size,
+                "subresource": {
+                    "mip": int(getattr(save_data, "mip", 0)),
+                    "slice": int(getattr(save_data.slice, "sliceIndex", 0)),
+                    "sample": int(getattr(save_data.sample, "sampleIndex", 0)),
+                },
+            }
+            artifact_ref = await artifact_store.store_file(
+                target_path,
+                mime=mime,
+                suffix=suffix,
+                meta=meta,
+            )
+            return artifact_ref, meta, str(target_path) if output_path else None
+        finally:
+            if owns_temp_file:
+                try:
+                    target_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # readback_texture
@@ -744,8 +917,14 @@ class RenderService:
         pipe_state = await asyncio.to_thread(controller.GetPipelineState)
         targets = pipe_state.GetOutputTargets()
         for target in reversed(targets):
-            if not _is_null_resource_id(target.resourceId):
-                return target.resourceId
+            resource_id = getattr(target, "resourceId", None)
+            if resource_id is None:
+                descriptor_resource = getattr(target, "resource", None)
+                resource_id = getattr(descriptor_resource, "resourceId", descriptor_resource)
+            if resource_id is None:
+                continue
+            if not _is_null_resource_id(resource_id):
+                return resource_id
 
         # 回退：使用 capture 中的第一张 texture。
         textures = await asyncio.to_thread(controller.GetTextures)

@@ -299,6 +299,245 @@ def _resource_keys(resource_id: Any) -> List[str]:
     return keys
 
 
+_FILE_SUFFIX_MAP: Dict[str, str] = {
+    "png": ".png",
+    "jpg": ".jpg",
+    "jpeg": ".jpg",
+    "dds": ".dds",
+    "exr": ".exr",
+    "hdr": ".hdr",
+    "tga": ".tga",
+    "bmp": ".bmp",
+    "raw": ".raw",
+}
+
+_DEPTH_HINTS = ("depth", "stencil", "d16", "d24", "d32", "dsv", "s8")
+_HDR_HINTS = ("16f", "32f", "float", "r11g11b10", "rgb10a2", "bc6")
+_COMPRESSED_HINTS = ("bc1", "bc2", "bc3", "bc4", "bc5", "bc6", "bc7", "etc", "astc", "pvrtc", "atc")
+_NORMAL_HINTS = ("normal", "nrm", "norm")
+_MASK_HINTS = ("rough", "metal", "ao", "orm", "mask", "spec", "gloss", "height")
+_COLOR_HINTS = ("albedo", "basecolor", "base_color", "diffuse", "color")
+
+
+def _resource_id_tokens(resource_id: Any) -> List[str]:
+    text = str(resource_id).strip()
+    if not text:
+        return []
+    tokens = [text]
+    try:
+        tokens.append(str(int(text)))
+    except Exception:
+        pass
+    return list(dict.fromkeys(tokens))
+
+
+def _resource_id_matches(left: Any, right: Any) -> bool:
+    lhs = set(_resource_id_tokens(left))
+    rhs = set(_resource_id_tokens(right))
+    return bool(lhs and rhs and lhs.intersection(rhs))
+
+
+def _safe_name_token(value: str, fallback: str = "unnamed") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", text)
+    text = re.sub(r"\s+", "_", text).strip(" ._")
+    if not text:
+        return fallback
+    if len(text) > 120:
+        text = text[:120].rstrip("._")
+    return text or fallback
+
+
+def _compose_texture_name_info(
+    resource_id: Any,
+    *,
+    resource_name: str = "",
+    binding_names: Optional[Sequence[str]] = None,
+    alias_name: str = "",
+) -> Dict[str, Any]:
+    rid = str(resource_id)
+    src_name = str(resource_name or "").strip()
+    alias = str(alias_name or "").strip()
+    clean_binding_names: List[str] = []
+    for item in binding_names or []:
+        name = str(item or "").strip()
+        if not name:
+            continue
+        if name not in clean_binding_names:
+            clean_binding_names.append(name)
+    primary_binding = clean_binding_names[0] if clean_binding_names else ""
+
+    base_name = alias or src_name
+    if not base_name and primary_binding:
+        display_name = primary_binding
+    elif base_name and primary_binding and base_name.lower() != primary_binding.lower():
+        display_name = f"{base_name}@{primary_binding}"
+    elif base_name:
+        display_name = base_name
+    else:
+        digit_chunks = re.findall(r"\d+", rid)
+        if digit_chunks:
+            rid_token = digit_chunks[-1]
+        else:
+            rid_token = re.sub(r"\W+", "", rid)[-8:] or "id"
+        display_name = f"tex_{rid_token}"
+
+    return {
+        "resource_id": rid,
+        "resource_name": src_name,
+        "alias_name": alias,
+        "binding_names": clean_binding_names,
+        "display_name": display_name,
+        "name_stem": _safe_name_token(display_name),
+    }
+
+
+def _normalize_export_format(value: Any) -> str:
+    fmt = str(value or "png").strip().lower()
+    if fmt == "jpeg":
+        return "jpg"
+    return fmt
+
+
+def _parse_requested_formats(value: Any) -> List[str]:
+    parsed = _parse_json_like(value)
+    if parsed is None:
+        return ["png"]
+    if isinstance(parsed, list):
+        tokens = [str(item).strip() for item in parsed if str(item).strip()]
+    else:
+        text = str(parsed).strip()
+        if not text:
+            tokens = ["png"]
+        else:
+            tokens = [token for token in re.split(r"[,\s|;/]+", text) if token]
+    normalized: List[str] = []
+    for token in tokens:
+        fmt = _normalize_export_format(token)
+        if fmt and fmt not in normalized:
+            normalized.append(fmt)
+    return normalized or ["png"]
+
+
+def _texture_format_name(texture_desc: Optional[Any]) -> str:
+    if texture_desc is None:
+        return ""
+    fmt = getattr(texture_desc, "format", None)
+    if fmt is None:
+        return ""
+    try:
+        name_fn = getattr(fmt, "Name", None)
+        if callable(name_fn):
+            return str(name_fn())
+    except Exception:
+        pass
+    return str(fmt)
+
+
+def _recommend_formats_for_texture(
+    texture_desc: Optional[Any],
+    *,
+    name_info: Optional[Dict[str, Any]] = None,
+    for_screenshot: bool = False,
+) -> List[str]:
+    format_name = _texture_format_name(texture_desc).lower()
+    names_blob = " ".join(
+        [
+            str((name_info or {}).get("resource_name", "")),
+            str((name_info or {}).get("alias_name", "")),
+            " ".join((name_info or {}).get("binding_names", []) or []),
+        ],
+    ).lower()
+    is_depth = any(h in format_name for h in _DEPTH_HINTS) or any(h in names_blob for h in ("depth", "stencil"))
+    is_hdr = any(h in format_name for h in _HDR_HINTS)
+    is_compressed = any(h in format_name for h in _COMPRESSED_HINTS)
+    is_normal = any(h in names_blob for h in _NORMAL_HINTS)
+    is_mask = any(h in names_blob for h in _MASK_HINTS)
+    is_color = any(h in names_blob for h in _COLOR_HINTS)
+    is_cubemap = bool(getattr(texture_desc, "cubemap", False))
+    array_size = int(getattr(texture_desc, "arraysize", getattr(texture_desc, "arraySize", 1)) or 1)
+    if array_size >= 6 and "cube" in str(getattr(texture_desc, "type", "")).lower():
+        is_cubemap = True
+
+    if for_screenshot:
+        if is_hdr or is_cubemap:
+            return ["png", "exr", "hdr", "jpg"]
+        return ["png", "jpg"]
+
+    if is_depth:
+        return ["dds", "raw", "png"]
+    if is_hdr or is_cubemap:
+        return ["dds", "exr", "hdr", "raw", "png"]
+    if is_normal or is_mask:
+        return ["png", "tga", "bmp", "dds"]
+    if is_compressed and not is_color:
+        return ["dds", "png", "tga"]
+    return ["png", "jpg", "tga", "bmp", "dds"]
+
+
+def _select_export_formats(
+    requested_formats: Sequence[str],
+    *,
+    recommended_formats: Sequence[str],
+) -> List[str]:
+    requested = [_normalize_export_format(item) for item in requested_formats if str(item).strip()]
+    if not requested:
+        requested = ["png"]
+    recommended = [_normalize_export_format(item) for item in recommended_formats if str(item).strip()]
+    if not recommended:
+        recommended = ["png"]
+
+    if len(requested) == 1 and requested[0] in {"auto", "smart"}:
+        return [recommended[0]]
+    if len(requested) == 1 and requested[0] in {"all", "*"}:
+        return list(dict.fromkeys(recommended))
+
+    if any(item in {"all", "*"} for item in requested):
+        for item in recommended:
+            if item not in requested:
+                requested.append(item)
+
+    selected: List[str] = []
+    for item in requested:
+        if item in {"auto", "smart", "all", "*"}:
+            continue
+        if item not in selected:
+            selected.append(item)
+    return selected or [recommended[0]]
+
+
+def _resolve_export_output_path(
+    base_output_path: Optional[Any],
+    *,
+    name_stem: str,
+    file_format: str,
+    multi: bool,
+) -> Optional[str]:
+    if not base_output_path:
+        return None
+    fmt = _normalize_export_format(file_format)
+    suffix = _FILE_SUFFIX_MAP.get(fmt, f".{fmt}")
+    raw = str(base_output_path)
+    path = Path(raw)
+    is_dir_hint = raw.endswith(("\\", "/")) or path.is_dir() or not path.suffix
+
+    if is_dir_hint:
+        output_dir = path
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return str(output_dir / f"{name_stem}{suffix}")
+
+    if multi:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return str(path.parent / f"{_safe_name_token(path.stem)}_{fmt}{suffix}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix.lower() != suffix:
+        path = path.with_suffix(suffix)
+    return str(path)
+
+
 def _flatten_actions(actions: Sequence[Any], out: Optional[List[Any]] = None) -> List[Any]:
     if out is None:
         out = []
@@ -307,6 +546,15 @@ def _flatten_actions(actions: Sequence[Any], out: Optional[List[Any]] = None) ->
         children = getattr(action, "children", None) or []
         _flatten_actions(children, out)
     return out
+
+
+def _pick_default_event_id(actions: Sequence[Any]) -> int:
+    flat = _flatten_actions(actions)
+    for action in flat:
+        flags = _map_action_flags(getattr(action, "flags", 0))
+        if flags.get("is_draw") or flags.get("is_dispatch"):
+            return int(getattr(action, "eventId", 0))
+    return int(getattr(flat[0], "eventId", 0)) if flat else 0
 
 
 def _action_name(action: Any) -> str:
@@ -432,8 +680,7 @@ async def _ensure_event(session_id: str, event_id: Optional[int]) -> int:
         event = _active_event(session_id)
         if event <= 0:
             roots = await _offload(controller.GetRootActions)
-            if roots:
-                event = int(getattr(roots[0], "eventId", 0))
+            event = _pick_default_event_id(roots)
     else:
         event = int(event_id)
     if event > 0:
@@ -470,7 +717,7 @@ async def _resolve_texture_id(session_id: str, texture_id: Optional[Any], *, eve
     rd = _get_rd()
     null_id = rd.ResourceId()
     outputs = await _offload(pipe.GetOutputTargets)
-    for out in outputs:
+    for out in reversed(outputs):
         rid = getattr(out, "resourceId", null_id)
         if rid != null_id:
             return rid
@@ -478,6 +725,82 @@ async def _resolve_texture_id(session_id: str, texture_id: Optional[Any], *, eve
     if not textures:
         raise ValueError("No textures available in capture")
     return textures[0].resourceId
+
+
+async def _binding_name_index_for_event(session_id: str, event_id: Optional[int]) -> Dict[str, List[str]]:
+    if _pipeline_service is None:
+        return {}
+    evt = _as_int(event_id, 0)
+    if evt <= 0:
+        try:
+            evt = await _ensure_event(session_id, None)
+        except Exception:
+            evt = 0
+    if evt <= 0:
+        return {}
+    try:
+        bindings = await _pipeline_service.get_resource_bindings(session_id, evt, _session_manager)
+    except Exception:
+        return {}
+    index: Dict[str, List[str]] = {}
+    for binding in bindings:
+        rid = str(getattr(binding, "resource_id", "")).strip()
+        if not rid:
+            continue
+        label = str(getattr(binding, "resource_name", "")).strip()
+        if not label:
+            label = f"{str(getattr(binding, 'type', 'res')).lower()}{int(getattr(binding, 'binding', 0))}"
+        for key in _resource_id_tokens(rid):
+            bucket = index.setdefault(key, [])
+            if label not in bucket:
+                bucket.append(label)
+    return index
+
+
+async def _get_texture_descriptor(
+    session_id: str,
+    texture_id: Any,
+    *,
+    event_id: Optional[int] = None,
+) -> Tuple[Any, Optional[Any]]:
+    controller = await _get_controller(session_id)
+    resolved = await _resolve_texture_id(session_id, texture_id, event_id=event_id)
+    textures = await _offload(controller.GetTextures)
+    for texture in textures:
+        rid = getattr(texture, "resourceId", None)
+        if rid is not None and _resource_id_matches(rid, resolved):
+            return resolved, texture
+    return resolved, None
+
+
+def _extract_descriptor_resource_id(descriptor: Any) -> Any:
+    rid = getattr(descriptor, "resourceId", None)
+    if rid is not None:
+        return rid
+    resource = getattr(descriptor, "resource", None)
+    if resource is None:
+        return None
+    return getattr(resource, "resourceId", resource)
+
+
+async def _output_target_resource_ids(session_id: str, event_id: Optional[int]) -> List[Tuple[Any, int]]:
+    controller = await _get_controller(session_id)
+    evt = await _ensure_event(session_id, event_id)
+    if evt <= 0:
+        return []
+    pipe = await _offload(controller.GetPipelineState)
+    outputs = await _offload(pipe.GetOutputTargets)
+    rd = _get_rd()
+    null_id = rd.ResourceId()
+    out: List[Tuple[Any, int]] = []
+    for idx, desc in enumerate(outputs):
+        rid = _extract_descriptor_resource_id(desc)
+        if rid is None:
+            continue
+        if rid == null_id:
+            continue
+        out.append((rid, idx))
+    return out
 
 
 async def _pipeline_snapshot(session_id: str, event_id: Optional[int] = None) -> Any:
@@ -886,7 +1209,7 @@ async def _dispatch_replay(action: str, args: Dict[str, Any]) -> str:
     if action == "set_frame":
         replay.frame_index = _as_int(args.get("frame_index"), 0)
         roots = await _offload(controller.GetRootActions)
-        active_event_id = int(getattr(roots[0], "eventId", 0)) if roots else 0
+        active_event_id = _pick_default_event_id(roots)
         if active_event_id > 0:
             await _offload(controller.SetFrameEvent, active_event_id, True)
         replay.active_event_id = active_event_id
@@ -1298,18 +1621,41 @@ async def _dispatch_resource(action: str, args: Dict[str, Any]) -> str:
     _require(args, "session_id")
     session_id = str(args["session_id"])
     controller = await _get_controller(session_id)
+    binding_index_cache: Optional[Dict[str, List[str]]] = None
+
+    async def get_binding_index() -> Dict[str, List[str]]:
+        nonlocal binding_index_cache
+        if binding_index_cache is None:
+            binding_index_cache = await _binding_name_index_for_event(
+                session_id,
+                _active_event(session_id),
+            )
+        return binding_index_cache
 
     async def list_textures() -> List[Dict[str, Any]]:
         textures = await _offload(controller.GetTextures)
+        binding_index = await get_binding_index()
         out = []
         for tex in textures:
             rid = getattr(tex, "resourceId", None)
             rid_text = str(rid)
+            binding_names = list(binding_index.get(rid_text, []))
+            alias_name = _runtime.aliases.get(rid_text, "")
+            name_info = _compose_texture_name_info(
+                rid_text,
+                resource_name=str(getattr(tex, "name", "")),
+                binding_names=binding_names,
+                alias_name=alias_name,
+            )
             out.append(
                 {
                     "resource_id": rid_text,
                     "texture_id": rid_text,
-                    "name": _runtime.aliases.get(rid_text, str(getattr(tex, "name", ""))),
+                    "name": name_info["display_name"],
+                    "resource_name": name_info["resource_name"],
+                    "alias_name": name_info["alias_name"],
+                    "binding_names": name_info["binding_names"],
+                    "name_stem": name_info["name_stem"],
                     "width": int(getattr(tex, "width", 0)),
                     "height": int(getattr(tex, "height", 0)),
                     "depth": int(getattr(tex, "depth", 0)),
@@ -1385,13 +1731,42 @@ async def _dispatch_resource(action: str, args: Dict[str, Any]) -> str:
         textures = await list_textures()
         buffers = await list_buffers()
         if any(t["resource_id"] == rid for t in textures):
+            output_path = args.get("output_path")
+            if output_path:
+                response = await _dispatch_texture(
+                    "save_to_file",
+                    {
+                        "session_id": session_id,
+                        "texture_id": rid,
+                        "subresource": args.get("subresource"),
+                        "output_path": output_path,
+                        "file_format": args.get("file_format", "raw"),
+                        "event_id": args.get("event_id"),
+                    },
+                )
+                payload = json.loads(response)
+                if payload.get("success"):
+                    key = "initial_contents" if action == "get_initial_contents" else "current_contents"
+                    contents: Dict[str, Any] = {
+                        "artifact_path": payload.get("artifact_path"),
+                        "saved_path": payload.get("saved_path"),
+                        "meta": payload.get("meta"),
+                    }
+                    if payload.get("exports"):
+                        contents["exports"] = payload.get("exports")
+                        contents["saved_paths"] = payload.get("saved_paths")
+                    return _ok(
+                        **{
+                            key: contents,
+                        },
+                    )
+                return response
             response = await _dispatch_texture(
                 "get_data",
                 {
                     "session_id": session_id,
                     "texture_id": rid,
                     "subresource": args.get("subresource"),
-                    "output_path": args.get("output_path"),
                 },
             )
             payload = json.loads(response)
@@ -1799,12 +2174,47 @@ async def _dispatch_texture(action: str, args: Dict[str, Any]) -> str:
             )
         return _ok(history=history)
 
-    if action in {"render_overlay", "save_to_file"}:
+    if action == "render_overlay":
         event_id = _as_int(args.get("event_id"), _active_event(session_id))
         if event_id <= 0:
             event_id = await _ensure_event(session_id, None)
-        source = {"source": "texture", "texture_id": await _resolve_texture_id(session_id, args.get("texture_id"), event_id=event_id)}
-        view = {"overlay": str(args.get("overlay", "none")), "flip_y": _as_bool(args.get("flip_y"), False)}
+        explicit_texture_id = args.get("texture_id")
+        if explicit_texture_id is not None and str(explicit_texture_id).strip():
+            source_texture_id, texture_desc = await _get_texture_descriptor(
+                session_id,
+                explicit_texture_id,
+                event_id=event_id,
+            )
+            source = {"source": "texture", "texture_id": source_texture_id}
+        else:
+            source_texture_id, texture_desc = await _get_texture_descriptor(
+                session_id,
+                None,
+                event_id=event_id,
+            )
+            source = {"source": "final_output"}
+        binding_index = await _binding_name_index_for_event(session_id, event_id)
+        name_info = _compose_texture_name_info(
+            source_texture_id,
+            resource_name=str(getattr(texture_desc, "name", "")) if texture_desc is not None else "",
+            binding_names=binding_index.get(str(source_texture_id), []),
+            alias_name=_runtime.aliases.get(str(source_texture_id), ""),
+        )
+        channels_arg = _as_dict(args.get("channels"), default={})
+        include_alpha = _as_bool(
+            args.get("include_alpha"),
+            _as_bool(channels_arg.get("a"), False),
+        )
+        view = {
+            "overlay": str(args.get("overlay", "none")),
+            "flip_y": _as_bool(args.get("flip_y"), False),
+            "channels": {
+                "r": _as_bool(channels_arg.get("r"), True),
+                "g": _as_bool(channels_arg.get("g"), True),
+                "b": _as_bool(channels_arg.get("b"), True),
+                "a": include_alpha,
+            },
+        }
         artifact_ref, meta = await _render_service.render_event(
             session_id=session_id,
             event_id=event_id,
@@ -1815,16 +2225,101 @@ async def _dispatch_texture(action: str, args: Dict[str, Any]) -> str:
             output_format=str(args.get("file_format", "png")),
         )
         artifact_path = _artifact_path(artifact_ref)
-        out: Dict[str, Any] = {"artifact_path": artifact_path, "meta": meta}
+        payload: Dict[str, Any] = {"artifact_path": artifact_path, "meta": meta}
         output_path = args.get("output_path")
         if output_path and artifact_path:
             out_path = Path(str(output_path))
             out_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(artifact_path, out_path)
-            out["saved_path"] = str(out_path)
-        if action == "render_overlay":
-            return _ok(image_path=out.get("saved_path") or artifact_path, **out)
-        return _ok(saved_path=out.get("saved_path") or artifact_path, **out)
+            payload["saved_path"] = str(out_path)
+        payload["image_path"] = payload.get("saved_path") or artifact_path
+        payload["name_info"] = name_info
+        payload["texture_format"] = _texture_format_name(texture_desc)
+        return _ok(**payload)
+
+    if action == "save_to_file":
+        event_id = _as_int(args.get("event_id"), _active_event(session_id))
+        if event_id <= 0:
+            event_id = await _ensure_event(session_id, None)
+        texture_id, texture_desc = await _get_texture_descriptor(
+            session_id,
+            args.get("texture_id"),
+            event_id=event_id,
+        )
+        binding_index = await _binding_name_index_for_event(session_id, event_id)
+        binding_names = list(binding_index.get(str(texture_id), []))
+        name_info = _compose_texture_name_info(
+            texture_id,
+            resource_name=str(getattr(texture_desc, "name", "")) if texture_desc is not None else "",
+            binding_names=binding_names,
+            alias_name=_runtime.aliases.get(str(texture_id), ""),
+        )
+        recommended_formats = _recommend_formats_for_texture(texture_desc, name_info=name_info, for_screenshot=False)
+        requested_formats = _parse_requested_formats(args.get("file_format", "png"))
+        selected_formats = _select_export_formats(
+            requested_formats,
+            recommended_formats=recommended_formats,
+        )
+        subresource = _as_dict(args.get("subresource"), default={})
+        normalized_subresource = {
+            "mip": _as_int(subresource.get("mip"), 0),
+            "slice": _as_int(subresource.get("slice"), 0),
+            "sample": _as_int(subresource.get("sample"), 0),
+        }
+        width = int(getattr(texture_desc, "width", 0)) if texture_desc is not None else 0
+        height = int(getattr(texture_desc, "height", 0)) if texture_desc is not None else 0
+        dim_token = f"_{width}x{height}" if width > 0 and height > 0 else ""
+        base_name_stem = _safe_name_token(f"ev{event_id}_{name_info['name_stem']}{dim_token}")
+        base_output_path = args.get("output_path")
+        multi_export = len(selected_formats) > 1
+        exports: List[Dict[str, Any]] = []
+        for export_format in selected_formats:
+            resolved_output_path = _resolve_export_output_path(
+                base_output_path,
+                name_stem=base_name_stem,
+                file_format=export_format,
+                multi=multi_export,
+            )
+            artifact_ref, meta, saved_path = await _render_service.save_texture_file(
+                session_id=session_id,
+                event_id=event_id,
+                texture_id=texture_id,
+                session_manager=_session_manager,
+                artifact_store=_artifact_store,
+                output_format=export_format,
+                output_path=resolved_output_path,
+                subresource=normalized_subresource,
+            )
+            artifact_path = _artifact_path(artifact_ref)
+            exports.append(
+                {
+                    "file_format": export_format,
+                    "artifact_path": artifact_path,
+                    "saved_path": saved_path or artifact_path,
+                    "meta": meta,
+                },
+            )
+        if not multi_export:
+            single = exports[0]
+            return _ok(
+                artifact_path=single["artifact_path"],
+                saved_path=single["saved_path"],
+                meta=single["meta"],
+                selected_formats=selected_formats,
+                requested_formats=requested_formats,
+                recommended_formats=recommended_formats,
+                name_info=name_info,
+                texture_format=_texture_format_name(texture_desc),
+            )
+        return _ok(
+            exports=exports,
+            saved_paths=[item["saved_path"] for item in exports],
+            selected_formats=selected_formats,
+            requested_formats=requested_formats,
+            recommended_formats=recommended_formats,
+            name_info=name_info,
+            texture_format=_texture_format_name(texture_desc),
+        )
 
     if action == "save_mip_chain":
         _require(args, "texture_id", "output_dir")
@@ -2263,16 +2758,159 @@ async def _dispatch_export(action: str, args: Dict[str, Any]) -> str:
 
     if action == "screenshot":
         target = _parse_target_like(args.get("target"))
-        return await _dispatch_texture(
-            "render_overlay",
-            {
-                "session_id": session_id,
-                "texture_id": target.get("texture_id") or target.get("textureId"),
-                "event_id": args.get("event_id"),
-                "overlay": args.get("overlay", "none"),
-                "output_path": args.get("output_path"),
-                "file_format": args.get("file_format", "png"),
-            },
+        event_id = _as_int(args.get("event_id"), _active_event(session_id))
+        if event_id <= 0:
+            event_id = await _ensure_event(session_id, None)
+        explicit_target = target.get("texture_id") or target.get("textureId")
+        chosen_output_slot: Optional[int] = None
+        if explicit_target:
+            target_texture_id, texture_desc = await _get_texture_descriptor(
+                session_id,
+                explicit_target,
+                event_id=event_id,
+            )
+        else:
+            output_targets = await _output_target_resource_ids(session_id, event_id)
+            best_texture_id: Optional[Any] = None
+            best_score = float("-inf")
+            for candidate_id, candidate_slot in output_targets:
+                try:
+                    stats = await _render_service.get_texture_stats(
+                        session_id=session_id,
+                        event_id=event_id,
+                        texture_id=candidate_id,
+                        session_manager=_session_manager,
+                    )
+                    channels = _as_dict(stats.get("channels"), default={})
+                    rgb_spread = 0.0
+                    for channel in ("r", "g", "b"):
+                        cd = _as_dict(channels.get(channel), default={})
+                        cmin = cd.get("min")
+                        cmax = cd.get("max")
+                        if cmin is None or cmax is None:
+                            continue
+                        try:
+                            rgb_spread += abs(float(cmax) - float(cmin))
+                        except Exception:
+                            continue
+                    alpha = _as_dict(channels.get("a"), default={})
+                    try:
+                        alpha_spread = abs(float(alpha.get("max", 0.0)) - float(alpha.get("min", 0.0)))
+                    except Exception:
+                        alpha_spread = 0.0
+                    score = (rgb_spread * 10.0) + alpha_spread
+                    if not _as_bool(stats.get("has_any_nan"), False) and not _as_bool(stats.get("has_any_inf"), False):
+                        score += 0.1
+                    if score > best_score:
+                        best_score = score
+                        best_texture_id = candidate_id
+                        chosen_output_slot = candidate_slot
+                except Exception:
+                    continue
+
+            if best_texture_id is None:
+                if output_targets:
+                    best_texture_id, chosen_output_slot = output_targets[0]
+                else:
+                    best_texture_id, _ = await _get_texture_descriptor(
+                        session_id,
+                        None,
+                        event_id=event_id,
+                    )
+            target_texture_id, texture_desc = await _get_texture_descriptor(
+                session_id,
+                best_texture_id,
+                event_id=event_id,
+            )
+        binding_index = await _binding_name_index_for_event(session_id, event_id)
+        name_info = _compose_texture_name_info(
+            target_texture_id,
+            resource_name=str(getattr(texture_desc, "name", "")) if texture_desc is not None else "",
+            binding_names=binding_index.get(str(target_texture_id), []),
+            alias_name=_runtime.aliases.get(str(target_texture_id), ""),
+        )
+        recommended_formats = _recommend_formats_for_texture(
+            texture_desc,
+            name_info=name_info,
+            for_screenshot=True,
+        )
+        requested_formats = _parse_requested_formats(args.get("file_format", "png"))
+        selected_formats = _select_export_formats(
+            requested_formats,
+            recommended_formats=recommended_formats,
+        )
+        allowed_formats = {"png", "jpg", "exr", "hdr"}
+        valid_formats = [fmt for fmt in selected_formats if fmt in allowed_formats]
+        if not valid_formats:
+            allowed_text = ", ".join(sorted(allowed_formats))
+            requested_text = ", ".join(selected_formats) or ", ".join(requested_formats)
+            return _err(
+                f"rd.export.screenshot only supports {allowed_text}; got '{requested_text}'",
+            )
+        base_output_path = args.get("output_path")
+        if chosen_output_slot is not None and not explicit_target:
+            role_stem = f"framebuffer_rt{chosen_output_slot}"
+        else:
+            role_stem = "framebuffer"
+        base_name_stem = _safe_name_token(f"ev{event_id}_{role_stem}_{name_info['name_stem']}")
+        multi_export = len(valid_formats) > 1
+        include_alpha = _as_bool(args.get("include_alpha"), False)
+        exports: List[Dict[str, Any]] = []
+        for export_format in valid_formats:
+            resolved_output_path = _resolve_export_output_path(
+                base_output_path,
+                name_stem=base_name_stem,
+                file_format=export_format,
+                multi=multi_export,
+            )
+            response = await _dispatch_texture(
+                "render_overlay",
+                {
+                    "session_id": session_id,
+                    "texture_id": str(target_texture_id),
+                    "event_id": event_id,
+                    "overlay": args.get("overlay", "none"),
+                    "output_path": resolved_output_path,
+                    "file_format": export_format,
+                    "include_alpha": include_alpha,
+                },
+            )
+            payload = json.loads(response)
+            if not payload.get("success"):
+                return response
+            exports.append(
+                {
+                    "file_format": export_format,
+                    "artifact_path": payload.get("artifact_path"),
+                    "saved_path": payload.get("saved_path") or payload.get("image_path") or payload.get("artifact_path"),
+                    "image_path": payload.get("image_path") or payload.get("saved_path") or payload.get("artifact_path"),
+                    "meta": payload.get("meta"),
+                },
+            )
+        if not multi_export:
+            single = exports[0]
+            return _ok(
+                artifact_path=single["artifact_path"],
+                saved_path=single["saved_path"],
+                image_path=single["image_path"],
+                meta=single["meta"],
+                selected_formats=valid_formats,
+                requested_formats=requested_formats,
+                recommended_formats=recommended_formats,
+                name_info=name_info,
+                texture_format=_texture_format_name(texture_desc),
+                chosen_output_slot=chosen_output_slot,
+            )
+        return _ok(
+            exports=exports,
+            saved_paths=[item["saved_path"] for item in exports],
+            image_paths=[item["image_path"] for item in exports],
+            selected_formats=valid_formats,
+            requested_formats=requested_formats,
+            recommended_formats=recommended_formats,
+            name_info=name_info,
+            texture_format=_texture_format_name(texture_desc),
+            chosen_output_slot=chosen_output_slot,
         )
     if action == "texture":
         return await _dispatch_texture(
@@ -2280,6 +2918,7 @@ async def _dispatch_export(action: str, args: Dict[str, Any]) -> str:
             {
                 "session_id": session_id,
                 "texture_id": args.get("texture_id"),
+                "event_id": args.get("event_id"),
                 "subresource": args.get("subresource"),
                 "output_path": args.get("output_path"),
                 "file_format": args.get("file_format", "png"),
