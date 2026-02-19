@@ -1,0 +1,202 @@
+{
+  "version": "1.0",
+  "description": "Renderdoc Debug Agent MCP工具映射配置",
+  "sop_mcp_mapping": {
+    "SOP-NAN-01": {
+      "name": "NaN/Inf问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "检测与定位",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_data",
+              "description": "获取问题像素的原始纹理数据",
+              "params": {
+                "resource_id": "需要分析的纹理资源ID",
+                "subresource": 0,
+                "x": "像素X坐标",
+                "y": "像素Y坐标",
+                "width": 1,
+                "height": 1
+              }
+            },
+            {
+              "tool": "rd.event.get_pixels",
+              "description": "获取像素历史，追踪NaN来源",
+              "params": {
+                "event_id": "目标事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "根因分析",
+          "mcp_tools": [
+            {
+              "tool": "rd.shader.get_source",
+              "description": "获取可疑Shader源码",
+              "params": {
+                "shader_id": "Shader ID"
+              }
+            },
+            {
+              "tool": "rd.shader.analyze",
+              "description": "分析Shader中的潜在NaN源",
+              "params": {
+                "shader_id": "Shader ID",
+                "analysis_type": "nan_source"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 3,
+          "stage_name": "验证修复",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_data",
+              "description": "验证修复后问题区域",
+              "params": {
+                "resource_id": "渲染目标ID",
+                "x": "原问题像素X",
+                "y": "原问题像素Y"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "SOP-GEO-01": {
+      "name": "几何问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "识别问题类型",
+          "mcp_tools": [
+            {
+              "tool": "rd.event.get_actions",
+              "description": "获取所有Draw Call",
+              "params": {}
+            },
+            {
+              "tool": "rd.pipeline.get_raster_state",
+              "description": "获取光栅化状态（含剔除设置）",
+              "params": {
+                "pipeline_id": "管线ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "分析剔除状态",
+          "mcp_tools": [
+            {
+              "tool": "rd.resource.get_details",
+              "description": "检查顶点/索引缓冲",
+              "params": {
+                "resource_id": "几何资源ID"
+              }
+            },
+            {
+              "tool": "rd.pipeline.get_vertex_input",
+              "description": "获取顶点输入状态",
+              "params": {
+                "pipeline_id": "管线ID"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "SOP-COLOR-01": {
+      "name": "颜色空间问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "颜色空间诊断",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_data",
+              "description": "获取纹理原始数据",
+              "params": {
+                "resource_id": "纹理ID"
+              }
+            },
+            {
+              "tool": "rd.pipeline.get_blend_state",
+              "description": "检查混合状态",
+"params": {
+                "pipeline_id": "管线ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "Gamma分析",
+          "mcp_tools": [
+            {
+              "tool": "rd.shader.analyze",
+              "description": "分析Shader中的Gamma处理",
+              "params": {
+                "shader_id": "Shader ID",
+                "analysis_type": "gamma_correction"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "invariant_mcp_association": {
+    "I-NAN-01": {
+      "detection_tools": [
+        "rd.texture.get_data",
+        "rd.event.get_pixels",
+        "rd.shader.analyze"
+      ]
+    },
+    "I-GEO-01": {
+      "detection_tools": [
+        "rd.event.get_actions",
+        "rd.pipeline.get_raster_state",
+        "rd.resource.get_details"
+      ]
+    },
+    "I-COLOR-01": {
+      "detection_tools": [
+        "rd.texture.get_data",
+        "rd.pipeline.get_blend_state",
+        "rd.shader.analyze"
+      ]
+    },
+    "I-PREC-01": {
+      "detection_tools": [
+        "rd.pipeline.get_depth_state",
+        "rd.texture.get_data",
+        "rd.shader.analyze"
+      ]
+    },
+    "I-SHADING-NONNEG-01": {
+      "detection_tools": [
+        "rd.shader.analyze",
+        "rd.texture.get_data"
+      ]
+    }
+  },
+  "symptom_sop_mapping": {
+    "white_spot": "SOP-NAN-01",
+    "nan_propagation": "SOP-NAN-01",
+    "object_missing": "SOP-GEO-01",
+    "backface_culling": "SOP-GEO-01",
+    "negative_scale": "SOP-GEO-01",
+    "color_too_dark": "SOP-COLOR-01",
+    "color_too_bright": "SOP-COLOR-01",
+    "gamma_error": "SOP-COLOR-01"
+  }
+}

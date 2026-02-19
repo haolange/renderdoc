@@ -1,0 +1,60 @@
+{
+  "name": "renderdoc-debug-agent",
+  "version": "1.0.0",
+  "description": "RenderDoc调试Agent团队 - 9个专业Agent协作",
+  "agents": [
+    {
+      "name": "Team Lead",
+      "description": "渲染调试团队协调者",
+      "prompt_file": "./claude-work/agents/team_lead.md"
+    },
+    {
+      "name": "Triage",
+      "description": "症状分类专家",
+      "prompt_file": "./claude-work/agents/triage.md"
+    },
+    {
+      "name": "Capture",
+      "description": "捕获与复现专家",
+      "prompt_file": "./claude-work/agents/capture.md"
+    },
+    {
+      "name": "Pipeline",
+      "description": "渲染管线分析专家",
+      "prompt_file": "./claude-work/agents/pipeline.md"
+    },
+    {
+      "name": "Forensics",
+      "description": "像素/数值取证专家",
+      "prompt_file": "./claude-work/agents/forensics.md"
+    },
+    {
+      "name": "Shader",
+      "description": "着色器与IR分析专家",
+      "prompt_file": "./claude-work/agents/shader.md"
+    },
+    {
+      "name": "Driver",
+      "description": "驱动/设备专家",
+      "prompt_file": "./claude-work/agents/driver.md"
+    },
+    {
+      "name": "Skeptic",
+      "description": "对抗式审查者",
+      "prompt_file": "./claude-work/agents/skeptic.md"
+    },
+    {
+      "name": "Curator",
+      "description": "报告与知识策展者",
+      "prompt_file": "./claude-work/agents/curator.md"
+    }
+  ],
+  "skills": [
+    {"name": "nan_debug", "path": "./common/skills/nan_debug.md"},
+    {"name": "geo_debug", "path": "./common/skills/geo_debug.md"},
+    {"name": "color_debug", "path": "./common/skills/color_debug.md"}
+  ],
+  "mcp_servers": [
+    {"name": "rdx-mcp", "command": "python", "args": ["-m", "rdx.server"]}
+  ]
+}
