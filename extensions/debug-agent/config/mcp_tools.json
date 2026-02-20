@@ -40,15 +40,17 @@
               "tool": "rd.shader.get_source",
               "description": "获取可疑Shader源码",
               "params": {
-                "shader_id": "Shader ID"
+                "event_id": "事件ID",
+                "stage": "PS"
               }
             },
             {
-              "tool": "rd.shader.analyze",
-              "description": "分析Shader中的潜在NaN源",
+              "tool": "rd.shader.get_debug",
+              "description": "获取Shader调试信息，分析NaN源",
               "params": {
-                "shader_id": "Shader ID",
-                "analysis_type": "nan_source"
+                "event_id": "事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
               }
             }
           ]
@@ -86,7 +88,7 @@
               "tool": "rd.pipeline.get_raster_state",
               "description": "获取光栅化状态（含剔除设置）",
               "params": {
-                "pipeline_id": "管线ID"
+                "event_id": "事件ID"
               }
             }
           ]
@@ -106,7 +108,7 @@
               "tool": "rd.pipeline.get_vertex_input",
               "description": "获取顶点输入状态",
               "params": {
-                "pipeline_id": "管线ID"
+                "event_id": "事件ID"
               }
             }
           ]
@@ -130,8 +132,8 @@
             {
               "tool": "rd.pipeline.get_blend_state",
               "description": "检查混合状态",
-"params": {
-                "pipeline_id": "管线ID"
+              "params": {
+                "event_id": "事件ID"
               }
             }
           ]
@@ -141,11 +143,327 @@
           "stage_name": "Gamma分析",
           "mcp_tools": [
             {
-              "tool": "rd.shader.analyze",
-              "description": "分析Shader中的Gamma处理",
+              "tool": "rd.shader.get_source",
+              "description": "获取Shader源码分析Gamma处理",
               "params": {
-                "shader_id": "Shader ID",
-                "analysis_type": "gamma_correction"
+                "event_id": "事件ID",
+                "stage": "PS"
+              }
+            },
+            {
+              "tool": "rd.pipeline.get_state",
+              "description": "获取管线状态",
+              "params": {
+                "event_id": "事件ID"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "SOP-TEX-01": {
+      "name": "纹理问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "纹理基础检查",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_info",
+              "description": "获取纹理基本信息（格式、大小、Mipmap级别）",
+              "params": {
+                "texture_id": "纹理ID"
+              }
+            },
+            {
+              "tool": "rd.texture.get_data",
+              "description": "获取纹理原始数据",
+              "params": {
+                "texture_id": "纹理ID",
+                "mip": 0,
+                "slice": 0
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "UV坐标检查",
+          "mcp_tools": [
+            {
+              "tool": "rd.shader.get_debug",
+              "description": "获取Shader调试信息，检查UV计算",
+              "params": {
+                "event_id": "事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
+              }
+            },
+            {
+              "tool": "rd.pipeline.get_state",
+              "description": "获取当前管线状态",
+              "params": {
+                "event_id": "事件ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 3,
+          "stage_name": "Mipmap检查",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_data",
+              "description": "获取不同Mipmap级别的纹理数据",
+              "params": {
+                "texture_id": "纹理ID",
+                "mip": "指定Mipmap级别"
+              }
+            },
+            {
+              "tool": "rd.frame.compare",
+              "description": "比较不同事件的纹理结果",
+              "params": {
+                "event1": "事件ID1",
+                "event2": "事件ID2"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 4,
+          "stage_name": "验证",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_info",
+              "description": "验证纹理配置",
+              "params": {
+                "texture_id": "纹理ID"
+              }
+            },
+            {
+              "tool": "rd.shader.get_debug",
+              "description": "验证最终Shader结果",
+              "params": {
+                "event_id": "事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "SOP-DEPTH-01": {
+      "name": "深度缓冲问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "深度缓冲可视化",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_data",
+              "description": "获取深度缓冲数据",
+              "params": {
+                "resource_id": "深度缓冲ID",
+                "subresource": 0
+              }
+            },
+            {
+              "tool": "rd.pipeline.get_depth_state",
+              "description": "获取深度测试状态",
+              "params": {
+                "event_id": "事件ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "深度状态检查",
+          "mcp_tools": [
+            {
+              "tool": "rd.pipeline.get_state",
+              "description": "获取完整管线状态",
+              "params": {
+                "event_id": "事件ID"
+              }
+            },
+            {
+              "tool": "rd.event.get_pixels",
+              "description": "获取特定像素的深度历史",
+              "params": {
+                "event_id": "事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 3,
+          "stage_name": "Z-Fighting分析",
+          "mcp_tools": [
+            {
+              "tool": "rd.shader.get_debug",
+              "description": "分析Shader中的深度计算",
+              "params": {
+                "event_id": "事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
+              }
+            },
+            {
+              "tool": "rd.pipeline.get_raster_state",
+              "description": "获取光栅化状态",
+              "params": {
+                "event_id": "事件ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 4,
+          "stage_name": "验证",
+          "mcp_tools": [
+            {
+              "tool": "rd.texture.get_data",
+              "description": "验证深度缓冲修复结果",
+              "params": {
+                "resource_id": "深度缓冲ID"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "SOP-PREC-01": {
+      "name": "精度问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "精度损失识别",
+          "mcp_tools": [
+            {
+              "tool": "rd.frame.take_screenshot",
+              "description": "截取当前帧用于精度分析",
+              "params": {}
+            },
+            {
+              "tool": "rd.pipeline.get_state",
+              "description": "获取管线状态检查渲染目标格式",
+              "params": {
+                "event_id": "事件ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "Shader精度分析",
+          "mcp_tools": [
+            {
+              "tool": "rd.shader.get_source",
+              "description": "获取Shader源码检查精度操作",
+              "params": {
+                "event_id": "事件ID",
+                "stage": "PS"
+              }
+            },
+            {
+              "tool": "rd.shader.get_debug",
+              "description": "调试Shader执行获取中间值精度",
+              "params": {
+                "event_id": "事件ID",
+                "x": "像素X坐标",
+                "y": "像素Y坐标"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 3,
+          "stage_name": "RT格式验证",
+          "mcp_tools": [
+            {
+              "tool": "rd.pipeline.get_state",
+              "description": "获取渲染目标格式信息",
+              "params": {
+                "event_id": "事件ID"
+              }
+            },
+            {
+              "tool": "rd.texture.get_info",
+              "description": "获取纹理格式详情",
+              "params": {
+                "texture_id": "纹理ID"
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": 4,
+          "stage_name": "验证",
+          "mcp_tools": [
+            {
+              "tool": "rd.frame.take_screenshot",
+              "description": "验证精度修复后的结果",
+              "params": {}
+            }
+          ]
+        }
+      ]
+    },
+    "SOP-PERF-01": {
+      "name": "性能问题排查",
+      "stages": [
+        {
+          "stage_id": 1,
+          "stage_name": "瓶颈识别",
+          "mcp_tools": [
+            {
+              "tool": "rd.api.get_log",
+              "description": "获取API调用日志分析性能",
+              "params": {
+                "from": "开始事件ID",
+                "to": "结束事件ID"
+              }
+            },
+            {
+              "tool": "rd.resource.get_transitions",
+              "description": "获取资源转换信息",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "Pipeline Stall分析",
+          "mcp_tools": [
+            {
+              "tool": "rd.pipeline.get_state",
+              "description": "获取管线状态分析Stall",
+              "params": {
+                "event_id": "事件ID"
+              }
+            },
+            {
+              "tool": "rd.event.get_actions",
+              "description": "获取事件操作详情",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "stage_id": 3,
+          "stage_name": "优化验证",
+          "mcp_tools": [
+            {
+              "tool": "rd.api.get_log",
+              "description": "验证优化后的API调用序列",
+              "params": {
+                "from": "开始事件ID",
+                "to": "结束事件ID"
               }
             }
           ]
@@ -158,7 +476,13 @@
       "detection_tools": [
         "rd.texture.get_data",
         "rd.event.get_pixels",
-        "rd.shader.analyze"
+        "rd.shader.get_debug"
+      ]
+    },
+    "I-NAN-02": {
+      "detection_tools": [
+        "rd.shader.get_debug",
+        "rd.pipeline.get_state"
       ]
     },
     "I-GEO-01": {
@@ -168,35 +492,179 @@
         "rd.resource.get_details"
       ]
     },
+    "I-GEO-02": {
+      "detection_tools": [
+        "rd.pipeline.get_raster_state",
+        "rd.mesh.get_data"
+      ]
+    },
+    "I-GEO-03": {
+      "detection_tools": [
+        "rd.resource.get_details",
+        "rd.buffer.get_data"
+      ]
+    },
     "I-COLOR-01": {
       "detection_tools": [
         "rd.texture.get_data",
         "rd.pipeline.get_blend_state",
-        "rd.shader.analyze"
+        "rd.shader.get_source"
       ]
     },
-    "I-PREC-01": {
+    "I-COLOR-02": {
+      "detection_tools": [
+        "rd.texture.get_data",
+        "rd.shader.get_debug"
+      ]
+    },
+    "I-TEX-01": {
+      "detection_tools": [
+        "rd.texture.get_info",
+        "rd.shader.get_debug",
+        "rd.pipeline.get_state"
+      ]
+    },
+    "I-MIP-01": {
+      "detection_tools": [
+        "rd.texture.get_info",
+        "rd.texture.get_data"
+      ]
+    },
+    "I-LOD-01": {
+      "detection_tools": [
+        "rd.texture.get_info",
+        "rd.pipeline.get_state"
+      ]
+    },
+    "I-DEPTH-01": {
       "detection_tools": [
         "rd.pipeline.get_depth_state",
         "rd.texture.get_data",
-        "rd.shader.analyze"
+        "rd.event.get_pixels"
+      ]
+    },
+    "I-DEPTH-02": {
+      "detection_tools": [
+        "rd.pipeline.get_depth_state",
+        "rd.pipeline.get_state"
+      ]
+    },
+    "I-SHADER-01": {
+      "detection_tools": [
+        "rd.shader.get_source",
+        "rd.shader.get_compile_info",
+        "rd.pipeline.get_state"
+      ]
+    },
+    "I-SHADER-02": {
+      "detection_tools": [
+        "rd.shader.get_debug",
+        "rd.shader.get_source"
       ]
     },
     "I-SHADING-NONNEG-01": {
       "detection_tools": [
-        "rd.shader.analyze",
+        "rd.shader.get_debug",
+        "rd.event.get_pixels"
+      ]
+    },
+    "I-PREC-01": {
+      "detection_tools": [
+        "rd.pipeline.get_state",
+        "rd.texture.get_data",
+        "rd.shader.get_debug"
+      ]
+    },
+    "I-PREC-02": {
+      "detection_tools": [
+        "rd.shader.get_debug",
+        "rd.pipeline.get_state"
+      ]
+    },
+    "I-LIGHT-01": {
+      "detection_tools": [
+        "rd.shader.get_source",
+        "rd.shader.get_debug"
+      ]
+    },
+    "I-LIGHT-02": {
+      "detection_tools": [
+        "rd.shader.get_debug",
         "rd.texture.get_data"
+      ]
+    },
+    "I-LIGHT-UNPACK-01": {
+      "detection_tools": [
+        "rd.shader.get_debug",
+        "rd.buffer.get_data",
+        "rd.shader.get_source"
+      ]
+    },
+    "I-ALPHA-01": {
+      "detection_tools": [
+        "rd.pipeline.get_blend_state",
+        "rd.shader.get_debug"
+      ]
+    },
+    "I-BLEND-01": {
+      "detection_tools": [
+        "rd.pipeline.get_blend_state",
+        "rd.pipeline.get_state",
+        "rd.shader.get_debug"
+      ]
+    },
+    "I-PERF-01": {
+      "detection_tools": [
+        "rd.api.get_log",
+        "rd.resource.get_transitions",
+        "rd.event.get_actions"
       ]
     }
   },
   "symptom_sop_mapping": {
     "white_spot": "SOP-NAN-01",
     "nan_propagation": "SOP-NAN-01",
+    "flickering": "SOP-NAN-01",
+    "infinite_value": "SOP-NAN-01",
+    "pixel_overflow": "SOP-NAN-01",
+    "black_pixel": "SOP-NAN-01",
+    "object_invisible": "SOP-GEO-01",
+    "backface": "SOP-GEO-01",
+    "culling": "SOP-GEO-01",
     "object_missing": "SOP-GEO-01",
     "backface_culling": "SOP-GEO-01",
     "negative_scale": "SOP-GEO-01",
+    "color_distortion": "SOP-COLOR-01",
+    "washed_out": "SOP-COLOR-01",
+    "gamma": "SOP-COLOR-01",
     "color_too_dark": "SOP-COLOR-01",
     "color_too_bright": "SOP-COLOR-01",
-    "gamma_error": "SOP-COLOR-01"
+    "gamma_error": "SOP-COLOR-01",
+    "texture_missing": "SOP-TEX-01",
+    "uv_error": "SOP-TEX-01",
+    "mipmap": "SOP-TEX-01",
+    "blurry": "SOP-TEX-01",
+    "stretched": "SOP-TEX-01",
+    "tiling": "SOP-TEX-01",
+    "alpha_error": "SOP-TEX-01",
+    "blend_error": "SOP-TEX-01",
+    "z_fighting": "SOP-DEPTH-01",
+    "depth_error": "SOP-DEPTH-01",
+    "occlusion": "SOP-DEPTH-01",
+    "banding": "SOP-PREC-01",
+    "quantization": "SOP-PREC-01",
+    "artifact": "SOP-PREC-01",
+    "gradient": "SOP-PREC-01",
+    "precision": "SOP-PREC-01",
+    "RelaxedPrecision": "SOP-PREC-01",
+    "blackout": "SOP-PREC-01",
+    "washout": "SOP-PREC-01",
+    "local_light_unpack": "SOP-PREC-01",
+    "hair_shading": "SOP-PREC-01",
+    "slow": "SOP-PERF-01",
+    "stall": "SOP-PERF-01",
+    "fps_drop": "SOP-PERF-01",
+    "hitch": "SOP-PERF-01",
+    "pipeline_error": "SOP-PERF-01"
   }
 }
