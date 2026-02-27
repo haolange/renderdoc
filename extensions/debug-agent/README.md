@@ -1,5 +1,5 @@
 # AIRD Framework
-## AI-Driven Invariant-Reasoning Debugger · 完全体 v2.0
+## AI-Driven Invariant-Reasoning Debugger
 
 AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 Agent 调试框架。它通过形式化的**不变量推理**（Invariant Reasoning）和**多专家协作**，将复杂渲染问题的调试流程标准化、可追溯、可自我进化。
 
@@ -11,7 +11,7 @@ AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     AIRD Framework v2.0                      │
+│                        AIRD Framework                         │
 ├─────────────────┬───────────────────────────────────────────┤
 │   知识层（M1）   │  Agent 层（M2/M3）                         │
 │                 │                                             │
@@ -160,14 +160,7 @@ common/project_plugin/
 
 ---
 
-## 版本历史
 
-| 版本 | 日期 | 主要变更 |
-|------|------|---------|
-| v2.0 | 2026-02-27 | 完全体：M1-M6 全部完成。知识层 YAML 化、Agent Prompt 全重写、5 平台适配、Quality Hooks、自进化基础设施、Project Plugin |
-| v1.0 | — | 初始版本（骨架与文档） |
-
----
 
 ## 贡献指南
 

@@ -1,7 +1,7 @@
 {
   "name": "aird-debug-agent",
   "version": "2.0.0",
-  "description": "AIRD Framework — AI 驱动的不变量推理调试器（9 个专家 Agent 协作体系，v2.0 含完整质量门槛与知识库系统）",
+  "description": "AIRD Framework — AI 驱动的不变量推理调试器（9 个专家 Agent 协作体系）",
   "core_source": "../../common/AGENT_CORE.md",
   "agents": [
     {
@@ -51,16 +51,31 @@
     }
   ],
   "knowledge_base": [
-    {"name": "invariant_library",    "path": "../../common/invariants/invariant_library.yaml"},
-    {"name": "symptom_taxonomy",     "path": "../../common/taxonomy/symptom_taxonomy.yaml"},
-    {"name": "trigger_taxonomy",     "path": "../../common/taxonomy/trigger_taxonomy.yaml"},
-    {"name": "sop_library",          "path": "../../common/skills/sop_library.yaml"}
+    {
+      "name": "invariant_library",
+      "path": "../../common/invariants/invariant_library.yaml"
+    },
+    {
+      "name": "symptom_taxonomy",
+      "path": "../../common/taxonomy/symptom_taxonomy.yaml"
+    },
+    {
+      "name": "trigger_taxonomy",
+      "path": "../../common/taxonomy/trigger_taxonomy.yaml"
+    },
+    {
+      "name": "sop_library",
+      "path": "../../common/skills/sop_library.yaml"
+    }
   ],
   "mcp_servers": [
-    {"name": "rdx-mcp", "command": "python", "args": ["-m", "rdx.server"]}
-  ],
-  "changelog": {
-    "2.0.0": "M2 完全重写：9 Agent 核心 Prompt 含完整工作流/质量门槛/输出 Schema；Skeptic 升级为五把解剖刀；知识库系统化为 4 个 YAML 文件",
-    "1.0.0": "初始版本"
-  }
+    {
+      "name": "rdx-mcp",
+      "command": "python",
+      "args": [
+        "-m",
+        "rdx.server"
+      ]
+    }
+  ]
 }

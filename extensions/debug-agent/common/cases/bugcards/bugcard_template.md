@@ -3,7 +3,7 @@
 ```yaml
 # BugCard 轻量级检索快照
 bug_card_id: BUG-[FAMILY]-[SEQ]
-title: "<20字问题描述>"               # 与 case_specification.md 对齐
+title: "<20字问题描述>"
 bug_family: Rendering.[Category]      # 如 Rendering.Lighting
 invariants_broken: [I-NAN-01, I-PREC-01]
 symptom_tags: [标签1, 标签2]
