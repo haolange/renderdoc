@@ -1,4 +1,4 @@
-# AIRD Framework · Manus 平台调试工作流 v2.0
+# AIRD Framework · Manus 平台调试工作流
 <!-- 本文件由 common/AGENT_CORE.md + common/agents/ 适配生成，平台：Manus -->
 <!-- 如需修改核心逻辑，请先修改 common/agents/<agent>.md，再同步此文件 -->
 
@@ -270,10 +270,3 @@ symptom_taxonomy.yaml + trigger_taxonomy.yaml + invariant_library.yaml + sop_lib
 | `VALIDATED` | 假设通过 Skeptic 审查后的最终确认状态 |
 
 ---
-
-## 版本记录
-
-| 版本 | 内容 |
-|------|------|
-| v2.0 (2026-02-27) | 完整重写：9 步骤工作流、五把解剖刀、知识库路径规范、质量关键词速查 |
-| v1.0 | 初始版本（7 步骤简版） |

@@ -1,4 +1,4 @@
-<!-- AIRD Framework — MiniMax 平台合并版 v2.0 -->
+<!-- AIRD Framework — MiniMax 平台合并版 -->
 <!-- 本文件由 common/agents/ 下 9 个核心 Agent Prompt 合并生成 -->
 <!-- 如需修改核心逻辑，请先修改 common/agents/<agent>.md，再同步此文件 -->
 <!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
@@ -29,7 +29,6 @@ Team Lead 将根据问题类型自动调度其他专家 Agent。
 #   - invariants/invariant_library.yaml   （不变量库，用于假设路由）
 #   - docs/hypothesis_board.md            （假设板规范）
 #   - docs/quality_hooks.md               （质量钩子规范）
-#   - docs/agent_collaboration.md         （消息协议）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -344,7 +343,6 @@ unclassified_symptoms: []
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - docs/agent_collaboration.md         （消息协议，用于规范输出格式）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -1570,4 +1568,4 @@ sop_revision_proposal:
 
 ---
 
-<!-- END OF AIRD AGENT COLLECTION v2.0 -->
+<!-- END OF AIRD AGENT COLLECTION -->

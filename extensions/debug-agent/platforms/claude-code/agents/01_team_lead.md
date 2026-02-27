@@ -19,7 +19,6 @@ color: "#E74C3C"
 #   - invariants/invariant_library.yaml   （不变量库，用于假设路由）
 #   - docs/hypothesis_board.md            （假设板规范）
 #   - docs/quality_hooks.md               （质量钩子规范）
-#   - docs/agent_collaboration.md         （消息协议）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
