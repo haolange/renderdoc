@@ -1,13 +1,10 @@
-# Action Chain 标准记录格式 — AIRD Framework M5 自进化基础设施
-# 版本：2.0 | 2026-02-27
+# Action Chain 标准记录格式
 #
 # Action Chain 是每次调试 session 的完整工具调用与决策序列记录。
 # 用途：
 #   1. 作为未来 SOP 草稿自动提取的训练数据
 #   2. 用于跨 session 分析调试效率（哪些步骤可压缩/并行化）
 #   3. 为反事实评分引擎提供历史基准数据
-
-schema_version: "2.0"
 
 # ── 必填字段（最小必填集） ────────────────────────────────────
 required_fields:

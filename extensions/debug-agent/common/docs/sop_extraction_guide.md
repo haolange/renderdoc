@@ -1,5 +1,4 @@
 # SOP 提取指南：从 Action Chain 到 SOP 草稿
-## AIRD Framework M5 自进化基础设施 | 版本：2.0
 
 本文档说明如何从已记录的 Action Chain（`.jsonl` 文件）半自动提取 SOP 草稿，并通过人工审核将其合并到 `sop_library.yaml`。
 

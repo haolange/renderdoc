@@ -1,5 +1,4 @@
 # AIRD Framework · Quality Hooks 系统
-## 版本：2.0 | M4 产出物
 
 Quality Hooks 系统将 AIRD 框架的质量门槛从「被建议的」提升为「被强制执行的」。
 

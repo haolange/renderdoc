@@ -1,5 +1,5 @@
 # AIRD Framework
-## AI-Driven Invariant-Reasoning Debugger · 完全体 v2.0
+## AI-Driven Invariant-Reasoning Debugger 
 
 AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 Agent 调试框架。它通过形式化的**不变量推理**（Invariant Reasoning）和**多专家协作**，将复杂渲染问题的调试流程标准化、可追溯、可自我进化。
 
@@ -11,7 +11,7 @@ AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     AIRD Framework v2.0                      │
+│                                           │
 ├─────────────────┬───────────────────────────────────────────┤
 │   知识层（M1）   │  Agent 层（M2/M3）                         │
 │                 │                                             │
@@ -157,22 +157,3 @@ common/project_plugin/
 | **Action Chain** | 完整调试 session 的工具调用和决策序列记录（`.jsonl`） |
 | **Fingerprint** | 可疑代码表达式的结构化描述，用于跨 session 匹配同类 Bug |
 | **Project Plugin** | 项目级知识注入接口（材质模块、项目不变量、资源映射） |
-
----
-
-## 版本历史
-
-| 版本 | 日期 | 主要变更 |
-|------|------|---------|
-| v2.0 | 2026-02-27 | 完全体：M1-M6 全部完成。知识层 YAML 化、Agent Prompt 全重写、5 平台适配、Quality Hooks、自进化基础设施、Project Plugin |
-| v1.0 | — | 初始版本（骨架与文档） |
-
----
-
-## 贡献指南
-
-1. **修改 Agent 逻辑** → 改 `common/agents/<agent>.md` → 更新 `common/AGENT_CORE.md` → 同步各平台
-2. **新增不变量** → 编辑 `common/invariants/invariant_library.yaml` → 更新 `symptom_taxonomy.yaml` 中的关联
-3. **新增 SOP** → 编辑 `common/skills/sop_library.yaml` → 在对应不变量的 `linked_sop` 字段添加引用
-4. **记录调试案例** → 按 `action_chain_schema.yaml` 格式写入 `common/cases/action_chains/`
-5. **更新 Project Plugin** → 编辑 `common/project_plugin/<project>.yaml`，版本号递增

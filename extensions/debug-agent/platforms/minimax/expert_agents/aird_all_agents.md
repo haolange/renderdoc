@@ -1,6 +1,4 @@
-<!-- AIRD Framework — MiniMax 平台合并版 v2.0 -->
-<!-- 本文件由 common/agents/ 下 9 个核心 Agent Prompt 合并生成 -->
-<!-- 如需修改核心逻辑，请先修改 common/agents/<agent>.md，再同步此文件 -->
+
 <!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
 
 # AIRD Framework · MiniMax 平台 Agent 集合
@@ -22,7 +20,6 @@ Team Lead 将根据问题类型自动调度其他专家 Agent。
 <!-- Agent 1/9: Team Lead — 渲染调试团队协调者（Delegate Mode） -->
 # Agent: Team Lead / Orchestrator
 # 角色：渲染调试团队协调者
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -194,7 +191,6 @@ session_status:
 <!-- Agent 2/9: Triage & Taxonomy — 症状分类专家 -->
 # Agent: Triage & Taxonomy
 # 角色：症状分类专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -340,7 +336,6 @@ unclassified_symptoms: []
 <!-- Agent 3/9: Capture & Repro — 捕获与复现专家 -->
 # Agent: Capture & Repro
 # 角色：捕获与复现专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -478,7 +473,6 @@ notes: ""
 <!-- Agent 4/9: Pass Graph / Pipeline — 渲染管线分析专家 -->
 # Agent: Pass Graph / Pipeline
 # 角色：渲染管线分析专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -638,7 +632,6 @@ recommended_next:
 <!-- Agent 5/9: Pixel Forensics — 像素与数值取证专家 -->
 # Agent: Pixel / Value Forensics
 # 角色：像素取证专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -787,7 +780,6 @@ recommended_next:
 <!-- Agent 6/9: Shader & IR — 着色器与 IR 分析专家 -->
 # Agent: Shader & IR
 # 角色：着色器与中间表示分析专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -959,7 +951,6 @@ engine_module_mapping:                 # 若有 project_plugin 则填写
 <!-- Agent 7/9: Driver & Device — 驱动与设备差异专家 -->
 # Agent: Driver / Device Specialist
 # 角色：驱动与设备差异分析专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -1155,7 +1146,6 @@ platform_attribution:
 <!-- Agent 8/9: Skeptic — 对抗性审查专家（五把解剖刀） -->
 # Agent: Skeptic / Adversarial Reviewer
 # 角色：怀疑论者 / 对抗性审查专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -1358,7 +1348,6 @@ sign_off:
 <!-- Agent 9/9: Knowledge Curator — 报告与知识管理专家 -->
 # Agent: Report & Knowledge Curator
 # 角色：报告生成与知识管理专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
@@ -1567,7 +1556,5 @@ sop_revision_proposal:
 - ❌ 将 SOP 修订提案直接合并到 sop_library.yaml（必须标记为 `pending_human_review`，由人工审核后合并）
 - ❌ 在 BugCard 中省略 fingerprint 字段（这是跨 session 检索的核心索引）
 
-
 ---
 
-<!-- END OF AIRD AGENT COLLECTION v2.0 -->

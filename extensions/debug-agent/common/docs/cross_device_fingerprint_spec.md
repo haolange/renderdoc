@@ -1,5 +1,4 @@
 # 跨设备指纹图谱规范
-## AIRD Framework M5 自进化基础设施 | 版本：2.0
 
 跨设备指纹图谱（Cross-Device Fingerprint Graph）记录同一 Bug 模式在不同 GPU 设备上的表现差异，用于：
 1. 快速识别「已知指纹在新设备上的新表现」（缩短调试时间）

@@ -1,7 +1,6 @@
-# BugCard 必填字段清单 — AIRD Framework M4 Quality Hooks
+# BugCard 必填字段清单
 # 任何 BugCard 入库前必须通过此 schema 验证
 
-schema_version: "2.0"
 description: "BugCard 必填字段清单，由 bugcard_validator.py 使用"
 
 required_fields:

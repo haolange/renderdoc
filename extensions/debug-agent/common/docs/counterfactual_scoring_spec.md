@@ -1,5 +1,4 @@
 # 反事实评分引擎规范
-## AIRD Framework M5 自进化基础设施 | 版本：2.0
 
 反事实评分引擎（Counterfactual Scoring Engine）将「修复是否有效」从主观判断转化为可量化的评分体系。
 

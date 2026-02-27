@@ -1,5 +1,4 @@
-# Skeptic 签署记录格式 — AIRD Framework M4 Quality Hooks
-schema_version: "2.0"
+# Skeptic 签署记录格式
 
 # 用于 SKEPTIC_SIGN_OFF 消息的结构验证
 skeptic_signoff_schema:

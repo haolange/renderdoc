@@ -1,6 +1,5 @@
 {
   "description": "AIRD Framework — Claude Code Quality Hooks 配置",
-  "version": "2.0",
   "hooks": {
     "PostToolUse": [
       {

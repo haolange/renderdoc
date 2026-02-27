@@ -1,5 +1,4 @@
 # AIRD Framework · Project Plugin 接口规范
-## 版本：2.0 | M6 产出物
 
 Project Plugin 是 AIRD 框架的项目级知识注入接口。它让 Agent 在执行通用调试流程的同时，具备对特定项目的深度感知能力（材质结构、引擎资源路径、项目特有不变量）。
 

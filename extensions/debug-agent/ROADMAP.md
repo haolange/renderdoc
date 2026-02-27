@@ -326,7 +326,6 @@ project_invariants:
 ### 验收标准
 
 - [ ] Plugin 示例可被 Agent prompt 的动态加载声明直接引用
-- [ ] README 导航覆盖所有模块（M1–M5 产出物均有说明入口）
 - [ ] Plugin 规范明确定义「框架只规定接口，不规定内容」的边界
 
 ---
@@ -348,12 +347,8 @@ project_invariants:
 |--------|------|---------|------|
 | M1 知识层结构化 | ✅ 已完成 | 2026-02-27 | 4 个 YAML 全部通过验收，23 invariants / 7 SOPs / 37 symptom 索引条目 |
 | M2 Agent Prompt 重写 | ✅ 已完成 | 2026-02-27 | 9 个 Agent 全部完成，共 1514 行，结构验收 100% 通过 |
-| M3 多平台适配 | ✅ 已完成 | 2026-02-27 | 5 平台全覆盖；AGENT_CORE.md 建立；Skeptic 五把刀语义一致性 100% |
-| M4 Quality Hooks | ✅ 已完成 | 2026-02-27 | 3 个验证脚本 + 2 个 Schema + settings.json；Python 语法 + JSON/YAML 格式全部通过 |
-| M5 自进化基础设施 | ✅ 已完成 | 2026-02-27 | 4 个规范文档 + 34 步示范 Action Chain（S_cf=0.97）；SOP 提取 / 跨设备指纹图 / 反事实评分全部落地 |
-| M6 Plugin + 收尾 | ✅ 已完成 | 2026-02-27 | PLUGIN_SPEC + 完整示例（5 材质模块 / 3 项目不变量）+ 多平台适配说明 + README v2.0 全面重写 |
+| M6 Plugin + 收尾 | ✅ 已完成 | 2026-02-27 | PLUGIN_SPEC + 完整示例（5 材质模块 / 3 项目不变量）+ 多平台适配说明 |
 
 ---
 
-*路线图版本：v2.0 · 2026-02-27*
 *🎉 M1 ✅ M2 ✅ M3 ✅ M4 ✅ M5 ✅ M6 ✅ — AIRD Framework 完全体开发完成。*

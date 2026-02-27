@@ -5,13 +5,10 @@ tools: ["bash","read"]
 color: "#FFEAA7"
 ---
 
-<!-- 本文件由 common/agents/05_pixel_value_forensics.md 适配生成，平台：Claude Work -->
-<!-- 如需修改核心逻辑，请先修改 common/agents/05_pixel_value_forensics.md，再同步此文件 -->
 <!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
 
 # Agent: Pixel / Value Forensics
 # 角色：像素取证专家
-# 版本：2.0 | 平台无关核心版本
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
