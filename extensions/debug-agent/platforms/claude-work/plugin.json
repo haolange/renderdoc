@@ -1,60 +1,66 @@
 {
-  "name": "renderdoc-debug-agent",
-  "version": "1.0.0",
-  "description": "RenderDoc调试Agent团队 - 9个专业Agent协作",
+  "name": "aird-debug-agent",
+  "version": "2.0.0",
+  "description": "AIRD Framework — AI 驱动的不变量推理调试器（9 个专家 Agent 协作体系，v2.0 含完整质量门槛与知识库系统）",
+  "core_source": "../../common/AGENT_CORE.md",
   "agents": [
     {
       "name": "Team Lead",
-      "description": "渲染调试团队协调者",
-      "prompt_file": "./claude-work/agents/team_lead.md"
+      "description": "渲染调试团队协调者（Delegate Mode）——管理假设看板、调度专家、裁决根因",
+      "prompt_file": "./agents/team_lead.md"
     },
     {
-      "name": "Triage",
-      "description": "症状分类专家",
-      "prompt_file": "./claude-work/agents/triage.md"
+      "name": "Triage & Taxonomy",
+      "description": "症状分类专家——将自然语言报告映射为标准 symptom_tags / trigger_tags，推荐 SOP",
+      "prompt_file": "./agents/triage.md"
     },
     {
-      "name": "Capture",
-      "description": "捕获与复现专家",
-      "prompt_file": "./claude-work/agents/capture.md"
+      "name": "Capture & Repro",
+      "description": "捕获与复现专家——设计 A/B 对比 capture 策略，验证 anchor 三维精度",
+      "prompt_file": "./agents/capture.md"
     },
     {
-      "name": "Pipeline",
-      "description": "渲染管线分析专家",
-      "prompt_file": "./claude-work/agents/pipeline.md"
+      "name": "Pass Graph / Pipeline",
+      "description": "渲染管线分析专家——RenderGraph 发散点定位，输出资源依赖链",
+      "prompt_file": "./agents/pipeline.md"
     },
     {
-      "name": "Forensics",
-      "description": "像素/数值取证专家",
-      "prompt_file": "./claude-work/agents/forensics.md"
+      "name": "Pixel Forensics",
+      "description": "像素与数值取证专家——逆向追溯像素历史，定位 first_bad_event",
+      "prompt_file": "./agents/forensics.md"
     },
     {
-      "name": "Shader",
-      "description": "着色器与IR分析专家",
-      "prompt_file": "./claude-work/agents/shader.md"
+      "name": "Shader & IR",
+      "description": "着色器与 IR 分析专家——HLSL / SPIR-V / ISA 关联分析，提取可疑表达式指纹",
+      "prompt_file": "./agents/shader.md"
     },
     {
-      "name": "Driver",
-      "description": "驱动/设备专家",
-      "prompt_file": "./claude-work/agents/driver.md"
+      "name": "Driver & Device",
+      "description": "驱动与设备差异专家——API Trace 和 ISA 级对比，输出 platform_attribution",
+      "prompt_file": "./agents/driver.md"
     },
     {
       "name": "Skeptic",
-      "description": "对抗式审查者",
-      "prompt_file": "./claude-work/agents/skeptic.md"
+      "description": "对抗性审查专家（五把解剖刀）——假设 VALIDATED 前和 BugCard 入库前必须签署",
+      "prompt_file": "./agents/skeptic.md"
     },
     {
-      "name": "Curator",
-      "description": "报告与知识策展者",
-      "prompt_file": "./claude-work/agents/curator.md"
+      "name": "Knowledge Curator",
+      "description": "报告与知识管理专家——生成 BugFull / BugCard，维护知识库与跨设备指纹图",
+      "prompt_file": "./agents/curator.md"
     }
   ],
-  "skills": [
-    {"name": "nan_debug", "path": "./common/skills/nan_debug.md"},
-    {"name": "geo_debug", "path": "./common/skills/geo_debug.md"},
-    {"name": "color_debug", "path": "./common/skills/color_debug.md"}
+  "knowledge_base": [
+    {"name": "invariant_library",    "path": "../../common/invariants/invariant_library.yaml"},
+    {"name": "symptom_taxonomy",     "path": "../../common/taxonomy/symptom_taxonomy.yaml"},
+    {"name": "trigger_taxonomy",     "path": "../../common/taxonomy/trigger_taxonomy.yaml"},
+    {"name": "sop_library",          "path": "../../common/skills/sop_library.yaml"}
   ],
   "mcp_servers": [
     {"name": "rdx-mcp", "command": "python", "args": ["-m", "rdx.server"]}
-  ]
+  ],
+  "changelog": {
+    "2.0.0": "M2 完全重写：9 Agent 核心 Prompt 含完整工作流/质量门槛/输出 Schema；Skeptic 升级为五把解剖刀；知识库系统化为 4 个 YAML 文件",
+    "1.0.0": "初始版本"
+  }
 }
