@@ -60,6 +60,7 @@
   "hook_notes": {
     "platform_coverage": {
       "claude_code": "native hooks via this settings.json",
+      "code_buddy": "native hooks via platforms/code-buddy/hooks/hooks.json (PostToolUse + Stop)",
       "claude_work": "prompt-layer fallback (质量门槛检查清单 in each agent prompt)",
       "copilot": "prompt-layer fallback",
       "minimax": "prompt-layer fallback",
