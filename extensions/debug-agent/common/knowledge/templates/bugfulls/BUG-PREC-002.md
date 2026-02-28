@@ -72,7 +72,6 @@ diff --git a/MobileShadingModels.ush b/MobileShadingModels.ush
 
 ## 10. 知识沉淀
 
-- BugCard：`common/kb/bugcards/bugcard_BUG-PREC-002.yaml`
+- BugCard：`common/knowledge/library/bugcards/bugcard_BUG-PREC-002.yaml`
 - fingerprint.pattern：`half KajiyaDiffuse = 1 - abs(dot(N, L));`
 - related：对照案例 `BUG-PREC-001`（同类 RelaxedPrecision 精度问题，表现相反）
-

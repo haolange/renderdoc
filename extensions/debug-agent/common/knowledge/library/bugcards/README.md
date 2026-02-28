@@ -1,4 +1,4 @@
-# kb/bugcards
+# knowledge/library/bugcards
 
 存放 BugCard（YAML）。
 
@@ -6,4 +6,3 @@
 - `bugcard_BUG-PREC-001.yaml`
 
 BugCard 字段规范以 `common/hooks/schemas/bugcard_required_fields.yaml` 为准。
-

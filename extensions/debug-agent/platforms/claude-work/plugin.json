@@ -52,19 +52,19 @@
   "knowledge_base": [
     {
       "name": "invariant_library",
-      "path": "../../common/invariants/invariant_library.yaml"
+      "path": "../../common/knowledge/spec/invariants/invariant_library.yaml"
     },
     {
       "name": "symptom_taxonomy",
-      "path": "../../common/taxonomy/symptom_taxonomy.yaml"
+      "path": "../../common/knowledge/spec/taxonomy/symptom_taxonomy.yaml"
     },
     {
       "name": "trigger_taxonomy",
-      "path": "../../common/taxonomy/trigger_taxonomy.yaml"
+      "path": "../../common/knowledge/spec/taxonomy/trigger_taxonomy.yaml"
     },
     {
       "name": "sop_library",
-      "path": "../../common/skills/sop_library.yaml"
+      "path": "../../common/knowledge/spec/skills/sop_library.yaml"
     }
   ],
   "mcp_servers": [

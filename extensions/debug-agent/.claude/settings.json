@@ -5,7 +5,7 @@
       {
         "matcher": {
           "tool_name": "Write",
-          "file_pattern": "**/kb/**/*bugcard*.yaml"
+          "file_pattern": "**/knowledge/library/**/*bugcard*.yaml"
         },
         "hooks": [
           {

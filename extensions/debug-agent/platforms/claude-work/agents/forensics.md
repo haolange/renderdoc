@@ -12,8 +12,8 @@ color: "#FFEAA7"
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （所有数值类不变量的 detection_hints）
-#   - skills/sop_library.yaml             （SOP-NAN-01 第 1-2 阶段工具链）
+#   - knowledge/spec/invariants/invariant_library.yaml   （所有数值类不变量的 detection_hints）
+#   - knowledge/spec/skills/sop_library.yaml             （SOP-NAN-01 第 1-2 阶段工具链）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份

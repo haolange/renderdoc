@@ -71,10 +71,10 @@ def _load_reference_sets():
     返回 dict[str, set[str]]
     """
     root = Path(__file__).resolve().parents[3]  # debug-agent/
-    symptom = _load_yaml(root / "common" / "taxonomy" / "symptom_taxonomy.yaml") or {}
-    trigger = _load_yaml(root / "common" / "taxonomy" / "trigger_taxonomy.yaml") or {}
-    inv = _load_yaml(root / "common" / "invariants" / "invariant_library.yaml") or {}
-    sop = _load_yaml(root / "common" / "skills" / "sop_library.yaml") or {}
+    symptom = _load_yaml(root / "common" / "knowledge" / "spec" / "taxonomy" / "symptom_taxonomy.yaml") or {}
+    trigger = _load_yaml(root / "common" / "knowledge" / "spec" / "taxonomy" / "trigger_taxonomy.yaml") or {}
+    inv = _load_yaml(root / "common" / "knowledge" / "spec" / "invariants" / "invariant_library.yaml") or {}
+    sop = _load_yaml(root / "common" / "knowledge" / "spec" / "skills" / "sop_library.yaml") or {}
 
     symptoms = {s.get("tag") for s in (symptom.get("symptoms") or []) if isinstance(s, dict)}
     triggers = {t.get("tag") for t in (trigger.get("triggers") or []) if isinstance(t, dict)}

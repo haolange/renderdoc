@@ -193,11 +193,11 @@
 
 | 文件 | 加载方 |
 |------|-------|
-| `invariants/invariant_library.yaml` | Triage、Driver、Curator、Skeptic |
-| `taxonomy/symptom_taxonomy.yaml` | Triage |
-| `taxonomy/trigger_taxonomy.yaml` | Triage、Driver |
-| `skills/sop_library.yaml` | Triage、Curator |
-| `kb/cross_device_fingerprint_graph.yaml` | Driver、Curator（可选） |
+| `knowledge/spec/invariants/invariant_library.yaml` | Triage、Driver、Curator、Skeptic |
+| `knowledge/spec/taxonomy/symptom_taxonomy.yaml` | Triage |
+| `knowledge/spec/taxonomy/trigger_taxonomy.yaml` | Triage、Driver |
+| `knowledge/spec/skills/sop_library.yaml` | Triage、Curator |
+| `knowledge/library/cross_device_fingerprint_graph.yaml` | Driver、Curator（可选） |
 
 ---
 

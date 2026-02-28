@@ -2,7 +2,7 @@
 
 > 权威规范：`common/hooks/schemas/bugcard_required_fields.yaml`
 >
-> 推荐文件名包含 `bugcard` 以触发平台 Hook，例如：`common/kb/bugcards/bugcard_BUG-XXX-001.yaml`
+> 推荐文件名包含 `bugcard` 以触发平台 Hook，例如：`common/knowledge/library/bugcards/bugcard_BUG-XXX-001.yaml`
 
 ```yaml
 bugcard_id: BUG-XXX-001

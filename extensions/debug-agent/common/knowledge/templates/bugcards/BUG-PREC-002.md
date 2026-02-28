@@ -32,6 +32,6 @@ related_devices:
     bug_card: BUG-PREC-001
     symptom_diff: "650 上白化，740 上黑化（同类 RelaxedPrecision 精度问题）"
 
-action_chain_ref: "cases/action_chains/example_adreno_prec.jsonl"
+action_chain_ref: "knowledge/traces/action_chains/example_adreno_prec.jsonl"
 sop_improvement_notes: ""
 ```

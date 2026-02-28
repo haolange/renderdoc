@@ -15,14 +15,13 @@ AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 
 ├─────────────────┬───────────────────────────────────────────┤
 │   知识层（M1）   │  Agent 层（M2/M3）                         │
 │                 │                                             │
-│  invariants/    │  common/agents/   ← 9 个平台无关核心 Prompt │
-│  taxonomy/      │  platforms/       ← 6 个平台适配版本        │
-│  skills/        │                                             │
+│  knowledge/spec/│  common/agents/   ← 9 个平台无关核心 Prompt │
+│                 │  platforms/       ← 6 个平台适配版本        │
 ├─────────────────┼───────────────────────────────────────────┤
 │  质量层（M4）   │  自进化层（M5）                              │
 │                 │                                             │
 │  hooks/         │  docs/            ← 4 个规范文档            │
-│  .claude/       │  cases/           ← Action Chain 历史案例  │
+│  .claude/       │  knowledge/       ← library/traces/templates│
 ├─────────────────┴───────────────────────────────────────────┤
 │                  项目适配层（M6）                              │
 │  project_plugin/  ← Plugin 规范 + 示例                       │
@@ -55,10 +54,10 @@ python3 -m pip install -r common/hooks/requirements.txt
 
 在 Agent 会话开始时，确保以下文件可被访问（动态加载）：
 ```
-common/invariants/invariant_library.yaml   # 23 个不变量
-common/taxonomy/symptom_taxonomy.yaml      # 37 个症状标签
-common/taxonomy/trigger_taxonomy.yaml      # GPU/驱动/API 已知问题
-common/skills/sop_library.yaml             # 7 个 SOP
+common/knowledge/spec/invariants/invariant_library.yaml   # 23 个不变量
+common/knowledge/spec/taxonomy/symptom_taxonomy.yaml      # 37 个症状标签
+common/knowledge/spec/taxonomy/trigger_taxonomy.yaml      # GPU/驱动/API 已知问题
+common/knowledge/spec/skills/sop_library.yaml             # 7 个 SOP
 ```
 
 ### 3. 加载 Project Plugin（可选但推荐）
@@ -88,10 +87,10 @@ Team Lead 将自动调度 Triage → Capture → 并行专家分析 → Skeptic 
 
 | 文件 | 内容 |
 |------|------|
-| `common/invariants/invariant_library.yaml` | 23 个渲染不变量，含症状标签、检测工具、修复模式 |
-| `common/taxonomy/symptom_taxonomy.yaml` | 37 个标准症状标签，含分类、优先级、示例 |
-| `common/taxonomy/trigger_taxonomy.yaml` | GPU 型号、驱动版本、图形 API 的已知问题映射 |
-| `common/skills/sop_library.yaml` | 7 个标准操作程序，含工具链、反事实规范、修复模板 |
+| `common/knowledge/spec/invariants/invariant_library.yaml` | 23 个渲染不变量，含症状标签、检测工具、修复模式 |
+| `common/knowledge/spec/taxonomy/symptom_taxonomy.yaml` | 37 个标准症状标签，含分类、优先级、示例 |
+| `common/knowledge/spec/taxonomy/trigger_taxonomy.yaml` | GPU 型号、驱动版本、图形 API 的已知问题映射 |
+| `common/knowledge/spec/skills/sop_library.yaml` | 7 个标准操作程序，含工具链、反事实规范、修复模板 |
 
 ### M2 · Agent 核心层
 
@@ -139,8 +138,8 @@ Claude Code 平台通过 `.claude/settings.json` 实现系统级强制；其他�
 | `common/docs/sop_extraction_guide.md` | 从 Action Chain 半自动提取 SOP 草稿的操作规范 |
 | `common/docs/cross_device_fingerprint_spec.md` | 跨设备指纹图谱（同 Bug 在不同 GPU 上的表现关联） |
 | `common/docs/counterfactual_scoring_spec.md` | 反事实验证量化评分体系（0~1.0，阈值 0.80） |
-| `common/cases/action_chains/` | 历史调试案例（`.jsonl` 格式，可用于 SOP 提取） |
-| `common/kb/` | 知识库与会话产物目录（BugCard 入库、BugFull 输出、指纹图/索引，可选但推荐） |
+| `common/knowledge/traces/action_chains/` | 历史调试案例（`.jsonl` 格式，可用于 SOP 提取） |
+| `common/knowledge/library/` | 知识库与会话产物目录（BugCard 入库、BugFull 输出、指纹图/索引，可选但推荐） |
 
 ### M6 · Project Plugin
 

@@ -53,7 +53,7 @@ material_blocks:
         note: string          # 简短说明
 
 # ── 项目特有不变量 ─────────────────────────────────────────────
-# 不在 common/invariants/ 中，但项目团队认为必须维持的约束
+# 不在 common/knowledge/spec/invariants/ 中，但项目团队认为必须维持的约束
 project_invariants:
   - id: string                # 格式：P-<类别>-<序号>，如 P-METAL-01
     description: string       # 不变量描述

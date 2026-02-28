@@ -28,7 +28,7 @@ Claude Code 平台的 Hook 触发配置在 `.claude/settings.json`。
 
 | 属性 | 值 |
 |------|-----|
-| 触发时机 | BugCard YAML 写入 `kb/` 目录后（PostToolUse） |
+| 触发时机 | BugCard YAML 写入 `knowledge/library/` 目录后（PostToolUse） |
 | 触发工具 | `bugcard_validator.py` |
 | 检查项数 | 12 项（字段存在性、格式、长度、签署状态） |
 | 失败行为 | 阻止写入，输出缺失字段列表 |

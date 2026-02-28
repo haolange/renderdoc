@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "file=\"$(echo $CODEBUDDY_TOOL_INPUT | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(\"file_path\",\"\"))')\"; if echo \"$file\" | grep -qE 'kb/.*bugcard.*\\.yaml$'; then python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/validators/bugcard_validator.py\" \"$file\"; fi",
+          "command": "file=\"$(echo $CODEBUDDY_TOOL_INPUT | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(\"file_path\",\"\"))')\"; if echo \"$file\" | grep -qE 'knowledge/library/.*bugcard.*\\.yaml$'; then python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/validators/bugcard_validator.py\" \"$file\"; fi",
           "description": "BugCard 写入知识库前自动完整性检查（12 项规则）",
           "timeout": 30000
         }

@@ -14,10 +14,10 @@ AIRD Framework 调试知识技能包。当执行任何渲染 Bug 调试任务时
 当执行渲染调试任务时，按以下路径加载知识文件（路径相对于 `debug-agent/` 根目录）：
 
 ```
-common/invariants/invariant_library.yaml    ← 不变量库（必须加载）
-common/taxonomy/symptom_taxonomy.yaml       ← 症状分类学（分类阶段加载）
-common/taxonomy/trigger_taxonomy.yaml       ← 触发条件分类学（设备分析阶段加载）
-common/skills/sop_library.yaml              ← SOP 库（选定调试流程后加载）
+common/knowledge/spec/invariants/invariant_library.yaml    ← 不变量库（必须加载）
+common/knowledge/spec/taxonomy/symptom_taxonomy.yaml       ← 症状分类学（分类阶段加载）
+common/knowledge/spec/taxonomy/trigger_taxonomy.yaml       ← 触发条件分类学（设备分析阶段加载）
+common/knowledge/spec/skills/sop_library.yaml              ← SOP 库（选定调试流程后加载）
 ```
 
 ## 关键知识结构
@@ -38,7 +38,7 @@ common/skills/sop_library.yaml              ← SOP 库（选定调试流程后�
 
 查询示例（Python 一行）：
 ```python
-next(s for s in yaml.safe_load(open('common/taxonomy/symptom_taxonomy.yaml'))['symptoms'] if s['tag'] == 'white_spot')
+next(s for s in yaml.safe_load(open('common/knowledge/spec/taxonomy/symptom_taxonomy.yaml'))['symptoms'] if s['tag'] == 'white_spot')
 ```
 
 ### SOP（sop_library.yaml）
@@ -60,12 +60,12 @@ common/project_plugin/<project_name>.yaml   ← 项目特定不变量和材质�
 
 已记录的调试案例位于：
 ```
-common/cases/bugcards/    ← BugCard 知识卡（快速索引）
-common/cases/bugfulls/    ← BugFull 完整报告（详细参考）
-common/cases/action_chains/  ← Action Chain 调试过程记录
+common/knowledge/templates/bugcards/    ← BugCard 知识卡（快速索引）
+common/knowledge/templates/bugfulls/    ← BugFull 完整报告（详细参考）
+common/knowledge/traces/action_chains/  ← Action Chain 调试过程记录
 ```
 
 实际调试过程中沉淀的知识库（可选但推荐）位于：
 ```
-common/kb/               ← BugCard 入库与 BugFull 输出目录
+common/knowledge/library/               ← BugCard 入库与 BugFull 输出目录
 ```

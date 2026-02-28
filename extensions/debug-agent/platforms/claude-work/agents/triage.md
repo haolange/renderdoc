@@ -12,10 +12,10 @@ color: "#4ECDC4"
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - taxonomy/symptom_taxonomy.yaml      （症状分类学，主要工作文档）
-#   - taxonomy/trigger_taxonomy.yaml      （触发条件分类学）
-#   - invariants/invariant_library.yaml   （用于查询 symptom_to_invariants 索引）
-#   - skills/sop_library.yaml             （用于查询 symptom_to_sop 索引）
+#   - knowledge/spec/taxonomy/symptom_taxonomy.yaml      （症状分类学，主要工作文档）
+#   - knowledge/spec/taxonomy/trigger_taxonomy.yaml      （触发条件分类学）
+#   - knowledge/spec/invariants/invariant_library.yaml   （用于查询 symptom_to_invariants 索引）
+#   - knowledge/spec/skills/sop_library.yaml             （用于查询 symptom_to_sop 索引）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份

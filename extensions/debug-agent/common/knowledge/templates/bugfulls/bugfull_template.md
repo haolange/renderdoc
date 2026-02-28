@@ -1,6 +1,6 @@
 # BugFull 模板（Markdown）
 
-> 建议输出路径：`common/kb/bugfull/BUG-XXX-001_full.md`
+> 建议输出路径：`common/knowledge/library/bugfull/BUG-XXX-001_full.md`
 >
 > 目标：让工程师可读、让证据可追溯、让结论可复现。
 
@@ -72,7 +72,7 @@
 
 ## 10. 知识沉淀
 
-- 生成 BugCard：路径 `common/kb/bugcards/bugcard_<BUG-ID>.yaml`
+- 生成 BugCard：路径 `common/knowledge/library/bugcards/bugcard_<BUG-ID>.yaml`
 - 指纹：用于 `rd.kb.search` 的检索 pattern
 - SOP 改进建议：如发现 SOP 缺漏，写入 `sop_improvement_notes`
 
@@ -100,4 +100,3 @@ fix_verification_data:
 skeptic_signed: true
 bugcard_skeptic_signed: true
 ```
-

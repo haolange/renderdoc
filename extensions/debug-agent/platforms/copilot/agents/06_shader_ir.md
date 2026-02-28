@@ -13,8 +13,8 @@ color: "#1ABC9C"
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （I-SHADER / I-PREC 类不变量的 detection_hints）
-#   - skills/sop_library.yaml             （SOP-PREC-01 的 tool_chain 阶段 2）
+#   - knowledge/spec/invariants/invariant_library.yaml   （I-SHADER / I-PREC 类不变量的 detection_hints）
+#   - knowledge/spec/skills/sop_library.yaml             （SOP-PREC-01 的 tool_chain 阶段 2）
 # 可选加载（若 project_plugin 存在）：
 #   - project_plugin/<project>.yaml       （Block 计算指纹，用于从 IR 反推引擎模块）
 # ─────────────────────────────────────────────────────────────

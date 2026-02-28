@@ -47,7 +47,7 @@ def cluster_by_invariant(chains_dir: str) -> dict:
     return clusters
 
 # 使用示例
-clusters = cluster_by_invariant("common/cases/action_chains/")
+clusters = cluster_by_invariant("common/knowledge/traces/action_chains/")
 # clusters["I-PREC-01"] → 所有因精度问题导致 Bug 的 session 列表
 ```
 
@@ -204,5 +204,5 @@ def merge_sop_draft(sop_draft: dict, sop_library_path: str):
 ## 相关文件
 
 - `action_chain_schema.yaml` — Action Chain 记录格式定义
-- `common/cases/action_chains/` — 已记录的 Action Chain 文件目录
-- `common/skills/sop_library.yaml` — SOP 知识库（合并目标）
+- `common/knowledge/traces/action_chains/` — 已记录的 Action Chain 文件目录
+- `common/knowledge/spec/skills/sop_library.yaml` — SOP 知识库（合并目标）

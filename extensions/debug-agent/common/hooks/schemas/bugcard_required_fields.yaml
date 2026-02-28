@@ -20,26 +20,26 @@ required_fields:
   - field: symptom_tags
     type: list
     min_items: 1
-    item_source: "common/taxonomy/symptom_taxonomy.yaml"
+    item_source: "common/knowledge/spec/taxonomy/symptom_taxonomy.yaml"
     description: "标准症状标签列表，至少一个"
 
   - field: trigger_tags
     type: list
     min_items: 1
-    item_source: "common/taxonomy/trigger_taxonomy.yaml"
+    item_source: "common/knowledge/spec/taxonomy/trigger_taxonomy.yaml"
     description: "触发条件标签列表（GPU型号/驱动/API），至少一个"
 
   - field: violated_invariants
     type: list
     min_items: 1
-    item_source: "common/invariants/invariant_library.yaml"
+    item_source: "common/knowledge/spec/invariants/invariant_library.yaml"
     description: "被违反的不变量 ID 列表"
     example: ["I-PREC-01"]
 
   - field: recommended_sop
     type: string
     pattern: "^SOP-[A-Z]+-\\d{2}$"
-    item_source: "common/skills/sop_library.yaml"
+    item_source: "common/knowledge/spec/skills/sop_library.yaml"
     description: "推荐的 SOP ID"
     example: "SOP-PREC-01"
 

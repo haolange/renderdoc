@@ -3,11 +3,11 @@
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariants 字段）
-#   - skills/sop_library.yaml             （用于填充 BugCard 的 recommended_sop 字段）
+#   - knowledge/spec/invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariants 字段）
+#   - knowledge/spec/skills/sop_library.yaml             （用于填充 BugCard 的 recommended_sop 字段）
 # 可选加载（若已有历史知识库）：
-#   - kb/bugcard_index.yaml               （已有 BugCard 的索引，用于去重）
-#   - kb/cross_device_fingerprint_graph.yaml （用于更新跨设备指纹图）
+#   - knowledge/library/bugcard_index.yaml               （已有 BugCard 的索引，用于去重）
+#   - knowledge/library/cross_device_fingerprint_graph.yaml （用于更新跨设备指纹图）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -164,7 +164,7 @@ bugcard_skeptic_signed: true
 
 ### BugFull（Markdown，完整报告）
 
-生成路径：`kb/bugfull/BUG-PREC-002_full.md`
+生成路径：`knowledge/library/bugfull/BUG-PREC-002_full.md`
 
 结构（必须包含以下章节）：
 1. `## 问题概述` — 一段话描述 + 截图参考

@@ -5,10 +5,10 @@
 **触发条件：** 用户报告渲染 Bug（白屏/黑屏/闪烁/精度异常/几何错误等）
 **参与 Agent：** 9 个专家（详见下方步骤）
 **知识文件路径（相对于 common/）：**
-- `invariants/invariant_library.yaml`（23 个不变量）
-- `taxonomy/symptom_taxonomy.yaml`（37 个症状标签）
-- `taxonomy/trigger_taxonomy.yaml`（GPU 型号/驱动/API 已知问题）
-- `skills/sop_library.yaml`（7 个 SOP）
+- `knowledge/spec/invariants/invariant_library.yaml`（23 个不变量）
+- `knowledge/spec/taxonomy/symptom_taxonomy.yaml`（37 个症状标签）
+- `knowledge/spec/taxonomy/trigger_taxonomy.yaml`（GPU 型号/驱动/API 已知问题）
+- `knowledge/spec/skills/sop_library.yaml`（7 个 SOP）
 
 ---
 

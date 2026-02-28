@@ -130,7 +130,7 @@ recommended_sop: "SOP-PREC-01"
 
 2. **版本控制**：每次更新后增加 `last_updated` 字段，不修改历史 Device Entry（只追加）。
 
-3. **存放路径**：`common/kb/cross_device_fingerprint_graph.yaml`
+3. **存放路径**：`common/knowledge/library/cross_device_fingerprint_graph.yaml`
 
 4. **索引格式**：文件顶层保留 `cluster_index`（按 `linked_invariant` 分组的快速索引），供 Triage Agent 和 Driver Agent 快速检索。
 

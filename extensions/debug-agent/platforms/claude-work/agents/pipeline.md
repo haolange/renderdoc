@@ -12,8 +12,8 @@ color: "#96CEB4"
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （I-DEPTH / I-PERF / I-COLOR / I-STATE 类不变量）
-#   - skills/sop_library.yaml             （SOP-DEPTH-01 / SOP-PERF-01）
+#   - knowledge/spec/invariants/invariant_library.yaml   （I-DEPTH / I-PERF / I-COLOR / I-STATE 类不变量）
+#   - knowledge/spec/skills/sop_library.yaml             （SOP-DEPTH-01 / SOP-PERF-01）
 # 可选加载（若 project_plugin 存在）：
 #   - project_plugin/<project>.yaml       （项目特定渲染管线结构与 Debug Marker 命名规范）
 # ─────────────────────────────────────────────────────────────

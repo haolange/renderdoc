@@ -12,10 +12,10 @@
 Team Lead 将根据问题类型自动调度其他专家 Agent。
 
 **知识库路径（相对于 common/）：**
-- `invariants/invariant_library.yaml`
-- `taxonomy/symptom_taxonomy.yaml`
-- `taxonomy/trigger_taxonomy.yaml`
-- `skills/sop_library.yaml`
+- `knowledge/spec/invariants/invariant_library.yaml`
+- `knowledge/spec/taxonomy/symptom_taxonomy.yaml`
+- `knowledge/spec/taxonomy/trigger_taxonomy.yaml`
+- `knowledge/spec/skills/sop_library.yaml`
 
 <!-- Agent 1/9: Team Lead — 渲染调试团队协调者（Delegate Mode） -->
 # Agent: Team Lead / Orchestrator
@@ -23,7 +23,7 @@ Team Lead 将根据问题类型自动调度其他专家 Agent。
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （不变量库，用于假设路由）
+#   - knowledge/spec/invariants/invariant_library.yaml   （不变量库，用于假设路由）
 #   - docs/hypothesis_board.md            （假设板规范）
 #   - docs/quality_hooks.md               （质量钩子规范）
 #   - docs/agent_collaboration.md         （消息协议）
@@ -194,10 +194,10 @@ session_status:
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - taxonomy/symptom_taxonomy.yaml      （症状分类学，主要工作文档）
-#   - taxonomy/trigger_taxonomy.yaml      （触发条件分类学）
-#   - invariants/invariant_library.yaml   （用于查询 symptom_to_invariants 索引）
-#   - skills/sop_library.yaml             （用于查询 symptom_to_sop 索引）
+#   - knowledge/spec/taxonomy/symptom_taxonomy.yaml      （症状分类学，主要工作文档）
+#   - knowledge/spec/taxonomy/trigger_taxonomy.yaml      （触发条件分类学）
+#   - knowledge/spec/invariants/invariant_library.yaml   （用于查询 symptom_to_invariants 索引）
+#   - knowledge/spec/skills/sop_library.yaml             （用于查询 symptom_to_sop 索引）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -476,8 +476,8 @@ notes: ""
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （I-DEPTH / I-PERF / I-COLOR / I-STATE 类不变量）
-#   - skills/sop_library.yaml             （SOP-DEPTH-01 / SOP-PERF-01）
+#   - knowledge/spec/invariants/invariant_library.yaml   （I-DEPTH / I-PERF / I-COLOR / I-STATE 类不变量）
+#   - knowledge/spec/skills/sop_library.yaml             （SOP-DEPTH-01 / SOP-PERF-01）
 # 可选加载（若 project_plugin 存在）：
 #   - project_plugin/<project>.yaml       （项目特定渲染管线结构与 Debug Marker 命名规范）
 # ─────────────────────────────────────────────────────────────
@@ -678,8 +678,8 @@ recommended_next:
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （所有数值类不变量的 detection_hints）
-#   - skills/sop_library.yaml             （SOP-NAN-01 第 1-2 阶段工具链）
+#   - knowledge/spec/invariants/invariant_library.yaml   （所有数值类不变量的 detection_hints）
+#   - knowledge/spec/skills/sop_library.yaml             （SOP-NAN-01 第 1-2 阶段工具链）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -826,8 +826,8 @@ recommended_next:
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （I-SHADER / I-PREC 类不变量的 detection_hints）
-#   - skills/sop_library.yaml             （SOP-PREC-01 的 tool_chain 阶段 2）
+#   - knowledge/spec/invariants/invariant_library.yaml   （I-SHADER / I-PREC 类不变量的 detection_hints）
+#   - knowledge/spec/skills/sop_library.yaml             （SOP-PREC-01 的 tool_chain 阶段 2）
 # 可选加载（若 project_plugin 存在）：
 #   - project_plugin/<project>.yaml       （Block 计算指纹，用于从 IR 反推引擎模块）
 # ─────────────────────────────────────────────────────────────
@@ -997,10 +997,10 @@ engine_module_mapping:                 # 若有 project_plugin 则填写
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （I-PREC / I-SHADER 类不变量的 known_issues）
-#   - taxonomy/trigger_taxonomy.yaml      （GPU 型号 / 驱动版本 / API 的 known_issues 映射）
+#   - knowledge/spec/invariants/invariant_library.yaml   （I-PREC / I-SHADER 类不变量的 known_issues）
+#   - knowledge/spec/taxonomy/trigger_taxonomy.yaml      （GPU 型号 / 驱动版本 / API 的 known_issues 映射）
 # 可选加载（若已有跨设备历史数据）：
-#   - kb/cross_device_fingerprint_graph.yaml （跨设备指纹图，用于查询同一 Bug 在其他型号的表现）
+#   - knowledge/library/cross_device_fingerprint_graph.yaml （跨设备指纹图，用于查询同一 Bug 在其他型号的表现）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -1192,7 +1192,7 @@ platform_attribution:
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （用于核查不变量引用的准确性）
+#   - knowledge/spec/invariants/invariant_library.yaml   （用于核查不变量引用的准确性）
 # 本 Agent 不需要加载 SOP 库或分类学文件：
 #   你的工作是质疑证据链，而非构建新假设。
 # ─────────────────────────────────────────────────────────────
@@ -1394,11 +1394,11 @@ sign_off:
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariants 字段）
-#   - skills/sop_library.yaml             （用于填充 BugCard 的 recommended_sop 字段）
+#   - knowledge/spec/invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariants 字段）
+#   - knowledge/spec/skills/sop_library.yaml             （用于填充 BugCard 的 recommended_sop 字段）
 # 可选加载（若已有历史知识库）：
-#   - kb/bugcard_index.yaml               （已有 BugCard 的索引，用于去重）
-#   - kb/cross_device_fingerprint_graph.yaml （用于更新跨设备指纹图）
+#   - knowledge/library/bugcard_index.yaml               （已有 BugCard 的索引，用于去重）
+#   - knowledge/library/cross_device_fingerprint_graph.yaml （用于更新跨设备指纹图）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -1555,7 +1555,7 @@ bugcard_skeptic_signed: true
 
 ### BugFull（Markdown，完整报告）
 
-生成路径：`kb/bugfull/BUG-PREC-002_full.md`
+生成路径：`knowledge/library/bugfull/BUG-PREC-002_full.md`
 
 结构（必须包含以下章节）：
 1. `## 问题概述` — 一段话描述 + 截图参考

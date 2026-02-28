@@ -3,10 +3,10 @@
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （I-PREC / I-SHADER 类不变量的 known_issues）
-#   - taxonomy/trigger_taxonomy.yaml      （GPU 型号 / 驱动版本 / API 的 known_issues 映射）
+#   - knowledge/spec/invariants/invariant_library.yaml   （I-PREC / I-SHADER 类不变量的 known_issues）
+#   - knowledge/spec/taxonomy/trigger_taxonomy.yaml      （GPU 型号 / 驱动版本 / API 的 known_issues 映射）
 # 可选加载（若已有跨设备历史数据）：
-#   - kb/cross_device_fingerprint_graph.yaml （跨设备指纹图，用于查询同一 Bug 在其他型号的表现）
+#   - knowledge/library/cross_device_fingerprint_graph.yaml （跨设备指纹图，用于查询同一 Bug 在其他型号的表现）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
