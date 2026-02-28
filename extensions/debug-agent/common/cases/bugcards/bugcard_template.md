@@ -1,46 +1,36 @@
-# BugCard 模板
+# BugCard 模板（入库格式）
+
+> 权威规范：`common/hooks/schemas/bugcard_required_fields.yaml`
+>
+> 推荐文件名包含 `bugcard` 以触发平台 Hook，例如：`common/kb/bugcards/bugcard_BUG-XXX-001.yaml`
 
 ```yaml
-# BugCard 轻量级检索快照
-bug_card_id: BUG-[FAMILY]-[SEQ]
-title: "<20字问题描述>"               # 与 case_specification.md 对齐
-bug_family: Rendering.[Category]      # 如 Rendering.Lighting
-invariants_broken: [I-NAN-01, I-PREC-01]
-symptom_tags: [标签1, 标签2]
-trigger_tags: [Adreno GPU, Android 11]
-anchor: "Pass/Event/DrawCall ID/像素坐标"
-key_evidence:
-  - type: screenshot
-    description: 描述
-  - type: pixel_history
-    description: 描述
-root_cause_one_liner: 根因一句话描述
-fix_one_liner: 修复方案一句话描述
-recommended_sop: SOP-NAN-01
-related_cases: []           # 同族/相似案例引用列表，格式: [BUG-XXX-001, ...]
-```
+bugcard_id: BUG-XXX-001
+title: "<一句话描述（10~120字）>"
 
----
+symptom_tags: [washout]
+trigger_tags: [Adreno_GPU, Vulkan]
+violated_invariants: [I-PREC-01]
+recommended_sop: SOP-PREC-01
 
-# BugCard 示例: BUG-NAN-001
+root_cause_summary: >
+  <精确根因描述：必须包含代码位置或驱动版本或 API 调用，禁止“可能是/大概”类表述。>
 
-```yaml
-bug_card_id: BUG-NAN-001
-title: "角色脸部白点闪烁"
-bug_family: Rendering.NAPropagation
-invariants_broken: [I-NAN-01]
-symptom_tags: [白色斑点, 闪烁, 脸部渲染异常]
-trigger_tags: [PBR材质, 角色渲染]
-anchor: "Event 1245, PSMain pixel (1234, 567)"
-key_evidence:
-  - type: screenshot
-    description: 角色左脸可见白点，右脸正常
-  - type: pixel_history
-    description: PS阶段输出NaN
-  - type: shader_analysis
-    description: normalize(v.normal)当normal=0时产生NaN
-root_cause_one_liner: PS中normalize(v.normal)当法线向量长度为0时返回NaN
-fix_one_liner: 使用SafeNormalize函数，当length<0.0001时返回默认值
-recommended_sop: SOP-NAN-01
-related_cases: []
+fingerprint:
+  pattern: "<可疑表达式/调用签名>"
+  risk_category: "<precision_overflow|precision_lowering|nan_propagation|...>"
+  shader_stage: PS
+
+fix_verified: true
+fix_verification_data:
+  pixel_before: {x: 0, y: 0, rgba: [0.0, 0.0, 0.0, 1.0]}
+  pixel_after:  {x: 0, y: 0, rgba: [0.0, 0.0, 0.0, 1.0]}
+
+skeptic_signed: true
+bugcard_skeptic_signed: true
+
+# 可选字段
+related_devices: []
+action_chain_ref: ""
+sop_improvement_notes: ""
 ```

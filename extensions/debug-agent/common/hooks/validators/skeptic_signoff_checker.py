@@ -6,8 +6,8 @@ Skeptic 签署状态检查器 — AIRD Framework M4 Quality Hooks
 且所有质疑项均已被回应（status: addressed）。
 
 用法：
-  python skeptic_signoff_checker.py <skeptic_output.yaml>
-  python skeptic_signoff_checker.py <skeptic_output.yaml> --mode bugcard
+  python3 skeptic_signoff_checker.py <skeptic_output.yaml>
+  python3 skeptic_signoff_checker.py <skeptic_output.yaml> --mode bugcard
 
 返回码：
   0 — 签署完整，可以继续
@@ -16,8 +16,15 @@ Skeptic 签署状态检查器 — AIRD Framework M4 Quality Hooks
 """
 
 import sys
-import yaml
 from pathlib import Path
+
+try:
+    import yaml
+except ModuleNotFoundError:
+    req = Path(__file__).resolve().parents[1] / "requirements.txt"
+    print("错误：缺少依赖 'PyYAML'，无法解析 YAML。")
+    print(f"请先安装依赖：python3 -m pip install -r {req}")
+    sys.exit(2)
 
 ANSI_RED    = "\033[91m"
 ANSI_GREEN  = "\033[92m"
@@ -85,7 +92,7 @@ def check_signoff(data: dict, mode: str = "hypothesis") -> tuple:
 
         # BugCard 模式额外检查
         if mode == "bugcard":
-            if not data.get("bugcard_skeptic_signed") and not sign_off.get("signed"):
+            if data.get("bugcard_skeptic_signed") is not True:
                 issues.append("bugcard_skeptic_signed 字段未设置为 true")
 
         return len(issues) == 0, issues
@@ -105,7 +112,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--") and a != mode]
 
     if not args:
-        print("用法：python skeptic_signoff_checker.py <skeptic_output.yaml> [--mode hypothesis|bugcard]")
+        print("用法：python3 skeptic_signoff_checker.py <skeptic_output.yaml> [--mode hypothesis|bugcard]")
         sys.exit(2)
 
     path = Path(args[0])

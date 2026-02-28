@@ -1,6 +1,5 @@
-# BugCard: BUG-PREC-001
+# BugCard (sample) — BUG-PREC-001
 
-```yaml
 bugcard_id: BUG-PREC-001
 title: "Adreno 650：Local Light 解包链路 half/RelaxedPrecision 导致头发/衣物白化"
 
@@ -34,4 +33,4 @@ related_devices:
 
 action_chain_ref: "cases/action_chains/example_adreno_prec.jsonl"
 sop_improvement_notes: ""
-```
+

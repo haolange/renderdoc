@@ -668,7 +668,7 @@ recommended_next:
 
 - ❌ 输出"大概在中间某个 Pass"这类模糊定位
 - ❌ 在未检查 Pipeline State 和 System State 的情况下凭截图直觉指定 anchor
-- ❌ 将引擎层 RenderGraph 概念（如 UE 的 FRDGPass）与 RenderDoc 实际 Event 混淆
+- ❌ 将引擎层渲染依赖图/Pass 抽象（如 UE 的 FRDGPass）与 RenderDoc 的 Native Command List / Event Stream（实际 Event 层级）混淆
 - ❌ 越过命令列表层直接进行像素级或 Shader IR 级分析（这是 Pixel Forensics 和 Shader Agent 的职责）
 - ❌ 忽略 System State——Pipeline State 正确但 CB / SRV 绑定错误同样是根因
 
@@ -1394,7 +1394,7 @@ sign_off:
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariant 字段）
+#   - invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariants 字段）
 #   - skills/sop_library.yaml             （用于填充 BugCard 的 recommended_sop 字段）
 # 可选加载（若已有历史知识库）：
 #   - kb/bugcard_index.yaml               （已有 BugCard 的索引，用于去重）
@@ -1600,4 +1600,3 @@ sop_revision_proposal:
 - ❌ 在 BugCard 中省略 fingerprint 字段（这是跨 session 检索的核心索引）
 
 ---
-

@@ -1,5 +1,6 @@
 {
   "name": "aird-debug-agent",
+  "version": "2.0.0",
   "description": "AIRD Framework — AI 驱动的不变量推理调试器（9 个专家 Agent 协作体系，v2.0 含完整质量门槛与知识库系统）",
   "core_source": "../../common/AGENT_CORE.md",
   "agents": [
@@ -20,7 +21,7 @@
     },
     {
       "name": "Pass Graph / Pipeline",
-      "description": "渲染管线分析专家——RenderGraph 发散点定位，输出资源依赖链",
+      "description": "渲染管线分析专家——Native Command List / Event Stream 发散点定位，输出资源依赖链",
       "prompt_file": "./agents/pipeline.md"
     },
     {
@@ -70,7 +71,7 @@
   "mcp_servers": [
     {
       "name": "rdx-mcp",
-      "command": "python",
+      "command": "python3",
       "args": [
         "-m",
         "rdx.server"

@@ -78,6 +78,7 @@ python3 common/hooks/validators/skeptic_signoff_checker.py skeptic_output.yaml -
 | 平台 | Hook 实现方式 | 强制等级 |
 |------|-------------|---------|
 | **Claude Code** | `.claude/settings.json` 原生 Hooks | 系统级强制（阻断） |
+| **Code Buddy** | `platforms/code-buddy/hooks/hooks.json` 原生 Hooks | 系统级强制（阻断） |
 | Claude Work | Agent Prompt 内嵌「质量门槛检查」清单 | Prompt 层软约束 |
 | Copilot | Agent Prompt 内嵌「质量门槛检查」清单 | Prompt 层软约束 |
 | MiniMax | 合并文件中各 Agent 的质量门槛节 | Prompt 层软约束 |
@@ -101,8 +102,14 @@ python3 common/hooks/validators/skeptic_signoff_checker.py skeptic_output.yaml -
 
 ## 依赖
 
+推荐安装方式：
+```bash
+python3 -m pip install -r common/hooks/requirements.txt
 ```
-pip install pyyaml
+
+或直接安装：
+```bash
+python3 -m pip install pyyaml
 ```
 
 验证脚本仅依赖 Python 标准库 + PyYAML，无其他依赖。

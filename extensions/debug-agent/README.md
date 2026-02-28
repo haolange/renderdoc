@@ -16,7 +16,7 @@ AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 
 │   知识层（M1）   │  Agent 层（M2/M3）                         │
 │                 │                                             │
 │  invariants/    │  common/agents/   ← 9 个平台无关核心 Prompt │
-│  taxonomy/      │  platforms/       ← 5 个平台适配版本        │
+│  taxonomy/      │  platforms/       ← 6 个平台适配版本        │
 │  skills/        │                                             │
 ├─────────────────┼───────────────────────────────────────────┤
 │  质量层（M4）   │  自进化层（M5）                              │
@@ -33,11 +33,19 @@ AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 
 
 ## 快速上手
 
+### 0. 安装（可选：启用 Quality Hooks 时需要）
+
+Quality Hooks（M4）依赖 Python 3 + PyYAML：
+```bash
+python3 -m pip install -r common/hooks/requirements.txt
+```
+
 ### 1. 选择平台
 
 | 你的工作环境 | 使用路径 |
 |------------|---------|
 | Claude Code（命令行） | `platforms/claude-code/agents/` |
+| Code Buddy（腾讯云代码助手） | `platforms/code-buddy/` + `.codebuddy-plugin/plugin.json` |
 | Claude Work（桌面插件） | `platforms/claude-work/` + `plugin.json` |
 | GitHub Copilot | `platforms/copilot/agents/` |
 | MiniMax | `platforms/minimax/expert_agents/aird_all_agents.md` |
@@ -94,7 +102,7 @@ Team Lead 将自动调度 Triage → Capture → 并行专家分析 → Skeptic 
 | 01 Team Lead | Delegate Mode 协调，假设板状态机 | `TASK_DISPATCH` |
 | 02 Triage & Taxonomy | 症状分类，SOP 推荐 | `TRIAGE_RESULT` |
 | 03 Capture & Repro | A/B 对比捕获，Anchor 验证 | `CAPTURE_RESULT` |
-| 04 Pass Graph / Pipeline | RenderGraph 发散点定位 | `PIPELINE_RESULT` |
+| 04 Pass Graph / Pipeline | Native Command List / Event Stream 发散点定位 | `PIPELINE_RESULT` |
 | 05 Pixel Forensics | first_bad_event 逆向追溯 | `FORENSICS_RESULT` |
 | 06 Shader & IR | HLSL/SPIR-V/ISA 分析，代码指纹 | `SHADER_IR_RESULT` |
 | 07 Driver & Device | API Trace + ISA 对比，驱动归因 | `DRIVER_DEVICE_RESULT` |
@@ -132,6 +140,7 @@ Claude Code 平台通过 `.claude/settings.json` 实现系统级强制；其他�
 | `common/docs/cross_device_fingerprint_spec.md` | 跨设备指纹图谱（同 Bug 在不同 GPU 上的表现关联） |
 | `common/docs/counterfactual_scoring_spec.md` | 反事实验证量化评分体系（0~1.0，阈值 0.80） |
 | `common/cases/action_chains/` | 历史调试案例（`.jsonl` 格式，可用于 SOP 提取） |
+| `common/kb/` | 知识库与会话产物目录（BugCard 入库、BugFull 输出、指纹图/索引，可选但推荐） |
 
 ### M6 · Project Plugin
 

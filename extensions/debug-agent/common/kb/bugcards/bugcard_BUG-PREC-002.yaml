@@ -1,6 +1,5 @@
-# BugCard: BUG-PREC-002
+# BugCard (sample) — BUG-PREC-002
 
-```yaml
 bugcard_id: BUG-PREC-002
 title: "Adreno 740：KajiyaDiffuse half/RelaxedPrecision lowering 触发负值钳零导致头发/披风黑化"
 
@@ -34,4 +33,4 @@ related_devices:
 
 action_chain_ref: "cases/action_chains/example_adreno_prec.jsonl"
 sop_improvement_notes: ""
-```
+

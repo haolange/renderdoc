@@ -37,7 +37,7 @@
 ┌─────────────────────────────────────────────┐
 │  Step 4: 并行调查阶段（Team Lead 按优先级调度）  │
 │                                               │
-│   4a. Pass Graph / Pipeline                   │ ← RenderGraph 发散点
+│   4a. Pass Graph / Pipeline                   │ ← Command List / Pipeline State 分析
 │   4b. Pixel / Value Forensics                 │ ← First Bad Event 定位
 │   4c. Shader & IR                             │ ← HLSL/SPIR-V/ISA 分析
 │   4d. Driver & Device（必要时）               │ ← API Trace + ISA 对比
@@ -137,13 +137,14 @@ symptom_taxonomy.yaml + trigger_taxonomy.yaml + invariant_library.yaml + sop_lib
 
 ### Step 4a · Pass Graph / Pipeline — 渲染管线分析
 
-**职责：** 定位 RenderGraph 中的发散点
+**职责：** 分析 Native Command List，通过 Pipeline State / System State 差分定位异常 Event
 
 **动作：**
-1. 对比 A/B 设备的 RenderGraph（Pass 级别）
-2. 构建事件树，找到 A/B 首次出现差异的节点
-3. 输出资源依赖链（resource_chain）
-4. 输出 PIPELINE_RESULT → Team Lead
+1. 解析 Debug Marker 树，构建事件树（按 RT 切换点或 Debug Marker 分段）
+2. 对比 A/B 帧的 Pipeline State（Shader / RT 格式 / Blend / Depth / Rasterizer）
+3. 检查 System State（CB 绑定数值 / SRV 绑定 / Sampler），定位数据错误
+4. 追踪资源屏障与状态转换，识别时序异常
+5. 输出 PIPELINE_RESULT（含 anchor_event_id）→ Team Lead
 
 **质量要求：**
 - divergence_point 必须精确到 event_id 和 resource_id

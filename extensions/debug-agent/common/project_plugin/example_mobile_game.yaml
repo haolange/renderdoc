@@ -11,10 +11,10 @@ last_updated: "2026-02-27"
 
 # ── 目标平台 ─────────────────────────────────────────────────
 target_platforms:
-  - Android_Adreno    # 覆盖 Adreno 6xx / 7xx 系列
-  - Android_Mali      # Mali-G 系列，作为调试基准设备
-  - iOS_Apple         # Apple GPU（A14 及以上）
-  - PC_NVIDIA         # PC 开发机（用于初步验证）
+  - Adreno_GPU        # 覆盖 Adreno 6xx / 7xx 系列
+  - Mali_GPU          # Mali-G 系列，作为调试基准设备
+  - Apple_GPU         # Apple GPU（Metal）
+  - NVIDIA_GPU        # PC 开发机（用于初步验证）
 
 # ── 材质模块 ─────────────────────────────────────────────────
 material_blocks:
@@ -29,7 +29,7 @@ material_blocks:
       - TintColor
       - UV
     known_issues:
-      - invariant: I-COLOR-SPACE-01
+      - invariant: I-COLOR-01
         trigger: "sRGB RT 格式在 iOS 上启用双重 gamma 时"
         note: "M_Character_Base 在 iOS HDR 模式下有颜色空间双重转换风险"
 
@@ -66,7 +66,7 @@ material_blocks:
     known_issues:
       - invariant: I-PREC-01
         trigger: "Adreno GPU，任意驱动版本"
-        note: "Kajiya-Kay 模型的 half 中间变量是历史高频 Bug 来源，参考 FPC-PREC-001"
+        note: "Kajiya-Kay 模型的 half 中间变量是历史高频 Bug 来源，参考 BUG-PREC-001"
 
   - block_id: SHADOW_MAP_BLOCK
     description: "阴影贴图采样与 PCF 过滤"
@@ -79,7 +79,7 @@ material_blocks:
       - ShadowMatrix
       - PCFKernelSize
     known_issues:
-      - invariant: I-DEPTH-COMPARE-01
+      - invariant: I-DEPTH-02
         trigger: "Vulkan + Mali-G 系列，深度比较函数配置差异"
         note: "某些 Mali 驱动对 depthCompareOp 的实现与规范存在细微差异"
 

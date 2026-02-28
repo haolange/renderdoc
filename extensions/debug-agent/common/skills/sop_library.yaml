@@ -16,7 +16,7 @@
 #     stage_id          : 阶段编号
 #     stage_name        : 阶段名称
 #     objective         : 本阶段目标
-#     tools             : 工具调用列表（精确匹配 mcp_tools.json）
+#     tools             : 工具调用列表（精确匹配 rdx-mcp 暴露的工具名，如 rd.event.get_pixels）
 #     termination       : 终止条件（何时可以进入下一阶段）
 #     output_artifacts  : 本阶段必须产出的证据类型
 #   output_requirements : SOP 完成时必须产出的内容

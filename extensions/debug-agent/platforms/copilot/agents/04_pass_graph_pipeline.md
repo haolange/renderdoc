@@ -205,6 +205,6 @@ recommended_next:
 
 - ❌ 输出"大概在中间某个 Pass"这类模糊定位
 - ❌ 在未检查 Pipeline State 和 System State 的情况下凭截图直觉指定 anchor
-- ❌ 将引擎层 RenderGraph 概念（如 UE 的 FRDGPass）与 RenderDoc 实际 Event 混淆
+- ❌ 将引擎层渲染依赖图/Pass 抽象（如 UE 的 FRDGPass）与 RenderDoc 的 Native Command List / Event Stream（实际 Event 层级）混淆
 - ❌ 越过命令列表层直接进行像素级或 Shader IR 级分析（这是 Pixel Forensics 和 Shader Agent 的职责）
 - ❌ 忽略 System State——Pipeline State 正确但 CB / SRV 绑定错误同样是根因

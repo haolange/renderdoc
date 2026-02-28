@@ -38,7 +38,7 @@ common/skills/sop_library.yaml              ← SOP 库（选定调试流程后�
 
 查询示例（Python 一行）：
 ```python
-next(s for s in yaml.safe_load(open('symptom_taxonomy.yaml'))['symptoms'] if s['tag'] == 'white_spot')
+next(s for s in yaml.safe_load(open('common/taxonomy/symptom_taxonomy.yaml'))['symptoms'] if s['tag'] == 'white_spot')
 ```
 
 ### SOP（sop_library.yaml）
@@ -47,7 +47,7 @@ next(s for s in yaml.safe_load(open('symptom_taxonomy.yaml'))['symptoms'] if s['
 - `trigger_conditions`：何时激活该 SOP
 - `target_invariants`：覆盖哪些不变量
 - `tool_chain`：具体工具调用序列
-- `exit_criteria`：完成标准
+- `termination`：完成标准（阶段/流程的退出条件）
 
 ## 项目知识扩展
 
@@ -63,4 +63,9 @@ common/project_plugin/<project_name>.yaml   ← 项目特定不变量和材质�
 common/cases/bugcards/    ← BugCard 知识卡（快速索引）
 common/cases/bugfulls/    ← BugFull 完整报告（详细参考）
 common/cases/action_chains/  ← Action Chain 调试过程记录
+```
+
+实际调试过程中沉淀的知识库（可选但推荐）位于：
+```
+common/kb/               ← BugCard 入库与 BugFull 输出目录
 ```

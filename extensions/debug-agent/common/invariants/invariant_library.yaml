@@ -12,7 +12,7 @@
 #   fix_patterns        : 经过验证的修复模式关键词
 #   linked_sop          : 主要关联 SOP（精确匹配 sop_library.yaml 中的 id）
 #   secondary_sops      : 次要关联 SOP（可选）
-#   detection_tools     : 推荐检测工具（精确匹配 mcp_tools.json 中的 tool 字段）
+#   detection_tools     : 推荐检测工具（精确匹配 rdx-mcp 暴露的工具名，如 rd.texture.get_data）
 #   example_cards       : 关联历史案例（精确匹配 cases/bugcards/ 中的文件名）
 #   detection_hints     : Agent 执行检测时的具体提示步骤
 #   fix_template_ref    : 修复代码模板参考（指向 sop_library.yaml 中对应 SOP 的 fix_template）

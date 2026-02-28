@@ -5,7 +5,7 @@
 检查调试 session 的 evidence 集合中是否存在有效的反事实验证记录。
 
 用法：
-  python counterfactual_validator.py <session_evidence.yaml>
+  python3 counterfactual_validator.py <session_evidence.yaml>
 
 返回码：
   0 — 反事实验证记录存在且有效
@@ -14,8 +14,15 @@
 """
 
 import sys
-import yaml
 from pathlib import Path
+
+try:
+    import yaml
+except ModuleNotFoundError:
+    req = Path(__file__).resolve().parents[1] / "requirements.txt"
+    print("错误：缺少依赖 'PyYAML'，无法解析 YAML。")
+    print(f"请先安装依赖：python3 -m pip install -r {req}")
+    sys.exit(2)
 
 ANSI_RED    = "\033[91m"
 ANSI_GREEN  = "\033[92m"
@@ -76,7 +83,7 @@ def validate_counterfactual(evidence_list: list) -> tuple:
 
 def main():
     if len(sys.argv) < 2:
-        print("用法：python counterfactual_validator.py <session_evidence.yaml>")
+        print("用法：python3 counterfactual_validator.py <session_evidence.yaml>")
         sys.exit(2)
 
     path = Path(sys.argv[1])

@@ -89,7 +89,7 @@
 ### 04 · Pass Graph / Pipeline（渲染管线分析专家）
 
 **核心职责：**
-- 对比 A/B 设备的 RenderGraph，构建事件树定位发散点
+- 对比 A/B 设备的 Native Command List / Event Stream，构建事件树定位发散点
 - 输出资源依赖链（resource_chain：从 first_bad_event 到最终 RT）
 - 将问题缩小到单个 Pass 级别
 
@@ -224,7 +224,8 @@ Team Lead 触发 Curator
 
 | 平台 | frontmatter 格式 | 文件组织 | 动态加载实现 |
 |------|----------------|---------|------------|
-| Claude Code | `---\nname: ...\nmodel: ...\ntools: ...\n---` | 独立文件 + CLAUDE.md | 文件系统路径 |
+| Claude Code | `---\nname: ...\nmodel: ...\ntools: ...\n---` | 独立文件 + `.claude/settings.json`（可选 Hooks） | 文件系统路径 |
+| Code Buddy | `---\nname: ...\nmodel: inherit\ntools: ...\nskills: aird-debug\n---` | 独立文件 + `.codebuddy-plugin/plugin.json` | Skills 自动加载 + 文件系统路径 |
 | Claude Work | `---\nname: ...\ntools: [...]\ncolor: ...\n---` | 独立文件 + plugin.json | 文件系统路径 |
 | Copilot | `---\nname: ...\nmodel: ...\ntools: ...\n---` | 独立文件 | 文件系统路径 |
 | MiniMax | 无 frontmatter，用 `---` 分隔 | 合并为单文件 | 文件路径声明（Agent 读取） |

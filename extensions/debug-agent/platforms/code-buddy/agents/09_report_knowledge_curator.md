@@ -12,7 +12,7 @@ color: "#8E44AD"
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
-#   - invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariant 字段）
+#   - invariants/invariant_library.yaml   （用于填充 BugCard 的 violated_invariants 字段）
 #   - skills/sop_library.yaml             （用于填充 BugCard 的 recommended_sop 字段）
 # 可选加载（若已有历史知识库）：
 #   - kb/bugcard_index.yaml               （已有 BugCard 的索引，用于去重）
