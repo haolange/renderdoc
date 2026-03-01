@@ -11,8 +11,6 @@ rem
 rem Optional:
 rem   RDX_LOG_LEVEL      = INFO / DEBUG / WARNING ...
 rem   RDX_ARTIFACT_DIR   = artifact store root (default: /tmp/rdx-artifacts in server.py)
-rem   RDX_DB_DIR         = db root (default: /tmp/rdx-db in server.py)
-rem   RDX_KB_INDEX_DIRS  = directories to index (see docs; Windows multi-dir has ':' caveat)
 
 chcp 65001 >nul 2>&1
 

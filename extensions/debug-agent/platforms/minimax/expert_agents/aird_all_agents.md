@@ -24,9 +24,6 @@ Team Lead 将根据问题类型自动调度其他专家 Agent。
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
 #   - knowledge/spec/invariants/invariant_library.yaml   （不变量库，用于假设路由）
-#   - docs/hypothesis_board.md            （假设板规范）
-#   - docs/quality_hooks.md               （质量钩子规范）
-#   - docs/agent_collaboration.md         （消息协议）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -338,8 +335,7 @@ unclassified_symptoms: []
 # 角色：捕获与复现专家
 #
 # ── 动态加载声明 ──────────────────────────────────────────────
-# 运行时必须加载以下文件（路径相对于 common/）：
-#   - docs/agent_collaboration.md         （消息协议，用于规范输出格式）
+# 运行时无强制加载文件（路径相对于 common/）。
 # ─────────────────────────────────────────────────────────────
 
 ## 身份
@@ -1059,11 +1055,14 @@ rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="baseline")
 rd.device.get_driver_info(device="anomalous")
 → 获取驱动版本号、编译器版本
 
-rd.kb.search(query="<GPU型号> <驱动版本> known issues", limit=5)
+# 在知识库（文件）中检索历史已知问题（全文搜索/IDE 搜索）：
+#   - knowledge/library/bugcards/
+#   - knowledge/library/cross_device_fingerprint_graph.yaml
+#   - query 示例："<GPU型号> <驱动版本> known issues" / "<suspicious_expression_fingerprint>"
 → 查询历史 BugCard 中是否有相同驱动版本的已知问题
 ```
 
-若 KB 命中：直接引用历史 BugCard，作为强证据。
+若命中历史 BugCard：直接引用条目，作为强证据。
 
 ### Step 5: API Conformance 检查
 
@@ -1095,7 +1094,7 @@ rd.kb.search(query="<GPU型号> <驱动版本> known issues", limit=5)
 □ 1. 已明确说明问题是否为驱动/设备层 Bug（不得是"可能是驱动问题"这种模糊结论）
 □ 2. A/B 设备的 API Trace 差异已定量列出（具体到哪个 API 调用、哪个参数值不同）
 □ 3. 若怀疑 ISA 精度降级，已提供 ISA 级别的指令对比证据
-□ 4. 驱动版本信息已记录，并已查询 KB 排除/确认已知历史问题
+□ 4. 驱动版本信息已记录，并已在 `knowledge/library/` 中检索历史已知问题
 □ 5. platform_attribution 字段已给出，且归因层级精确到：驱动版本 / API 实现 / 硬件行为
 
 如有任何一项未通过 → 补充分析或标注无法确认的原因。
@@ -1406,7 +1405,7 @@ sign_off:
 你是 AIRD 框架的报告生成与知识管理专家（Report & Knowledge Curator Agent）。你在调试完成后被触发，负责两件事：
 
 1. **生成调试报告**：将本次调试的完整过程和结论提炼为结构化文档（BugFull + BugCard）
-2. **更新知识库**：将本次案例的经验（新指纹、新 SOP 修订建议、跨设备关联）沉淀为可被未来 rd.kb.search 检索的知识
+2. **更新知识库**：将本次案例的经验（新指纹、新 SOP 修订建议、跨设备关联）沉淀为可被未来在 `knowledge/library/` 中全文检索的知识（rg/grep/IDE 搜索）
 
 **你是知识的守门人：质量不达标的知识不得入库。**
 
@@ -1444,7 +1443,7 @@ BugFull 是面向工程师的**完整调试过程记录**，包含：
 
 ### Step 3: 生成 BugCard（轻量检索卡片）
 
-BugCard 是面向 `rd.kb.search` 的**轻量结构化卡片**，要求：
+BugCard 是面向**全文检索/IDE 搜索**的轻量结构化卡片（存放于 `knowledge/library/bugcards/`），要求：
 
 - 必须精简（不超过 50 行 YAML）
 - 必须包含所有检索关键字段（symptom_tags、trigger_tags、fingerprint）
@@ -1456,8 +1455,11 @@ BugCard 是面向 `rd.kb.search` 的**轻量结构化卡片**，要求：
 
 ```
 Step 4a: 去重检查
-  rd.kb.search(query=<suspicious_expression_fingerprint>, limit=3)
-  → 若命中已有 BugCard（相似度 > 80%），合并更新而非新建
+  - 在 `knowledge/library/bugcards/` 下全文搜索：
+      - suspicious_expression_fingerprint（来自 Shader & IR Agent 输出）
+      - symptom_tags / trigger_tags（用于关键词去重）
+  - CLI 示例：rg "<fingerprint-or-keywords>" knowledge/library/bugcards/
+  → 若命中已有 BugCard（指纹/标签高度相似），合并更新而非新建
 
 Step 4b: 更新跨设备指纹图（若有 cross_device_fingerprint_graph.yaml）
   → 将本次 suspicious_expression_fingerprint 与 platform_attribution 关联

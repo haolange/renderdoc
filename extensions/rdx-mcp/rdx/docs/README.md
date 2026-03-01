@@ -3,7 +3,6 @@
 RDX-MCP 现已采用注册表驱动工具架构，对外发布工具集为：
 
 - **196 个文档工具**
-- **3 个扩展工具**（`rd.kb.search`、`rd.fingerprint.match`、`rd.pipeline.run_full_debug`）
 
 详细清单见 `tools.md`，规格源见 `../spec/tool_catalog_196.json`。
 

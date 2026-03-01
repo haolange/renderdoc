@@ -40,6 +40,12 @@ REMOVED_OLD_TOOLS = {
     "rd.report.build_bundle",
 }
 
+REMOVED_EXTENSION_TOOLS = {
+    ".".join(["rd", "kb", "search"]),
+    ".".join(["rd", "fingerprint", "match"]),
+    ".".join(["rd", "pipeline", "run_full_debug"]),
+}
+
 
 def _pick_rdc_path() -> Path:
     candidates = [
@@ -90,17 +96,6 @@ async def _call_tool(session: ClientSession, name: str, args: Dict[str, Any]) ->
 def _param_map() -> Dict[str, List[str]]:
     data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     mapping = {tool["name"]: list(tool.get("param_names", [])) for tool in data["tools"]}
-    mapping["rd.kb.search"] = ["query", "file_type", "path_prefix", "project_id", "limit"]
-    mapping["rd.fingerprint.match"] = ["fingerprint_type", "fingerprint_json", "threshold"]
-    mapping["rd.pipeline.run_full_debug"] = [
-        "rdc_path",
-        "description",
-        "reference_image_path",
-        "expected_image_path",
-        "bug_type_hints",
-        "backend_type",
-        "project_id",
-    ]
     return mapping
 
 
@@ -238,17 +233,15 @@ def _build_args(tool: str, param_names: List[str], ctx: Dict[str, Any]) -> Dict[
 
 
 @pytest.mark.asyncio
-async def test_tool_list_contract_199():
+async def test_tool_list_contract_196():
     params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             listed = await session.list_tools()
             names = sorted([t.name for t in listed.tools])
-            assert len(names) == 199
-            assert "rd.kb.search" in names
-            assert "rd.fingerprint.match" in names
-            assert "rd.pipeline.run_full_debug" in names
+            assert len(names) == 196
+            assert not (REMOVED_EXTENSION_TOOLS & set(names))
             assert not (REMOVED_OLD_TOOLS & set(names))
 
 

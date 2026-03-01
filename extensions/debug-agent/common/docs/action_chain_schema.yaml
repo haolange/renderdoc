@@ -44,6 +44,7 @@ step_schema:
 
 action_types:
   - tool_call           # 调用 rd.* 工具
+  - repo_search         # 在仓库/知识库目录中全文搜索（rg/grep/IDE）
   - hypothesis_update   # 假设板状态变更
   - evidence_add        # 新增证据
   - message_send        # Agent 间消息传递
@@ -81,10 +82,9 @@ example:
       output_summary: "派发任务：分类头发着色黑化问题"
     - step_id: 2
       agent: triage
-      action_type: tool_call
-      tool: rd.kb.search
-      params: {query: "hair blackout Adreno"}
-      output_summary: "命中 BUG-PREC-001（相似指纹），推荐 SOP-PREC-01"
+      action_type: repo_search
+      params: {paths: ["knowledge/library/bugcards/"], query: "hair blackout Adreno"}
+      output_summary: "在 bugcards/ 中命中 BUG-PREC-001（相似指纹），推荐 SOP-PREC-01"
       timestamp: "2026-02-27T10:01:00+08:00"
     - step_id: 15
       agent: team_lead

@@ -6,7 +6,7 @@
 
 **现象**
 
-- 启动后在调用任意需要 RenderDoc 的工具（例如 `rd.capture.open`、`rd.output.render`、`rd.debug.pixel`）时报错，或日志提示 renderdoc module 不可用。
+- 启动后在调用任意需要 RenderDoc 的工具（例如 `rd.capture.open_file`、`rd.replay.set_frame`、`rd.export.screenshot`、`rd.debug.pixel_history`）时报错，或日志提示 renderdoc module 不可用。
 
 **原因**
 
@@ -90,60 +90,49 @@
 
 - 重新运行 `run.bat` 的 **INTERNET** 模式（脚本会自动注入 `RDX_ALLOWED_HOSTS`）。
 
-## `rd.event.bisect_first_bad` 结果不稳定/置信度低
+## 状态变化点定位结果不稳定（`rd.macro.find_state_change_point`）
 
 **常见原因**
 
-- verifier 对“好/坏”的判定不够稳定（例如阈值过严/过宽、对比参考不一致）。
-- capture 内部存在非确定性（例如依赖未初始化内存、随机采样、时间相关输入）。
+- capture 内部存在非确定性（例如依赖未初始化内存、随机采样、时间相关输入），导致“同一 event 的输出/状态”在不同运行间不一致。
+- `state_path/target_value` 选择不够稳定（例如引用会变化的动态数组项、或状态在多个相邻 event 内来回切换）。
 
 **处理建议**
 
-- 使用更稳的 verifier（例如从 `naninf` 切到 `image_diff`，或调整阈值参数）。
-- 缩小搜索区间：把 `range_lo/range_hi` 收敛到怀疑的 pass/marker 周围。
-- 对同一 `event_id` 重复运行 verifier，确认其输出是否一致（作为上层编排的健壮性检查）。
+- 先用 `rd.event.search_actions` / `rd.event.get_action_tree` 把 `event_range` 缩小到可疑 marker/pass 周围。
+- 对候选 `event_id` 导出证据验证稳定性：`rd.export.screenshot`、`rd.export.pipeline_state_json`、`rd.export.pixel_history_json`（必要时重复运行对比）。
+- 若二分结果不可靠，改用 `search_policy='linear'` 或进一步缩小区间，再用 `rd.macro.compare_events_report` 对比前后事件差异。
 
-## `rd.patch.apply` 失败
+## Shader 替换/热修复失败（`rd.shader.edit_and_replace`）
 
 **典型症状**
 
-- 返回 `patch.success=false`，或 `Shader build failed`，或提示 stage 不支持。
+- 返回 `success=false` / `error_message` 提示编译失败、stage 不支持、或替换后输出无变化。
 
 **排查要点**
 
-- **stage 支持范围**：当前 patch engine 仅支持 `vs/hs/ds/gs/ps/cs`（见 `extensions/rdx-mcp/rdx/core/patch_engine.py` 的 stage 映射）。
-- **编译器/编码支持**：patch 流程依赖 RenderDoc 的 `BuildTargetShader`，其可用性取决于 capture 的 API、shader 编码以及 RenderDoc 能否在当前环境完成编译。
+- 用 `rd.shader.get_source` / `rd.shader.get_disassembly` 确认目标 shader 可导出；必要时先用 `rd.shader.extract_binary` 获取原始二进制。
+- 先用 `rd.shader.compile` 对修改后的代码做编译验证（同一 shader 模型/entry/stage）。
+- 用最小变更验证链路（先改一行/加一条 guard），再逐步叠加复杂修改。
+- 替换后用 `rd.shader.get_messages` 查看编译/替换日志；用 `rd.shader.list_replacements` 确认替换是否生效。
 
 **处理建议**
 
-- 先通过 `rd.shader.export_artifacts` 确认该 stage 的 shader 能被正确导出（至少能得到可编辑的文本）。
-- 缩小 patch 操作：先做最小变更（例如单条 guard）验证链路可用，再逐步叠加复杂 patch。
-- 失败后及时 `rd.patch.revert`（如果 patch 已部分生效或你不确定状态），确保后续实验环境干净。
+- 用 `rd.macro.shader_hotfix_validate` 做“替换前/后”对比（可结合 `rd.export.screenshot` 保存证据）。
+- 需要回滚时用 `rd.shader.revert_replacement`，确保后续实验环境干净。
 
-## `rd.kb.search` 没有结果 / 结果很差
-
-**检查清单**
-
-- 启动时是否配置了 `RDX_KB_INDEX_DIRS`（为空则不会索引任何目录）。
-- 目标文件扩展名是否在可索引集合中（见 `extensions/rdx-mcp/rdx/knowledge/kb_connector.py` 的 `_INDEXABLE_EXTENSIONS`，包括 `.md/.txt/.h/.cpp/.usf/.ush/.py`）。
-- Windows 多目录配置是否被 `:` 分隔规则影响（见 `configuration.md`）。
-
-**改进建议**
-
-- 将 query 写得更“可检索”：用更具体的标识符（函数名、shader 名、pass 名、资源 binding 关键字）。
-- 用 `file_type` / `path_prefix` 做过滤，降低噪声。
-
-## 报告生成失败（`rd.report.build_bundle`）
+## 报告/证据包生成失败（`rd.macro.build_bug_report_pack` / `rd.export.repro_bundle_zip`）
 
 **现象**
 
-- 返回 `REPORT_BUILD_ERROR` 或输出目录缺文件。
+- 输出路径缺文件、zip 为空、或报权限/路径相关错误。
 
 **排查要点**
 
-- `task_state_json` 必须是完整且可被 `TaskState.model_validate(...)` 解析的 JSON 字符串（见 `extensions/rdx-mcp/rdx/server.py` 的 `report_build_bundle`）。
-- 输出目录默认在 `<RDX_ARTIFACT_DIR>/reports/<task_id>/`，在 Windows 下建议显式设置一个可写路径（例如放到项目目录或用户目录下）。
+- 确认 `RDX_ARTIFACT_DIR` 与 `output_dir/output_path` 指向可写目录（Windows 下尽量避免需要管理员权限的路径）。
+- 确认已成功打开 capture 并进入 replay（否则导出类工具缺少上下文）。
 
 **处理**
 
-- 先将 `task_state_json` 保存到文件并用 Python 验证能否被 `TaskState` 反序列化（定位是 JSON 结构问题还是文件系统问题）。
+- 优先使用 `rd.macro.build_bug_report_pack` 生成一份包含 repro bundle + 解释文本的包；或仅调用 `rd.export.repro_bundle_zip` / `rd.export.markdown_report` 输出最小证据。
+- 若仍失败，记录 `error_message` 并将导出路径下已有 artifacts（如 `rd.export.pipeline_state_json`、`rd.export.event_tree_json`）一并提供，便于离线排查。

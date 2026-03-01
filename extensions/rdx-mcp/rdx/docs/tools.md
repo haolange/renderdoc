@@ -1,6 +1,6 @@
 # RenderDoc MCP Tool Catalog
 
-本文档描述当前对外发布工具集：**196 个文档工具 + 3 个扩展工具**。
+本文档描述当前对外发布工具集：**196 个文档工具**。
 
 ## 响应契约
 
@@ -53,14 +53,6 @@
 - `util`: 6
 - `remote`: 12
 - `app`: 9
-
-## 扩展工具（3）
-
-以下工具不在文档 196 内，但按既定决策保留：
-
-- `rd.kb.search`
-- `rd.fingerprint.match`
-- `rd.pipeline.run_full_debug`
 
 ## 远端/应用内能力说明
 

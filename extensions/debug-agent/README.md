@@ -160,7 +160,7 @@ common/project_plugin/
 | **Anchor** | 问题定位的三维坐标：Pass + 像素坐标 + resource_id |
 | **Hypothesis Board** | Team Lead 维护的假设状态机（ACTIVE→VALIDATE→VALIDATED/REFUTED） |
 | **五把解剖刀** | Skeptic Agent 的审查框架：相关性/覆盖性/反事实/工具证据/替代假设 |
-| **BugCard** | 轻量 YAML 检索卡片（< 50 行），被 `rd.kb.search` 检索 |
+| **BugCard** | 轻量 YAML 检索卡片（< 50 行），可在 `knowledge/library/bugcards/` 中全文检索（rg/grep/IDE 搜索） |
 | **BugFull** | 完整 Markdown 调试报告（10 章结构），供工程师阅读 |
 | **Action Chain** | 完整调试 session 的工具调用和决策序列记录（`.jsonl`） |
 | **Fingerprint** | 可疑代码表达式的结构化描述，用于跨 session 匹配同类 Bug |

@@ -13,9 +13,6 @@ color: "#FF6B6B"
 # ── 动态加载声明 ──────────────────────────────────────────────
 # 运行时必须加载以下文件（路径相对于 common/）：
 #   - knowledge/spec/invariants/invariant_library.yaml   （不变量库，用于假设路由）
-#   - docs/hypothesis_board.md            （假设板规范）
-#   - docs/quality_hooks.md               （质量钩子规范）
-#   - docs/agent_collaboration.md         （消息协议）
 # ─────────────────────────────────────────────────────────────
 
 ## 身份

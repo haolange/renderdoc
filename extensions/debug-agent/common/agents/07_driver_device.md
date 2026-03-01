@@ -65,11 +65,14 @@ rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="baseline")
 rd.device.get_driver_info(device="anomalous")
 → 获取驱动版本号、编译器版本
 
-rd.kb.search(query="<GPU型号> <驱动版本> known issues", limit=5)
+# 在知识库（文件）中检索历史已知问题（全文搜索/IDE 搜索）：
+#   - knowledge/library/bugcards/
+#   - knowledge/library/cross_device_fingerprint_graph.yaml
+#   - query 示例："<GPU型号> <驱动版本> known issues" / "<suspicious_expression_fingerprint>"
 → 查询历史 BugCard 中是否有相同驱动版本的已知问题
 ```
 
-若 KB 命中：直接引用历史 BugCard，作为强证据。
+若命中历史 BugCard：直接引用条目，作为强证据。
 
 ### Step 5: API Conformance 检查
 
@@ -101,7 +104,7 @@ rd.kb.search(query="<GPU型号> <驱动版本> known issues", limit=5)
 □ 1. 已明确说明问题是否为驱动/设备层 Bug（不得是"可能是驱动问题"这种模糊结论）
 □ 2. A/B 设备的 API Trace 差异已定量列出（具体到哪个 API 调用、哪个参数值不同）
 □ 3. 若怀疑 ISA 精度降级，已提供 ISA 级别的指令对比证据
-□ 4. 驱动版本信息已记录，并已查询 KB 排除/确认已知历史问题
+□ 4. 驱动版本信息已记录，并已在 `knowledge/library/` 中检索历史已知问题
 □ 5. platform_attribution 字段已给出，且归因层级精确到：驱动版本 / API 实现 / 硬件行为
 
 如有任何一项未通过 → 补充分析或标注无法确认的原因。

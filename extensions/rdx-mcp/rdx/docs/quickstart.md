@@ -1,6 +1,6 @@
 # 快速开始（Quickstart）
 
-本页目标：**最短路径跑起来**，并能在 MCP 客户端中调用 `rd.pipeline.run_full_debug` 或按步骤调用工具。
+本页目标：**最短路径跑起来**，并能在 MCP 客户端中按步骤调用 `rd.*` 工具完成一次基本的 capture 打开与浏览。
 
 ## 前置条件
 
@@ -14,8 +14,7 @@
 
 **可选（按需）**
 
-- 若你要用 `rd.patch.apply` 修改 SPIR-V/HLSL 等并触发重编译：可能需要额外的编译/工具链与 RenderDoc 支持的编码（详见 `configuration.md` 的“Patch/工具链”小节）。
-- 若你要用 KB 检索（`rd.kb.search`）：建议配置 `RDX_KB_INDEX_DIRS`，让服务启动时索引你的文档/源码目录（详见 `configuration.md`）。
+- 若你要做 shader 热修复/验证（如 `rd.shader.edit_and_replace`、`rd.macro.shader_hotfix_validate`）：其可用性取决于 capture 的 API、shader 编码以及 RenderDoc 对 `BuildTargetShader` 的支持（详见 `configuration.md`）。
 
 ## 安装（可选）
 
@@ -87,7 +86,6 @@ rdx-mcp
   "env": {
     "RDX_RENDERDOC_PATH": "D:/path/to/RenderDoc/python",
     "RDX_ARTIFACT_DIR": "D:/rdx/artifacts",
-    "RDX_DB_DIR": "D:/rdx/db",
     "RDX_LOG_LEVEL": "INFO"
   }
 }
@@ -95,26 +93,27 @@ rdx-mcp
 
 ## 远程 Agent 如何打开你本机的 .rdc？
 
-远程/云端 Agent 调用 `rd.capture.open` 时，传入的 `rdc_path` 会在 **运行 RDX-MCP 的这台机器**上读取，
+远程/云端 Agent 调用 `rd.capture.open_file` 时，传入的 `file_path` 会在 **运行 RDX-MCP 的这台机器**上读取，
 所以它必须是你本机可访问的路径（例如 `D:\captures\foo.rdc`）。
 
-为了减少手动输入路径，可以：
+建议在 MCP 客户端侧（或你的 IDE/文件选择器）自行选择 `.rdc` 路径，再传入工具调用参数。
 
-- 在 `run.env.bat` 设置 `RDX_RDC_DIRS`（Windows 用 `;` 分隔多个目录）
-- 或让 Agent 调 `rd.capture.set_dirs` 保存默认目录（会写入 `extensions/rdx-mcp/.rdx_mcp.json`）
-- 然后让 Agent 调 `rd.capture.list` 选择文件，再把返回的 `path` 传给 `rd.capture.open`
+## 第一次调用：最小可执行链路（打开并浏览一帧）
 
-## 第一次调用：一键端到端
+1. `rd.core.init`
+2. `rd.capture.open_file` → 得到 `capture_file_id`
+3. `rd.capture.open_replay` → 得到 `session_id`
+4. `rd.replay.set_frame`（通常 `frame_index=0`）
+5. `rd.event.get_action_tree`（浏览 action tree/marker）
+6. 可选：
+   - `rd.pipeline.get_state_summary`
+   - `rd.resource.list_textures`
+   - `rd.export.screenshot`
 
-最省心的入口是 `rd.pipeline.run_full_debug`。它会按 S0–S7 顺序执行 pipeline，并返回最终 `TaskState` 与 summary。
+结束后建议释放资源：
 
-**你需要准备**
+- `rd.capture.close_replay`
+- `rd.capture.close_file`
+- `rd.core.shutdown`
 
-- `rdc_path`：RenderDoc capture 文件（`.rdc`）路径
-- `description`：对问题的自然语言描述（尽量包含“什么不对、期望是什么、发生在哪一帧/哪类对象”）
-
-**示例参数（概念示例）**
-
-- `bug_type_hints` 是一个 JSON 数组字符串，例如：`["naninf", "precision"]`
-
-后续建议先阅读：`tools.md`（各工具输入输出）、`workflows.md`（S0–S7 过程与可观测数据）。
+后续建议阅读：`tools.md`（工具契约与清单）、`workflows.md`（推荐链路与常用组合）。

@@ -73,7 +73,7 @@
 ## 10. 知识沉淀
 
 - 生成 BugCard：路径 `common/knowledge/library/bugcards/bugcard_<BUG-ID>.yaml`
-- 指纹：用于 `rd.kb.search` 的检索 pattern
+- 指纹：用于在 bugcards/ 与源码中全文检索的 pattern
 - SOP 改进建议：如发现 SOP 缺漏，写入 `sop_improvement_notes`
 
 ---

@@ -2,10 +2,6 @@
 RDX-MCP server with registry-driven tool registration.
 
 - Registers all 196 doc-defined tools from `rdx/spec/tool_catalog_196.json`
-- Keeps 3 extra non-doc tools:
-  - `rd.kb.search`
-  - `rd.fingerprint.match`
-  - `rd.pipeline.run_full_debug`
 - Normalizes all tool responses to:
   - success: bool
   - error_message?: str
@@ -43,10 +39,7 @@ from rdx.core.perf_service import PerfService
 from rdx.core.pipeline_service import PipelineService
 from rdx.core.render_service import RenderService
 from rdx.core.session_manager import SessionError, SessionManager
-from rdx.knowledge.fingerprint_store import FingerprintStore
-from rdx.knowledge.kb_connector import KBConnector
-from rdx.models import PassFingerprint, ShaderFingerprint, TaskInput, _new_id
-from rdx.skills.workflows import run_full_debug_pipeline
+from rdx.models import _new_id
 from rdx.utils.artifact_store import ArtifactStore
 
 logger = logging.getLogger("rdx.server")
@@ -113,8 +106,6 @@ _event_graph_service: Optional[EventGraphService] = None
 _render_service: Optional[RenderService] = None
 _pipeline_service: Optional[PipelineService] = None
 _perf_service: Optional[PerfService] = None
-_fingerprint_store: Optional[FingerprintStore] = None
-_kb_connector: Optional[KBConnector] = None
 _artifact_store: Optional[ArtifactStore] = None
 _runtime: RuntimeState = RuntimeState()
 
@@ -816,7 +807,7 @@ async def _pipeline_snapshot(session_id: str, event_id: Optional[int] = None) ->
 @asynccontextmanager
 async def _lifespan(_: FastMCP):
     global _config, _session_manager, _event_graph_service, _render_service
-    global _pipeline_service, _perf_service, _fingerprint_store, _kb_connector
+    global _pipeline_service, _perf_service
     global _artifact_store
 
     _config = RdxConfig.from_env()
@@ -829,15 +820,6 @@ async def _lifespan(_: FastMCP):
     _render_service = RenderService()
     _pipeline_service = PipelineService()
     _perf_service = PerfService()
-
-    data_root = Path(os.environ.get("RDX_DATA_DIR", "./rdx_data")).resolve()
-    data_root.mkdir(parents=True, exist_ok=True)
-
-    _fingerprint_store = FingerprintStore(db_path=data_root / "fingerprints.db")
-    await _fingerprint_store.initialize()
-
-    _kb_connector = KBConnector(index_dirs=[], db_path=data_root / "kb_index.db")
-    await _kb_connector.initialize()
 
     _runtime.config = {
         "artifact_dir": str(artifact_root),
@@ -902,13 +884,6 @@ async def _dispatch_tool(tool_name: str, args: Dict[str, Any]) -> str:
     args = {k: _parse_json_like(v) for k, v in args.items() if v is not None}
     _record_log("debug", f"tool_call {tool_name}", {"args": sorted(args.keys())})
     try:
-        if tool_name == "rd.kb.search":
-            return await _tool_kb_search(args)
-        if tool_name == "rd.fingerprint.match":
-            return await _tool_fingerprint_match(args)
-        if tool_name == "rd.pipeline.run_full_debug":
-            return await _tool_pipeline_run_full_debug(args)
-
         parts = tool_name.split(".")
         if len(parts) != 3 or parts[0] != "rd":
             return _err(f"Invalid tool name: {tool_name}")
@@ -3488,105 +3463,6 @@ async def _dispatch_app(action: str, args: Dict[str, Any]) -> str:
     return _err(f"Unsupported app action: {action}")
 
 
-async def _tool_kb_search(args: Dict[str, Any]) -> str:
-    _require(args, "query")
-    filters: Dict[str, str] = {}
-    if args.get("file_type"):
-        filters["file_type"] = str(args["file_type"])
-    if args.get("path_prefix"):
-        filters["path_prefix"] = str(args["path_prefix"])
-    if args.get("project_id"):
-        filters["project_id"] = str(args["project_id"])
-    limit = _as_int(args.get("limit"), 10)
-    results = await _kb_connector.search(str(args["query"]), filters=filters or None, limit=limit)
-    payload = [
-        {
-            "doc_id": r.doc_id,
-            "path": r.path,
-            "score": float(r.score),
-            "snippet": r.snippet,
-            "line_number": int(r.line_number),
-        }
-        for r in results
-    ]
-    return _ok(results=payload, total=len(payload))
-
-
-async def _tool_fingerprint_match(args: Dict[str, Any]) -> str:
-    fingerprint_type = str(args.get("fingerprint_type", "pass")).lower()
-    threshold = _as_float(args.get("threshold"), 0.5)
-    fp_data = _as_dict(args.get("fingerprint_json"), default={})
-    if fingerprint_type == "pass":
-        matches = await _fingerprint_store.match_pass_fingerprint(PassFingerprint.model_validate(fp_data), threshold=threshold)
-    elif fingerprint_type == "shader":
-        matches = await _fingerprint_store.match_shader_fingerprint(ShaderFingerprint.model_validate(fp_data), threshold=threshold)
-    else:
-        return _err(f"Unknown fingerprint_type: {fingerprint_type}")
-    payload = [{"record": r.model_dump(mode="json"), "score": float(s)} for r, s in matches]
-    return _ok(matches=payload, total=len(payload))
-
-
-async def _tool_pipeline_run_full_debug(args: Dict[str, Any]) -> str:
-    _require(args, "rdc_path", "description")
-    task_input = TaskInput(
-        rdc_path=str(args["rdc_path"]),
-        description=str(args["description"]),
-        reference_image_path=args.get("reference_image_path"),
-        expected_image_path=args.get("expected_image_path"),
-        backend_type=str(args.get("backend_type", "local")),
-        project_id=str(args.get("project_id", "")),
-    )
-    services = {
-        "session_manager": _session_manager,
-        "event_graph_service": _event_graph_service,
-        "render_service": _render_service,
-        "pipeline_service": _pipeline_service,
-        "verifier_engine": None,
-        "patch_engine": None,
-        "experiment_runner": None,
-        "debug_service": None,
-        "perf_service": _perf_service,
-        "report_builder": None,
-        "fingerprint_store": _fingerprint_store,
-        "kb_connector": _kb_connector,
-        "artifact_store": _artifact_store,
-    }
-    required_service_names = [
-        "session_manager",
-        "event_graph_service",
-        "render_service",
-        "pipeline_service",
-        "perf_service",
-        "fingerprint_store",
-        "kb_connector",
-        "artifact_store",
-        "verifier_engine",
-        "patch_engine",
-        "experiment_runner",
-        "debug_service",
-        "report_builder",
-    ]
-    missing_services = [name for name in required_service_names if services.get(name) is None]
-    if missing_services:
-        return _err(
-            "run_full_debug backend services are not fully configured",
-            missing_services=missing_services,
-            requires_full_debug_backend=True,
-        )
-    try:
-        task_state = await run_full_debug_pipeline(task_input=task_input, services=services)
-        summary = {
-            "task_id": task_state.task_id,
-            "status": task_state.status,
-            "anomaly_count": len(task_state.anomalies),
-            "hypothesis_count": len(task_state.hypotheses),
-            "experiment_count": len(task_state.experiments),
-        }
-        return _ok(task_state=task_state.model_dump(mode="json"), summary=summary)
-    except Exception as exc:
-        return _err(f"run_full_debug pipeline failed: {exc}")
-
-
 _CATALOG_TOOLS = _load_tool_catalog()
 
 
@@ -3624,24 +3500,6 @@ for tool in _CATALOG_TOOLS:
     fn = _build_tool_callable(name, params)
     fn.__doc__ = str(tool.get("description", ""))
     mcp.tool(name=name)(fn)
-
-
-mcp.tool(name="rd.kb.search")(_build_tool_callable("rd.kb.search", ["query", "file_type", "path_prefix", "project_id", "limit"]))
-mcp.tool(name="rd.fingerprint.match")(_build_tool_callable("rd.fingerprint.match", ["fingerprint_type", "fingerprint_json", "threshold"]))
-mcp.tool(name="rd.pipeline.run_full_debug")(
-    _build_tool_callable(
-        "rd.pipeline.run_full_debug",
-        [
-            "rdc_path",
-            "description",
-            "reference_image_path",
-            "expected_image_path",
-            "bug_type_hints",
-            "backend_type",
-            "project_id",
-        ],
-    ),
-)
 
 
 def main() -> None:

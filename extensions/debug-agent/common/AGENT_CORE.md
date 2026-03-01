@@ -174,7 +174,7 @@
 **核心职责：**
 - 生成 BugFull（完整 Markdown 调试报告，10 章标准结构）
 - 生成 BugCard（轻量 YAML 检索卡片，< 50 行）
-- 去重检查（rd.kb.search 查询相似指纹）
+- 去重检查（在 `knowledge/library/bugcards/` 中用 rg/grep/IDE 搜索相似 fingerprint/关键词）
 - 更新跨设备指纹图
 - 生成 SOP 修订提案（pending_human_review，不自动合并）
 - 记录 Action Chain

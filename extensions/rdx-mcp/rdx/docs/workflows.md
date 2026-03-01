@@ -1,100 +1,60 @@
-# 工作流（S0–S7）与端到端 Pipeline
+# 工作流（推荐链路与常用组合）
 
-本页把 RDX-MCP 的“自动化 GPU 调试”拆成两种使用方式：
+本页给出一套“最小闭环”链路与常用组合，全部基于 `extensions/rdx-mcp/rdx/spec/tool_catalog_196.json` 中的 196 个工具（不包含任何额外扩展工具）。
 
-- **一键模式**：直接调用 `rd.pipeline.run_full_debug`
-- **编排模式**：用 21 个 tools 按你的产品/引擎语义进行更细粒度的控制
+## 1) 初始化与打开
 
-## S0–S7：skills pipeline 是什么
+1. `rd.core.init`
+2. `rd.capture.open_file` → 得到 `capture_file_id`
+3. `rd.capture.open_replay` → 得到 `session_id`
+4. `rd.replay.set_frame` / `rd.replay.get_frame_info`
 
-RDX-MCP 在 `extensions/rdx-mcp/rdx/skills/workflows.py` 中定义了 8 个可组合 skill（S0–S7），并通过 `run_full_debug_pipeline(...)` 顺序执行它们：
+## 2) 浏览事件并选定锚点（event_id）
 
-- **S0 `intake_and_normalize`**：打开 capture、解析描述、构建 event tree
-- **S1 `localize_anomaly`**：渲染输出、运行 verifiers、定位异常像素/区域
-- **S2 `search_first_bad`**：在事件范围内二分搜索首个“坏事件”
-- **S3 `attribute_pass_draw`**：把问题进一步归因到具体 pass / draw call
-- **S4 `extract_pipeline_shader`**：抓取 pipeline 快照并导出 shader artifacts
-- **S5 `hypothesis_and_patch_loop`**：生成修复假设、打补丁、跑实验并排序
-- **S6 `map_to_engine`**：将 pipeline/shader 线索映射到引擎侧（例如 UE 模块）
-- **S7 `build_report`**：构建最终 report bundle（JSON/MD/HTML + assets）
+- `rd.event.get_action_tree`（用 `max_depth` 控制树大小）
+- `rd.event.search_actions`（用字符串 query 快速定位 marker/drawcall）
+- `rd.event.set_active` / `rd.event.get_active`
+- `rd.event.get_action_details` / `rd.event.get_marker_stack`
+- `rd.event.get_api_calls` / `rd.event.get_callstack`
 
-### 失败策略：降级继续
+## 3) Inspect：管线与资源
 
-`run_full_debug_pipeline` 的策略是：某一步失败会记录日志，并把 `TaskState.status` 置为 `degraded_after_<skill>`，然后**继续执行后续步骤**（用已有的部分信息尽量产出可用报告）。
+- Pipeline：
+  - `rd.pipeline.get_state_summary`
+  - `rd.pipeline.get_output_targets` / `rd.pipeline.get_render_targets` / `rd.pipeline.get_depth_target`
+  - `rd.pipeline.get_resource_bindings` / `rd.pipeline.get_constant_buffers`
+  - `rd.pipeline.get_shader`（按 stage 获取绑定 shader）
+- Resources：
+  - `rd.resource.list_textures` / `rd.resource.list_buffers` / `rd.resource.list_all`
+  - `rd.resource.get_details` / `rd.resource.get_history`
+  - `rd.resource.get_current_contents`（导出当前内容到 `output_path`）
 
-## 一键模式：`rd.pipeline.run_full_debug`
+## 4) 导出证据（便于复现/分享）
 
-**适用场景**
+- `rd.export.screenshot`
+- `rd.export.pipeline_state_json` / `rd.export.event_tree_json`
+- `rd.export.shader_bundle` / `rd.export.cbuffer_dump`
+- `rd.debug.pixel_history` + `rd.export.pixel_history_json`（需要你先选定像素坐标/target）
+- 一键打包（宏工具）：
+  - `rd.macro.build_bug_report_pack`
+  - 或更底层的 `rd.export.repro_bundle_zip` + `rd.export.markdown_report`
 
-- 你希望“给一个 `.rdc` + 描述 → 产出报告”，不想自己编排细节。
-- 你能接受 pipeline 的默认策略（默认 verifier、默认假设生成策略、默认报告结构）。
+> 注意：所有 `output_path/output_dir` 都是在**运行 RDX-MCP 的机器**上写文件。
 
-**输入要点**
+## 5) Shader 调试与热修复（可选）
 
-- `description` 建议包含：
-  - **现象**：例如“某材质在特定角度出现闪烁/大片 NaN”
-  - **期望**：例如“应为平滑渐变、没有黑块”
-  - **线索**：例如“发生在某个 pass / 某个后处理之后”
-- `bug_type_hints`（可选）是 JSON 数组字符串（例如 `["naninf","precision"]`），用于引导假设生成与 patch 优先级。
+- Shader debugger：
+  - `rd.shader.debug_start` → 得到 `shader_debug_id`
+  - `rd.debug.step` / `rd.debug.continue` / `rd.debug.run_to`
+  - `rd.debug.get_variables` / `rd.debug.evaluate_expression`
+  - `rd.debug.finish`
+- 热修复/替换：
+  - `rd.shader.edit_and_replace`
+  - `rd.shader.revert_replacement`
+  - `rd.macro.shader_hotfix_validate`（辅助验证替换前后截图/指标）
 
-## 编排模式：推荐的最小闭环
+## 6) 关闭与清理
 
-当你想在 Agent 层更可控（例如只做定位，不做 patch），可以按以下“最小闭环”编排。
-
-### 1) 打开与浏览：建立可导航的事件空间
-
-1. `rd.session.create`
-2. `rd.capture.open`
-3. `rd.capture.get_event_tree`
-
-**产出**
-
-- event tree（用于 UI 展示或供 Agent 选择区间）
-- `event_range`（用于 bisect 的 `range_lo`/`range_hi`）
-
-### 2) 快速定位异常：从“最后输出”开始
-
-1. 选定一个候选 `event_id`（例如最后一个 draw/marker 附近）
-2. `rd.output.render`（把输出落盘为 artifact，便于人类确认）
-3. `rd.verify.naninf` 或 `rd.verify.image_diff`
-
-**决策点**
-
-- **如果 verifier 通过**：说明该 event 并非问题点，换一个 event 或调整 verifier 参数。
-- **如果 verifier 失败并给出 bbox/mask**：将 bbox 对应的像素坐标作为 `rd.debug.pixel` 的候选输入。
-
-### 3) 二分定位：把“出问题的时刻”钉到一个 draw call
-
-1. `rd.event.bisect_first_bad`（设置 `verifier_type` 与可选 `verifier_params`）
-
-**产出**
-
-- `first_bad_event_id` + `confidence`（用于后续 pipeline snapshot / patch / experiment）
-
-### 4) 深挖：pipeline / shader / pixel
-
-1. `rd.pipeline.snapshot`（在 `first_bad_event_id` 上抓快照）
-2. `rd.shader.export_artifacts`（导出可读信息）
-3. `rd.debug.pixel`（对 bbox 内的像素点进行单步或 run-to-NaN/Inf）
-
-**建议**
-
-- **优先 debug 一两个代表像素**（mask 最密集区域），避免把 debug trace 做得过大。
-
-### 5) 修复验证：patch + experiment
-
-1. `rd.patch.apply`（可先不传 `ops`，只给 `intent`，让上层以策略生成 `PatchOp`）
-2. `rd.experiment.run`（指定 `patch_id` + verifier）
-3. 若效果不佳：`rd.patch.revert`，换假设/换 patch 再跑
-
-### 6) 产出报告：`rd.report.build_bundle`
-
-把当前 `TaskState`（来自你的编排状态机）序列化为 JSON 字符串，调用 `rd.report.build_bundle` 生成 HTML/MD/JSON 报告与 assets。
-
-## 知识复用：KB + fingerprint
-
-- `rd.kb.search` 适合“从现象/术语”反查引擎或 shader 代码位置（BM25，走本地索引）。
-- `rd.fingerprint.match` 适合“相似 pass/shader 的历史问题复用”，用于快速给出候选根因与修复方向。
-
-建议在你自己的工程里以 `project_id` 维度隔离多个项目的索引与 fingerprint 记录，减少噪声。
-
+- `rd.capture.close_replay`
+- `rd.capture.close_file`
+- `rd.core.shutdown`
