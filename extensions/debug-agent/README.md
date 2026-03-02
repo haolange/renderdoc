@@ -165,3 +165,32 @@ common/project_plugin/
 | **Action Chain** | 完整调试 session 的工具调用和决策序列记录（`.jsonl`） |
 | **Fingerprint** | 可疑代码表达式的结构化描述，用于跨 session 匹配同类 Bug |
 | **Project Plugin** | 项目级知识注入接口（材质模块、项目不变量、资源映射） |
+
+---
+
+## Tool Contract SSOT and Sync Workflow
+
+`common/` is the only editable source for agent prompts and contract rules.
+Do not manually edit platform prompt mirrors.
+
+### Validate contract drift (strict)
+
+```bash
+python extensions/debug-agent/scripts/validate_tool_contract.py --strict
+```
+
+### Sync platform mirrors from `common/agents`
+
+```bash
+python extensions/debug-agent/scripts/sync_platform_agents.py
+```
+
+### Session artifact contract (mandatory)
+
+Artifacts must be written to:
+
+- `extensions/debug-agent/common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
+- `extensions/debug-agent/common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
+- `extensions/debug-agent/common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
+- `extensions/debug-agent/common/knowledge/library/sessions/.current_session`
+

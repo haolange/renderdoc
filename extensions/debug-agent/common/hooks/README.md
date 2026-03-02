@@ -50,7 +50,7 @@ python3 common/hooks/validators/bugcard_validator.py path/to/bugcard.yaml --stri
 
 独立运行：
 ```bash
-python3 common/hooks/validators/counterfactual_validator.py session_evidence.yaml
+python3 common/hooks/validators/counterfactual_validator.py "$(python3 common/hooks/utils/resolve_session_artifact.py --artifact session_evidence --must-exist)"
 ```
 
 ### Hook 3 · Skeptic 签署检查

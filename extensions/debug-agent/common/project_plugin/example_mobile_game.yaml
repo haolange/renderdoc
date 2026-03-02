@@ -100,17 +100,17 @@ project_invariants:
   - id: P-METAL-01
     description: "角色材质金属度（Metallic）必须在 [0, 0.9] 范围内"
     rationale: "美术风格约束：项目采用半写实风格，完全金属度（Metallic=1.0）会破坏角色整体色彩协调性"
-    detection_hint: "rd.shader.get_debug 检查 Metallic 参数值；若 > 0.9 触发此不变量警告"
+    detection_hint: "rd.shader.debug_start 检查 Metallic 参数值；若 > 0.9 触发此不变量警告"
 
   - id: P-ALPHA-01
     description: "角色半透明材质必须在独立的 Translucency Pass 中渲染，禁止与不透明对象混批"
     rationale: "性能约束：移动端 tile-based GPU 上混批会导致 tile 内存溢出"
-    detection_hint: "rd.pipeline.get_pass_list 检查半透明角色对象是否在 Translucency Pass 中"
+    detection_hint: "rd.event.list_passes 检查半透明角色对象是否在 Translucency Pass 中"
 
   - id: P-LIGHTMAP-01
     description: "静态光照贴图分辨率不得超过 1024x1024"
     rationale: "包体大小约束：超出限制会导致应用包体超过平台审核大小限制"
-    detection_hint: "rd.texture.get_info 检查 LightMap 纹理分辨率"
+    detection_hint: "rd.resource.get_details 检查 LightMap 纹理分辨率"
 
 # ── 资源映射 ─────────────────────────────────────────────────
 resource_mapping:

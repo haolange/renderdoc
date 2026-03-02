@@ -162,3 +162,24 @@ session_status:
     - agent: <agent_id>
       task: "<简短描述>"
 ```
+
+---
+
+## Session Artifact Contract (Hard Requirement)
+
+Before closing a case, Team Lead must enforce the session artifact contract below:
+
+1. Select and persist the active `session_id` in:
+   - `common/knowledge/library/sessions/.current_session`
+2. Require Curator to output all three files under:
+   - `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
+   - `common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
+   - `common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
+3. Do not mark any hypothesis as final closed verdict unless all three artifacts exist and pass validators.
+
+Finalization is invalid when any one of the following is missing:
+- `.current_session`
+- `session_evidence.yaml`
+- `skeptic_signoff.yaml`
+- `action_chain.jsonl`
+

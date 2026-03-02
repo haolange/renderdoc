@@ -1,23 +1,13 @@
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. -->
 
-<!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
+# AIRD Framework - MiniMax Agent Bundle
 
-# AIRD Framework · MiniMax 平台 Agent 集合
+This file is generated from common/agents to keep platform prompts aligned.
 
-## 使用说明
+---
 
-本文件包含 AIRD 框架的 9 个专家 Agent，适配 MiniMax 平台的单文件多 Agent 格式。
-每个 Agent 以 `---` 分隔，开头的 `# Agent: <名称>` 行标识 Agent 边界。
+<!-- Source: common/agents/01_team_lead.md -->
 
-**启动指令（Team Lead 入口）：** 将用户问题发送给 `Team Lead`，
-Team Lead 将根据问题类型自动调度其他专家 Agent。
-
-**知识库路径（相对于 common/）：**
-- `knowledge/spec/invariants/invariant_library.yaml`
-- `knowledge/spec/taxonomy/symptom_taxonomy.yaml`
-- `knowledge/spec/taxonomy/trigger_taxonomy.yaml`
-- `knowledge/spec/skills/sop_library.yaml`
-
-<!-- Agent 1/9: Team Lead — 渲染调试团队协调者（Delegate Mode） -->
 # Agent: Team Lead / Orchestrator
 # 角色：渲染调试团队协调者
 #
@@ -185,7 +175,28 @@ session_status:
 
 ---
 
-<!-- Agent 2/9: Triage & Taxonomy — 症状分类专家 -->
+## Session Artifact Contract (Hard Requirement)
+
+Before closing a case, Team Lead must enforce the session artifact contract below:
+
+1. Select and persist the active `session_id` in:
+   - `common/knowledge/library/sessions/.current_session`
+2. Require Curator to output all three files under:
+   - `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
+   - `common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
+   - `common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
+3. Do not mark any hypothesis as final closed verdict unless all three artifacts exist and pass validators.
+
+Finalization is invalid when any one of the following is missing:
+- `.current_session`
+- `session_evidence.yaml`
+- `skeptic_signoff.yaml`
+- `action_chain.jsonl`
+
+---
+
+<!-- Source: common/agents/02_triage_taxonomy.md -->
+
 # Agent: Triage & Taxonomy
 # 角色：症状分类专家
 #
@@ -330,7 +341,8 @@ unclassified_symptoms: []
 
 ---
 
-<!-- Agent 3/9: Capture & Repro — 捕获与复现专家 -->
+<!-- Source: common/agents/03_capture_repro.md -->
+
 # Agent: Capture & Repro
 # 角色：捕获与复现专家
 #
@@ -378,9 +390,10 @@ unclassified_symptoms: []
 使用 `rd.*` 工具执行捕获，调用顺序：
 
 ```
-rd.capture.open_file(<capture_path>)
-rd.event.get_actions()              → 确认帧内容完整
-rd.frame.take_screenshot()          → 确认截图与用户报告一致
+rd.capture.open_file(file_path=<capture_path>)  ? ?? capture ??? `session_id`
+rd.event.get_actions(session_id=<session_id>)              → 确认帧内容完整
+rd.event.set_active(session_id=<session_id>, event_id=<anchor_event_id>)
+rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output_path=<shot_path>)          → 确认截图与用户报告一致
 ```
 
 若捕获文件由用户提供，执行相同的验证步骤确认可重放性。
@@ -393,7 +406,7 @@ rd.frame.take_screenshot()          → 确认截图与用户报告一致
 - `像素坐标`：异常像素的精确 (x, y) 坐标（如 `(512, 384)`）
 - `资源 ID`：异常出现在某个纹理或 RT 中（如 `RT_GBuffer_Albedo`）
 
-通过截图观察和初步 `rd.event.get_actions()` 结果，给出尽可能精确的锚点建议。
+通过截图观察和初步 `rd.event.get_actions(session_id=<session_id>)` 结果，给出尽可能精确的锚点建议。
 
 ---
 
@@ -466,7 +479,8 @@ notes: ""
 
 ---
 
-<!-- Agent 4/9: Pass Graph / Pipeline — 命令列表与管线状态分析专家 -->
+<!-- Source: common/agents/04_pass_graph_pipeline.md -->
+
 # Agent: Pass Graph / Pipeline
 # 角色：命令列表与管线状态分析专家
 #
@@ -491,7 +505,7 @@ notes: ""
 ### Step 1: 构建 Event 树（Debug Marker 层级）
 
 ```
-rd.event.get_actions()   → 获取完整的 DrawCall / Dispatch / Blit 事件列表
+rd.event.get_actions(session_id=<session_id>)   → 获取完整的 DrawCall / Dispatch / Blit 事件列表
 ```
 
 以 **Debug Marker**（`BeginEvent` / `EndEvent`）标注的层级为基础组织事件树。注意：
@@ -504,7 +518,8 @@ rd.event.get_actions()   → 获取完整的 DrawCall / Dispatch / Blit 事件�
 对每个逻辑段内的关键 DrawCall，通过以下方式获取管线状态：
 
 ```
-rd.pipeline.get_state(event_id=<DrawCall EventID>)
+rd.event.set_active(session_id=<session_id>, event_id=<DrawCall EventID>)
+rd.pipeline.get_state(session_id=<session_id>)
 ```
 
 重点检查项：
@@ -524,7 +539,8 @@ A/B 对比时：对相同语义 DrawCall 逐项比较，记录所有差异项进
 ### Step 3: System State 检查
 
 ```
-rd.pipeline.get_state(event_id=<DrawCall EventID>)  → 同时包含资源绑定信息
+rd.event.set_active(session_id=<session_id>, event_id=<DrawCall EventID>)
+rd.pipeline.get_state(session_id=<session_id>)  → 同时包含资源绑定信息
 ```
 
 重点检查项：
@@ -542,7 +558,7 @@ rd.pipeline.get_state(event_id=<DrawCall EventID>)  → 同时包含资源绑定
 ### Step 4: 资源屏障与状态转换追踪
 
 ```
-rd.resource.get_transitions()   → 资源在整帧中的状态转换链
+rd.resource.get_history(session_id=<session_id>, resource_id=<resource_id>, include_reads=true, include_writes=true)   → 资源在整帧中的状态转换链
 ```
 
 识别以下异常模式：
@@ -668,7 +684,10 @@ recommended_next:
 - ❌ 越过命令列表层直接进行像素级或 Shader IR 级分析（这是 Pixel Forensics 和 Shader Agent 的职责）
 - ❌ 忽略 System State——Pipeline State 正确但 CB / SRV 绑定错误同样是根因
 
-<!-- Agent 5/9: Pixel Forensics — 像素与数值取证专家 -->
+---
+
+<!-- Source: common/agents/05_pixel_value_forensics.md -->
+
 # Agent: Pixel / Value Forensics
 # 角色：像素取证专家
 #
@@ -702,7 +721,7 @@ recommended_next:
 ### Step 2: Pixel History 追溯
 
 ```
-rd.event.get_pixels(x=<X>, y=<Y>)   → 获取目标像素的完整历史
+rd.debug.pixel_history(session_id=<session_id>, x=<X>, y=<Y>, include_tests=true, include_shader_outputs=true)   → 获取目标像素的完整历史
 ```
 
 逐事件检查像素值，**从后往前**找到值从「正常」跳变为「异常」的分界点：
@@ -733,7 +752,7 @@ rd.event.get_pixels(x=<X>, y=<Y>)   → 获取目标像素的完整历史
 对于范围类问题（精度、颜色空间），需要读取更大区域的像素值：
 
 ```
-rd.texture.get_data(resource_id=<RT_ID>, x=<X0>, y=<Y0>, width=<W>, height=<H>)
+rd.texture.get_region_values(session_id=<session_id>, texture_id=<RT_ID>, rect=[<X0>,<Y0>,<W>,<H>], mip=0, slice=0, sample=0, stride=1, as_type="float")
 ```
 
 统计：
@@ -816,7 +835,8 @@ recommended_next:
 
 ---
 
-<!-- Agent 6/9: Shader & IR — 着色器与 IR 分析专家 -->
+<!-- Source: common/agents/06_shader_ir.md -->
+
 # Agent: Shader & IR
 # 角色：着色器与中间表示分析专家
 #
@@ -841,12 +861,14 @@ recommended_next:
 ### Step 1: 获取 Shader 源码
 
 ```
-rd.shader.get_source(event_id=<first_bad_event>, stage="PS")
+rd.event.set_active(session_id=<session_id>, event_id=<first_bad_event>)
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.shader.get_source(session_id=<session_id>, shader_id=<shader_id>, prefer_original=true)
 ```
 
 若获取失败（无调试符号），尝试：
 ```
-rd.shader.get_compile_info(event_id=<first_bad_event>)  → 检查编译选项和错误
+rd.shader.get_messages(session_id=<session_id>, severity_min="warning")  → 检查编译选项和错误
 ```
 
 ### Step 2: 静态扫描（关键词优先）
@@ -868,7 +890,8 @@ rd.shader.get_compile_info(event_id=<first_bad_event>)  → 检查编译选项�
 当 trigger_tags 包含 `Adreno_GPU` 或 `RelaxedPrecision`，或 Pixel Forensics 判定为精度问题时：
 
 ```
-rd.shader.get_source(event_id=<first_bad_event>)  → 获取 SPIR-V 或 IR
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.shader.extract_binary(session_id=<session_id>, shader_id=<shader_id>, output_path=<spirv_path>, container="spirv")  → 获取 SPIR-V 或 IR
 ```
 
 在 IR/SPIR-V 中搜索：
@@ -888,7 +911,7 @@ rd.shader.get_source(event_id=<first_bad_event>)  → 获取 SPIR-V 或 IR
 ### Step 5: Shader 单步调试（需要时）
 
 ```
-rd.shader.get_debug(event_id=<first_bad_event>, x=<X>, y=<Y>)
+rd.shader.debug_start(session_id=<session_id>, mode="pixel", event_id=<first_bad_event>, params={"x": <X>, "y": <Y>}, timeout_ms=10000)
 ```
 
 单步执行到可疑代码行，读取：
@@ -908,7 +931,7 @@ rd.shader.get_debug(event_id=<first_bad_event>, x=<X>, y=<Y>)
 
 □ 1. 可疑代码表达式已定位（具体代码行，含代码引用，不得是"大概在光照计算里"）
 □ 2. 若为精度类问题，SPIR-V RelaxedPrecision decoration 扫描结果已提供
-□ 3. 可疑表达式的实际输入值已通过 rd.shader.get_debug 获取（不得是估算值）
+□ 3. 可疑表达式的实际输入值已通过 rd.shader.debug_start 获取（不得是估算值）
 □ 4. 若有 A/B 两份 Shader，已明确说明差异在哪一层（HLSL/SPIR-V/ISA）
 □ 5. 输出的代码指纹格式可被 Driver Agent 和 Skeptic 直接引用验证
 
@@ -987,7 +1010,8 @@ engine_module_mapping:                 # 若有 project_plugin 则填写
 
 ---
 
-<!-- Agent 7/9: Driver & Device — 驱动与设备差异专家 -->
+<!-- Source: common/agents/07_driver_device.md -->
+
 # Agent: Driver / Device Specialist
 # 角色：驱动与设备差异分析专家
 #
@@ -1023,10 +1047,12 @@ engine_module_mapping:                 # 若有 project_plugin 则填写
 
 ```
 # 拉取异常设备（A）的 API 调用日志
-rd.pipeline.get_api_trace(event_id=<first_bad_event>, device="anomalous")
+rd.event.set_active(session_id=<session_id_a>, event_id=<first_bad_event>)
+rd.event.get_api_calls(session_id=<session_id_a>, event_id=<first_bad_event>, include_arguments=true, max_calls=200)
 
 # 拉取基准设备（B）的 API 调用日志
-rd.pipeline.get_api_trace(event_id=<first_bad_event>, device="baseline")
+rd.event.set_active(session_id=<session_id_b>, event_id=<first_bad_event>)
+rd.event.get_api_calls(session_id=<session_id_b>, event_id=<first_bad_event>, include_arguments=true, max_calls=200)
 ```
 
 重点对比：
@@ -1040,8 +1066,10 @@ rd.pipeline.get_api_trace(event_id=<first_bad_event>, device="baseline")
 当 Shader & IR Agent 报告「相同 SPIR-V / HLSL，但 IR 层差异」时：
 
 ```
-rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="anomalous")
-rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="baseline")
+rd.pipeline.get_shader(session_id=<session_id_a>, stage="PS")  ? ?? `shader_id_a`
+rd.pipeline.get_shader(session_id=<session_id_b>, stage="PS")  ? ?? `shader_id_b`
+rd.shader.get_disassembly(session_id=<session_id_a>, shader_id=<shader_id_a>, target="native")
+rd.shader.get_disassembly(session_id=<session_id_b>, shader_id=<shader_id_b>, target="native")
 ```
 
 在 ISA 对比中寻找：
@@ -1052,7 +1080,7 @@ rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="baseline")
 ### Step 4: 驱动版本回归测试
 
 ```
-rd.device.get_driver_info(device="anomalous")
+rd.replay.get_driver_info(session_id=<session_id_a>)
 → 获取驱动版本号、编译器版本
 
 # 在知识库（文件）中检索历史已知问题（全文搜索/IDE 搜索）：
@@ -1070,9 +1098,9 @@ rd.device.get_driver_info(device="anomalous")
 
 | 检查项 | 适用条件 | 工具调用 |
 |--------|---------|---------|
-| Structured Buffer 对齐 | trigger_tag: Adreno_GPU + 光照数据异常 | `rd.buffer.get_layout(buffer_id=<light_buffer>)` |
-| sRGB RT 格式 | trigger_tag: Apple_GPU + 颜色异常 | `rd.texture.get_format(texture_id=<RT>)` |
-| Resource Barrier 完整性 | API: Vulkan/D3D12 + 渲染错误 | `rd.pipeline.get_barriers(event_id=<first_bad_event>)` |
+| Structured Buffer 对齐 | trigger_tag: Adreno_GPU + 光照数据异常 | `rd.buffer.get_structured_data(session_id=<session_id_a>, buffer_id=<light_buffer>, layout=<layout_desc>, offset=0, count=<N>)` |
+| sRGB RT 格式 | trigger_tag: Apple_GPU + 颜色异常 | `rd.resource.get_details(session_id=<session_id_a>, resource_id=<RT>)` |
+| Resource Barrier 完整性 | API: Vulkan/D3D12 + 渲染错误 | `rd.pipeline.get_resource_states(session_id=<session_id_a>, resource_id=<target_resource>)` |
 | RelaxedPrecision 实际精度 | trigger_tag: Adreno_GPU + 精度异常 | 引用 Shader & IR Agent 的 SPIR-V 分析结果 |
 
 ### Step 6: 跨设备指纹图查询（若有历史数据）
@@ -1185,7 +1213,8 @@ platform_attribution:
 
 ---
 
-<!-- Agent 8/9: Skeptic — 对抗性审查专家（五把解剖刀） -->
+<!-- Source: common/agents/08_skeptic.md -->
+
 # Agent: Skeptic / Adversarial Reviewer
 # 角色：怀疑论者 / 对抗性审查专家
 #
@@ -1322,7 +1351,7 @@ challenges:
       无法确认改变量（half→float）是唯一被修改的变量，
       也无法排除其他同时进行的变更对结果的干扰。
     required_action: >
-      补充：反事实实验中异常像素坐标在修复前后的 RGBA 值对比（rd.texture.get_pixel），
+      补充：反事实实验中异常像素坐标在修复前后的 RGBA 值对比（rd.texture.get_pixel_value），
       并确认其他 Shader 变量在实验期间未被修改。
     status: open                  # open | addressed
 
@@ -1364,7 +1393,7 @@ blade_review:
     note: "half→float 替换后，像素 (512,384) 从 RGB(0.21,0.19,0.18) 恢复为 RGB(0.38,0.35,0.33)"
   - blade: "刀4: 工具证据刀"
     result: pass
-    note: "所有关键值均来自 rd.shader.get_debug 和 rd.texture.get_pixel 的直接输出"
+    note: "所有关键值均来自 rd.shader.debug_start 和 rd.texture.get_pixel_value 的直接输出"
   - blade: "刀5: 替代假设刀"
     result: pass
     note: "H-002 barrier 缺失已被 Driver Agent 证明不影响目标像素（补充实验 event 521b）"
@@ -1387,7 +1416,8 @@ sign_off:
 
 ---
 
-<!-- Agent 9/9: Knowledge Curator — 报告与知识管理专家 -->
+<!-- Source: common/agents/09_report_knowledge_curator.md -->
+
 # Agent: Report & Knowledge Curator
 # 角色：报告生成与知识管理专家
 #
@@ -1582,7 +1612,7 @@ sop_revision_proposal:
   session_ref: "session-AIRD-20260227-001"
   proposed_change: >
     在 tool_chain stage 2 中增加 lightColor 强度范围检查步骤：
-    rd.buffer.get_range(buffer_id=<light_buffer>, field="color.r")
+    rd.buffer.get_structured_data(session_id=<session_id>, buffer_id=<light_buffer>, layout=<light_layout>, offset=0, count=<N>)
     若 max(color.r) > 32767（FP16 安全阈值的 50%），自动提升精度 Bug 风险评级为 CRITICAL。
   rationale: >
     本次案例发现 lightColor.r = 7.83 在调试时并未触发 FP16 溢出警告，
@@ -1602,3 +1632,19 @@ sop_revision_proposal:
 - ❌ 在 BugCard 中省略 fingerprint 字段（这是跨 session 检索的核心索引）
 
 ---
+
+## Session Artifact Output (Mandatory)
+
+Curator must always write session-scoped artifacts to the following paths:
+
+- `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
+- `common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
+- `common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
+- `common/knowledge/library/sessions/.current_session` (plain text; current `session_id`)
+
+Additional constraints:
+
+1. `session_evidence.yaml` and `skeptic_signoff.yaml` are gate artifacts for Stop Hooks.
+2. `action_chain.jsonl` must reflect the actual tool execution chain for this session.
+3. Artifact paths are fixed; do not write these files to repository root.
+4. If any artifact is missing, mark output as incomplete and block finalization.

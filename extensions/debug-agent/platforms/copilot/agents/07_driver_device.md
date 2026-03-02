@@ -1,12 +1,12 @@
 ---
 name: "AIRD Driver & Device"
-description: "驱动与设备差异专家——API Trace 和 ISA 级对比，输出 platform_attribution"
+description: "Perform cross-device attribution and API/ISA checks"
 model: "claude-sonnet-4-5"
 tools: ["bash", "read"]
-color: "#E74C3C"
+color: "#F39C12"
 ---
 
-<!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. Do not edit platform copies manually. -->
 
 # Agent: Driver / Device Specialist
 # 角色：驱动与设备差异分析专家
@@ -43,10 +43,12 @@ color: "#E74C3C"
 
 ```
 # 拉取异常设备（A）的 API 调用日志
-rd.pipeline.get_api_trace(event_id=<first_bad_event>, device="anomalous")
+rd.event.set_active(session_id=<session_id_a>, event_id=<first_bad_event>)
+rd.event.get_api_calls(session_id=<session_id_a>, event_id=<first_bad_event>, include_arguments=true, max_calls=200)
 
 # 拉取基准设备（B）的 API 调用日志
-rd.pipeline.get_api_trace(event_id=<first_bad_event>, device="baseline")
+rd.event.set_active(session_id=<session_id_b>, event_id=<first_bad_event>)
+rd.event.get_api_calls(session_id=<session_id_b>, event_id=<first_bad_event>, include_arguments=true, max_calls=200)
 ```
 
 重点对比：
@@ -60,8 +62,10 @@ rd.pipeline.get_api_trace(event_id=<first_bad_event>, device="baseline")
 当 Shader & IR Agent 报告「相同 SPIR-V / HLSL，但 IR 层差异」时：
 
 ```
-rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="anomalous")
-rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="baseline")
+rd.pipeline.get_shader(session_id=<session_id_a>, stage="PS")  ? ?? `shader_id_a`
+rd.pipeline.get_shader(session_id=<session_id_b>, stage="PS")  ? ?? `shader_id_b`
+rd.shader.get_disassembly(session_id=<session_id_a>, shader_id=<shader_id_a>, target="native")
+rd.shader.get_disassembly(session_id=<session_id_b>, shader_id=<shader_id_b>, target="native")
 ```
 
 在 ISA 对比中寻找：
@@ -72,7 +76,7 @@ rd.shader.get_isa(event_id=<first_bad_event>, stage="PS", device="baseline")
 ### Step 4: 驱动版本回归测试
 
 ```
-rd.device.get_driver_info(device="anomalous")
+rd.replay.get_driver_info(session_id=<session_id_a>)
 → 获取驱动版本号、编译器版本
 
 # 在知识库（文件）中检索历史已知问题（全文搜索/IDE 搜索）：
@@ -90,9 +94,9 @@ rd.device.get_driver_info(device="anomalous")
 
 | 检查项 | 适用条件 | 工具调用 |
 |--------|---------|---------|
-| Structured Buffer 对齐 | trigger_tag: Adreno_GPU + 光照数据异常 | `rd.buffer.get_layout(buffer_id=<light_buffer>)` |
-| sRGB RT 格式 | trigger_tag: Apple_GPU + 颜色异常 | `rd.texture.get_format(texture_id=<RT>)` |
-| Resource Barrier 完整性 | API: Vulkan/D3D12 + 渲染错误 | `rd.pipeline.get_barriers(event_id=<first_bad_event>)` |
+| Structured Buffer 对齐 | trigger_tag: Adreno_GPU + 光照数据异常 | `rd.buffer.get_structured_data(session_id=<session_id_a>, buffer_id=<light_buffer>, layout=<layout_desc>, offset=0, count=<N>)` |
+| sRGB RT 格式 | trigger_tag: Apple_GPU + 颜色异常 | `rd.resource.get_details(session_id=<session_id_a>, resource_id=<RT>)` |
+| Resource Barrier 完整性 | API: Vulkan/D3D12 + 渲染错误 | `rd.pipeline.get_resource_states(session_id=<session_id_a>, resource_id=<target_resource>)` |
 | RelaxedPrecision 实际精度 | trigger_tag: Adreno_GPU + 精度异常 | 引用 Shader & IR Agent 的 SPIR-V 分析结果 |
 
 ### Step 6: 跨设备指纹图查询（若有历史数据）

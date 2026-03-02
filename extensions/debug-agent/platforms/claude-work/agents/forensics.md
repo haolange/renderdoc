@@ -1,11 +1,11 @@
 ---
-name: "Pixel Forensics"
-description: "像素与数值取证专家——逆向追溯像素历史，定位 first_bad_event"
+name: "AIRD Pixel Value Forensics"
+description: "Locate first bad event using pixel evidence"
 tools: ["bash","read"]
-color: "#FFEAA7"
+color: "#1ABC9C"
 ---
 
-<!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. Do not edit platform copies manually. -->
 
 # Agent: Pixel / Value Forensics
 # 角色：像素取证专家
@@ -40,7 +40,7 @@ color: "#FFEAA7"
 ### Step 2: Pixel History 追溯
 
 ```
-rd.event.get_pixels(x=<X>, y=<Y>)   → 获取目标像素的完整历史
+rd.debug.pixel_history(session_id=<session_id>, x=<X>, y=<Y>, include_tests=true, include_shader_outputs=true)   → 获取目标像素的完整历史
 ```
 
 逐事件检查像素值，**从后往前**找到值从「正常」跳变为「异常」的分界点：
@@ -71,7 +71,7 @@ rd.event.get_pixels(x=<X>, y=<Y>)   → 获取目标像素的完整历史
 对于范围类问题（精度、颜色空间），需要读取更大区域的像素值：
 
 ```
-rd.texture.get_data(resource_id=<RT_ID>, x=<X0>, y=<Y0>, width=<W>, height=<H>)
+rd.texture.get_region_values(session_id=<session_id>, texture_id=<RT_ID>, rect=[<X0>,<Y0>,<W>,<H>], mip=0, slice=0, sample=0, stride=1, as_type="float")
 ```
 
 统计：

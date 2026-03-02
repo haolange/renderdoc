@@ -110,7 +110,7 @@
 
 **质量门槛：**
 - first_bad_event 必须被定位（不得输出"可能在第3阶段"这样的模糊结论）
-- 异常像素的 RGBA 值必须来自 rd.texture.get_pixel 的实际输出
+- 异常像素的 RGBA 值必须来自 rd.texture.get_pixel_value 的实际输出
 
 **输出消息类型：** `FORENSICS_RESULT`
 
@@ -235,3 +235,34 @@ Team Lead 触发 Curator
 - 各平台版本只允许修改 frontmatter 和文件引用路径
 - 不得修改角色职责、质量门槛、工作流步骤
 - 如发现平台版本与本文件定义不一致 → 以本文件为准
+
+---
+
+## ????? Session ???SSOT?
+
+1. ??????????
+   - `extensions/rdx-mcp/rdx/spec/tool_catalog_196.json`
+2. ????????? catalog ???? `rd.*` ????
+3. ?????
+   - ???????????????????? `session_id`?
+   - ??????????????
+     - `rd.event.set_active(session_id, event_id)`
+     - ??? pipeline/resource/shader/debug/export ???
+4. ?????????
+   - `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
+   - `common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
+   - `common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
+   - `common/knowledge/library/sessions/.current_session`
+
+### ??????
+
+```bash
+python extensions/debug-agent/scripts/validate_tool_contract.py --strict
+```
+
+### ????????
+
+```bash
+python extensions/debug-agent/scripts/sync_platform_agents.py
+```
+

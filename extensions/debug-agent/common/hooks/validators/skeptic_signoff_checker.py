@@ -18,6 +18,11 @@ Skeptic 签署状态检查器 — AIRD Framework M4 Quality Hooks
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 try:
     import yaml
 except ModuleNotFoundError:

@@ -42,7 +42,7 @@ material_blocks:
   - block_id: string          # 模块唯一标识（大写+下划线），如 LIGHTING_BLOCK
     description: string       # 一句话描述模块用途
     hlsl_fingerprint: string  # 代表该模块的 HLSL 代码片段（用于 Shader 搜索）
-    engine_asset_path: string # 引擎中的资源路径（用于 rd.project_plugin 工具）
+    engine_asset_path: string # 引擎中的资源路径（用于 project_plugin (local-only) 工具）
     shader_files:             # 相关 Shader 文件列表（相对路径）
       - string
     parameters:               # 该模块的关键 Shader 参数名
@@ -91,15 +91,21 @@ Agent 在 prompt 中声明加载 Plugin 文件：
 # - project_plugin/<project_name>.yaml
 ```
 
-### rd.project_plugin 工具集成
+### ??????????? `project_plugin (local-only)` ???
 
-框架预留了 `rd.project_plugin` 工具命名空间，用于在 Agent 执行时查询 Plugin：
+`project_plugin` ???**?????**?????????? MCP ?????
+
+?????
+
+1. ? Agent ????? `common/project_plugin/<project_name>.yaml`?
+2. ?? `block_id` ? `material_blocks` ????????
+3. ?? `resource_id_pattern` ? `resource_mapping` ????????
+
+????????
 ```
-rd.project_plugin.get_block(block_id="LIGHTING_BLOCK")
-  → 返回该模块的 hlsl_fingerprint, engine_asset_path, known_issues
-
-rd.project_plugin.search_resource(resource_id="tex_hair_base_d")
-  → 匹配 resource_mapping，返回 asset_category 和路径前缀
+?? common/project_plugin/<project_name>.yaml
+  -> material_blocks[block_id == "LIGHTING_BLOCK"]
+  -> resource_mapping[resource_id_pattern ?? "tex_hair_base_d"]
 ```
 
 ### Triage Agent 增益

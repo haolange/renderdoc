@@ -1,12 +1,12 @@
 ---
 name: "AIRD Triage & Taxonomy"
-description: "症状分类专家——将自然语言报告映射为标准 symptom_tags / trigger_tags，推荐 SOP"
+description: "Classify symptoms and propose initial SOP"
 model: "claude-sonnet-4-5"
-tools: "read"
-color: "#3498DB"
+tools: "bash,read"
+color: "#8E44AD"
 ---
 
-<!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. Do not edit platform copies manually. -->
 
 # Agent: Triage & Taxonomy
 # 角色：症状分类专家

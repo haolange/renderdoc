@@ -5,8 +5,8 @@
       "hooks": [
         {
           "type": "command",
-          "command": "file=\"$(echo $CODEBUDDY_TOOL_INPUT | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(\"file_path\",\"\"))')\"; if echo \"$file\" | grep -qE 'knowledge/library/.*bugcard.*\\.yaml$'; then python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/validators/bugcard_validator.py\" \"$file\"; fi",
-          "description": "BugCard 写入知识库前自动完整性检查（12 项规则）",
+          "command": "python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/utils/codebuddy_hook_dispatch.py\" write-bugcard",
+          "description": "BugCard contract and schema validation",
           "timeout": 30000
         }
       ]
@@ -16,8 +16,8 @@
       "hooks": [
         {
           "type": "command",
-          "command": "file=\"$(echo $CODEBUDDY_TOOL_INPUT | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(\"file_path\",\"\"))')\"; if echo \"$file\" | grep -qE 'skeptic_.*\\.yaml$'; then python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/validators/skeptic_signoff_checker.py\" \"$file\"; fi",
-          "description": "Skeptic 签署文件写入后格式验证（五把刀覆盖检查）",
+          "command": "python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/utils/codebuddy_hook_dispatch.py\" write-skeptic",
+          "description": "Skeptic signoff artifact validation",
           "timeout": 30000
         }
       ]
@@ -28,8 +28,8 @@
       "hooks": [
         {
           "type": "command",
-          "command": "python3 -c \"\nimport subprocess, sys, json\n\n# 检查是否是结案场景\ntry:\n    input_data = json.loads(sys.stdin.read())\n    msg = input_data.get('assistant_message', '')\nexcept:\n    msg = ''\n\nif any(k in msg for k in ['最终裁决', '根因确认', '结案', 'VALIDATED']):\n    r1 = subprocess.run(['python3', '${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/validators/counterfactual_validator.py', 'session_evidence.yaml'], capture_output=True)\n    r2 = subprocess.run(['python3', '${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/validators/skeptic_signoff_checker.py', 'skeptic_signoff.yaml'], capture_output=True)\n    if r1.returncode != 0 or r2.returncode != 0:\n        print(json.dumps({'decision': 'block', 'reason': '❌ 结案条件未满足：反事实验证或 Skeptic 签署不完整，请补充后重试。'}))\n        sys.exit(0)\n\"",
-          "description": "结案前检查反事实验证记录与 Skeptic 签署状态",
+          "command": "python3 \"${CODEBUDDY_PLUGIN_ROOT}/../../common/hooks/utils/codebuddy_hook_dispatch.py\" stop-gate",
+          "description": "Finalization gate: strict contract + session artifacts + validators",
           "timeout": 30000
         }
       ]

@@ -1,12 +1,12 @@
 ---
 name: "AIRD Capture & Repro"
-description: "捕获与复现专家——设计 A/B 对比 capture 策略，验证 anchor 三维精度"
+description: "Capture A/B evidence and anchor the failing event"
 model: "claude-sonnet-4-5"
 tools: ["bash", "read"]
 color: "#2ECC71"
 ---
 
-<!-- 参考 common/AGENT_CORE.md 了解 AIRD 多平台适配规范 -->
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. Do not edit platform copies manually. -->
 
 # Agent: Capture & Repro
 # 角色：捕获与复现专家
@@ -55,9 +55,10 @@ color: "#2ECC71"
 使用 `rd.*` 工具执行捕获，调用顺序：
 
 ```
-rd.capture.open_file(<capture_path>)
-rd.event.get_actions()              → 确认帧内容完整
-rd.frame.take_screenshot()          → 确认截图与用户报告一致
+rd.capture.open_file(file_path=<capture_path>)  ? ?? capture ??? `session_id`
+rd.event.get_actions(session_id=<session_id>)              → 确认帧内容完整
+rd.event.set_active(session_id=<session_id>, event_id=<anchor_event_id>)
+rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output_path=<shot_path>)          → 确认截图与用户报告一致
 ```
 
 若捕获文件由用户提供，执行相同的验证步骤确认可重放性。
@@ -70,7 +71,7 @@ rd.frame.take_screenshot()          → 确认截图与用户报告一致
 - `像素坐标`：异常像素的精确 (x, y) 坐标（如 `(512, 384)`）
 - `资源 ID`：异常出现在某个纹理或 RT 中（如 `RT_GBuffer_Albedo`）
 
-通过截图观察和初步 `rd.event.get_actions()` 结果，给出尽可能精确的锚点建议。
+通过截图观察和初步 `rd.event.get_actions(session_id=<session_id>)` 结果，给出尽可能精确的锚点建议。
 
 ---
 

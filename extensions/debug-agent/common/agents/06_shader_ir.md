@@ -22,12 +22,14 @@
 ### Step 1: 获取 Shader 源码
 
 ```
-rd.shader.get_source(event_id=<first_bad_event>, stage="PS")
+rd.event.set_active(session_id=<session_id>, event_id=<first_bad_event>)
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.shader.get_source(session_id=<session_id>, shader_id=<shader_id>, prefer_original=true)
 ```
 
 若获取失败（无调试符号），尝试：
 ```
-rd.shader.get_compile_info(event_id=<first_bad_event>)  → 检查编译选项和错误
+rd.shader.get_messages(session_id=<session_id>, severity_min="warning")  → 检查编译选项和错误
 ```
 
 ### Step 2: 静态扫描（关键词优先）
@@ -49,7 +51,8 @@ rd.shader.get_compile_info(event_id=<first_bad_event>)  → 检查编译选项�
 当 trigger_tags 包含 `Adreno_GPU` 或 `RelaxedPrecision`，或 Pixel Forensics 判定为精度问题时：
 
 ```
-rd.shader.get_source(event_id=<first_bad_event>)  → 获取 SPIR-V 或 IR
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.shader.extract_binary(session_id=<session_id>, shader_id=<shader_id>, output_path=<spirv_path>, container="spirv")  → 获取 SPIR-V 或 IR
 ```
 
 在 IR/SPIR-V 中搜索：
@@ -69,7 +72,7 @@ rd.shader.get_source(event_id=<first_bad_event>)  → 获取 SPIR-V 或 IR
 ### Step 5: Shader 单步调试（需要时）
 
 ```
-rd.shader.get_debug(event_id=<first_bad_event>, x=<X>, y=<Y>)
+rd.shader.debug_start(session_id=<session_id>, mode="pixel", event_id=<first_bad_event>, params={"x": <X>, "y": <Y>}, timeout_ms=10000)
 ```
 
 单步执行到可疑代码行，读取：
@@ -89,7 +92,7 @@ rd.shader.get_debug(event_id=<first_bad_event>, x=<X>, y=<Y>)
 
 □ 1. 可疑代码表达式已定位（具体代码行，含代码引用，不得是"大概在光照计算里"）
 □ 2. 若为精度类问题，SPIR-V RelaxedPrecision decoration 扫描结果已提供
-□ 3. 可疑表达式的实际输入值已通过 rd.shader.get_debug 获取（不得是估算值）
+□ 3. 可疑表达式的实际输入值已通过 rd.shader.debug_start 获取（不得是估算值）
 □ 4. 若有 A/B 两份 Shader，已明确说明差异在哪一层（HLSL/SPIR-V/ISA）
 □ 5. 输出的代码指纹格式可被 Driver Agent 和 Skeptic 直接引用验证
 

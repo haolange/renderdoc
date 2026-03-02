@@ -134,7 +134,7 @@ challenges:
       无法确认改变量（half→float）是唯一被修改的变量，
       也无法排除其他同时进行的变更对结果的干扰。
     required_action: >
-      补充：反事实实验中异常像素坐标在修复前后的 RGBA 值对比（rd.texture.get_pixel），
+      补充：反事实实验中异常像素坐标在修复前后的 RGBA 值对比（rd.texture.get_pixel_value），
       并确认其他 Shader 变量在实验期间未被修改。
     status: open                  # open | addressed
 
@@ -176,7 +176,7 @@ blade_review:
     note: "half→float 替换后，像素 (512,384) 从 RGB(0.21,0.19,0.18) 恢复为 RGB(0.38,0.35,0.33)"
   - blade: "刀4: 工具证据刀"
     result: pass
-    note: "所有关键值均来自 rd.shader.get_debug 和 rd.texture.get_pixel 的直接输出"
+    note: "所有关键值均来自 rd.shader.debug_start 和 rd.texture.get_pixel_value 的直接输出"
   - blade: "刀5: 替代假设刀"
     result: pass
     note: "H-002 barrier 缺失已被 Driver Agent 证明不影响目标像素（补充实验 event 521b）"

@@ -1,11 +1,13 @@
 ---
 name: "AIRD Pass Graph / Pipeline"
-description: "命令列表与管线状态分析专家。分析 Native Command List、Pipeline State、System State 和资源屏障，将问题范围从整帧缩小到具体 Event。"
+description: "Trace event divergence through render passes"
 model: inherit
-tools: Bash,Read
+tools: Bash,Read,Write
 skills: aird-debug
-color: "#9B59B6"
+color: "#3498DB"
 ---
+
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. Do not edit platform copies manually. -->
 
 # Agent: Pass Graph / Pipeline
 # 角色：命令列表与管线状态分析专家
@@ -31,7 +33,7 @@ color: "#9B59B6"
 ### Step 1: 构建 Event 树（Debug Marker 层级）
 
 ```
-rd.event.get_actions()   → 获取完整的 DrawCall / Dispatch / Blit 事件列表
+rd.event.get_actions(session_id=<session_id>)   → 获取完整的 DrawCall / Dispatch / Blit 事件列表
 ```
 
 以 **Debug Marker**（`BeginEvent` / `EndEvent`）标注的层级为基础组织事件树。注意：
@@ -44,7 +46,8 @@ rd.event.get_actions()   → 获取完整的 DrawCall / Dispatch / Blit 事件�
 对每个逻辑段内的关键 DrawCall，通过以下方式获取管线状态：
 
 ```
-rd.pipeline.get_state(event_id=<DrawCall EventID>)
+rd.event.set_active(session_id=<session_id>, event_id=<DrawCall EventID>)
+rd.pipeline.get_state(session_id=<session_id>)
 ```
 
 重点检查项：
@@ -64,7 +67,8 @@ A/B 对比时：对相同语义 DrawCall 逐项比较，记录所有差异项进
 ### Step 3: System State 检查
 
 ```
-rd.pipeline.get_state(event_id=<DrawCall EventID>)  → 同时包含资源绑定信息
+rd.event.set_active(session_id=<session_id>, event_id=<DrawCall EventID>)
+rd.pipeline.get_state(session_id=<session_id>)  → 同时包含资源绑定信息
 ```
 
 重点检查项：
@@ -82,7 +86,7 @@ rd.pipeline.get_state(event_id=<DrawCall EventID>)  → 同时包含资源绑定
 ### Step 4: 资源屏障与状态转换追踪
 
 ```
-rd.resource.get_transitions()   → 资源在整帧中的状态转换链
+rd.resource.get_history(session_id=<session_id>, resource_id=<resource_id>, include_reads=true, include_writes=true)   → 资源在整帧中的状态转换链
 ```
 
 识别以下异常模式：

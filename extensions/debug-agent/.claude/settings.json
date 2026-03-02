@@ -1,5 +1,5 @@
 {
-  "description": "AIRD Framework — Claude Code Quality Hooks 配置",
+  "description": "AIRD Framework - Claude Code Quality Hooks",
   "hooks": {
     "PostToolUse": [
       {
@@ -10,25 +10,25 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 common/hooks/validators/bugcard_validator.py \"$TOOL_OUTPUT_FILE\"",
-            "description": "BugCard 写入知识库前自动完整性检查",
+            "command": "python3 common/hooks/utils/codebuddy_hook_dispatch.py write-bugcard",
+            "description": "Validate tool contract and BugCard schema before library write",
             "on_failure": "block",
-            "failure_message": "❌ BugCard 未通过完整性检查，已阻止入库。请修复后重试。"
+            "failure_message": "BugCard write blocked: tool contract drift or BugCard validation failed."
           }
         ]
       },
       {
         "matcher": {
           "tool_name": "Write",
-          "file_pattern": "**/skeptic_*.yaml"
+          "file_pattern": "**/knowledge/library/sessions/**/skeptic_signoff.yaml"
         },
         "hooks": [
           {
             "type": "command",
-            "command": "python3 common/hooks/validators/skeptic_signoff_checker.py \"$TOOL_OUTPUT_FILE\"",
-            "description": "Skeptic 签署文件写入后自动格式验证",
+            "command": "python3 common/hooks/utils/codebuddy_hook_dispatch.py write-skeptic",
+            "description": "Validate tool contract and Skeptic signoff artifact format",
             "on_failure": "warn",
-            "failure_message": "⚠ Skeptic 签署格式不完整，请检查五把刀是否全部覆盖。"
+            "failure_message": "Skeptic signoff file did not pass validation."
           }
         ]
       }
@@ -36,37 +36,23 @@
     "Stop": [
       {
         "matcher": {
-          "assistant_message_pattern": "最终裁决|根因确认|结案|VALIDATED"
+          "assistant_message_pattern": "????|????|??|VALIDATED|final verdict|case closed"
         },
         "hooks": [
           {
             "type": "command",
-            "command": "python3 common/hooks/validators/counterfactual_validator.py session_evidence.yaml",
-            "description": "Team Lead 结案前检查反事实验证记录",
+            "command": "python3 common/hooks/utils/codebuddy_hook_dispatch.py stop-gate-force",
+            "description": "Finalization gate: strict contract + session artifacts + validators",
             "on_failure": "block",
-            "failure_message": "❌ 反事实验证记录不足，无法结案。请补充 counterfactual_test 证据。"
-          },
-          {
-            "type": "command",
-            "command": "python3 common/hooks/validators/skeptic_signoff_checker.py skeptic_signoff.yaml",
-            "description": "Team Lead 结案前检查 Skeptic 签署状态",
-            "on_failure": "block",
-            "failure_message": "❌ Skeptic 尚未签署或存在未解质疑，无法结案。"
+            "failure_message": "Finalization blocked by gate checks."
           }
         ]
       }
     ]
   },
   "hook_notes": {
-    "platform_coverage": {
-      "claude_code": "native hooks via this settings.json",
-      "code_buddy": "native hooks via platforms/code-buddy/hooks/hooks.json (PostToolUse + Stop)",
-      "claude_work": "prompt-layer fallback (质量门槛检查清单 in each agent prompt)",
-      "copilot": "prompt-layer fallback",
-      "minimax": "prompt-layer fallback",
-      "manus": "workflow step gate (Step 5 and Step 8 are explicit quality gates)"
-    },
-    "validator_paths": "相对于 debug-agent/ 根目录",
-    "extending_hooks": "参考 common/hooks/README.md 了解如何添加新 Hook"
+    "tool_contract_ssot": "extensions/rdx-mcp/rdx/spec/tool_catalog_196.json",
+    "session_artifacts_root": "common/knowledge/library/sessions/<session_id>/",
+    "session_marker": "common/knowledge/library/sessions/.current_session"
   }
 }

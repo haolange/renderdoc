@@ -1,11 +1,13 @@
 ---
 name: "AIRD Triage & Taxonomy"
-description: "症状分类专家。将用户的自然语言 Bug 描述映射为标准 symptom_tags 和 trigger_tags，并推荐对应 SOP。在 Team Lead 启动调试会话后首先调用。"
+description: "Classify symptoms and propose initial SOP"
 model: inherit
-tools: Read,Glob
+tools: Bash,Read,Write
 skills: aird-debug
-color: "#3498DB"
+color: "#8E44AD"
 ---
+
+<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. Do not edit platform copies manually. -->
 
 # Agent: Triage & Taxonomy
 # 角色：症状分类专家
