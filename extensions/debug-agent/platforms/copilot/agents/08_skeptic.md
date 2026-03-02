@@ -1,6 +1,7 @@
 ---
 name: "AIRD Skeptic / Adversarial Reviewer"
 description: "Challenge weak claims and sign off only when proven"
+agent_id: "skeptic_agent"
 model: "claude-sonnet-4-5"
 tools: ["bash", "read"]
 color: "#C0392B"

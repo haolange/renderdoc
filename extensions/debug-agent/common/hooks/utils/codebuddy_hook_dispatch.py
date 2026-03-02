@@ -28,13 +28,34 @@ KEYWORDS = (
     "最终裁决",
     "根因确认",
     "结案",
-    "VALIDATED",
     "final verdict",
     "case closed",
 )
 
-BUGCARD_RE = re.compile(r"knowledge[/\\]library[/\\].*bugcard.*\\.ya?ml$", re.IGNORECASE)
-SKEPTIC_RE = re.compile(r"skeptic_.*\\.ya?ml$", re.IGNORECASE)
+_SAFE_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _normalize_path_text(value: str) -> str:
+    return str(value or "").strip().replace("\\", "/")
+
+
+def _is_yaml_path(path: str) -> bool:
+    lowered = _normalize_path_text(path).lower()
+    return lowered.endswith(".yaml") or lowered.endswith(".yml")
+
+
+def _is_bugcard_path(path: str) -> bool:
+    lowered = _normalize_path_text(path).lower()
+    return ("/knowledge/library/bugcards/" in lowered) and _is_yaml_path(lowered)
+
+
+def _is_skeptic_signoff_path(path: str) -> bool:
+    lowered = _normalize_path_text(path).lower()
+    if not _is_yaml_path(lowered):
+        return False
+    return ("/knowledge/library/sessions/" in lowered) and (
+        lowered.endswith("/skeptic_signoff.yaml") or lowered.endswith("/skeptic_signoff.yml")
+    )
 
 
 def _debug_agent_root() -> Path:
@@ -73,9 +94,17 @@ def _extract_tool_output_file() -> str:
             obj = json.loads(payload)
         except json.JSONDecodeError:
             obj = {}
-        file_path = str(obj.get("file_path", "")).strip()
-        if file_path:
-            return file_path
+        if isinstance(obj, dict):
+            for key in ("file_path", "path", "output_file", "output_path", "file"):
+                file_path = str(obj.get(key, "")).strip()
+                if file_path:
+                    return file_path
+            nested = obj.get("result")
+            if isinstance(nested, dict):
+                for key in ("file_path", "path", "output_file", "output_path", "file"):
+                    file_path = str(nested.get(key, "")).strip()
+                    if file_path:
+                        return file_path
     return str(os.environ.get("TOOL_OUTPUT_FILE", "")).strip()
 
 
@@ -86,6 +115,17 @@ def _relay(proc: subprocess.CompletedProcess[str]) -> None:
         print(proc.stderr, end="", file=sys.stderr)
 
 
+def _validate_session_id(session_id: str) -> str:
+    sid = str(session_id or "").strip()
+    if not sid:
+        raise ValueError("empty session id")
+    if sid in {".", ".."}:
+        raise ValueError(f"invalid session id: {sid!r}")
+    if not _SAFE_SESSION_ID_RE.match(sid):
+        raise ValueError(f"invalid session id (must be a single path-safe token): {sid!r}")
+    return sid
+
+
 def _cmd_write_bugcard(root: Path) -> int:
     bugcard_validator, _, _ = _validator_paths(root)
     _, _, skeptic_checker = _validator_paths(root)
@@ -93,7 +133,7 @@ def _cmd_write_bugcard(root: Path) -> int:
     file_path = _extract_tool_output_file()
     if not file_path:
         return 0
-    if not BUGCARD_RE.search(file_path.replace("\\", "/")):
+    if not _is_bugcard_path(file_path):
         return 0
     strict = _run(["python3", str(validate_contract), "--strict"])
     _relay(strict)
@@ -113,7 +153,13 @@ def _cmd_write_bugcard(root: Path) -> int:
     if (not session_id) or (session_id == "session-unset"):
         print(f"invalid current session id: {session_id!r} ({current})", file=sys.stderr)
         return 1
-    signoff_path = root / "common" / "knowledge" / "library" / "sessions" / session_id / "skeptic_signoff.yaml"
+    try:
+        safe_session_id = _validate_session_id(session_id)
+    except ValueError as exc:
+        print(f"invalid current session id: {exc} ({current})", file=sys.stderr)
+        return 1
+
+    signoff_path = root / "common" / "knowledge" / "library" / "sessions" / safe_session_id / "skeptic_signoff.yaml"
     if not signoff_path.is_file():
         print(f"missing skeptic signoff artifact: {signoff_path}", file=sys.stderr)
         return 1
@@ -129,7 +175,7 @@ def _cmd_write_skeptic(root: Path) -> int:
     file_path = _extract_tool_output_file()
     if not file_path:
         return 0
-    if not SKEPTIC_RE.search(Path(file_path).name):
+    if not _is_skeptic_signoff_path(file_path):
         return 0
     strict = _run(["python3", str(validate_contract), "--strict"])
     _relay(strict)
@@ -160,15 +206,38 @@ def _extract_assistant_message(stdin_text: str) -> str:
     try:
         payload = json.loads(stdin_text)
     except json.JSONDecodeError:
-        return ""
-    return str(payload.get("assistant_message", ""))
+        return stdin_text
+
+    if isinstance(payload, dict):
+        for key in ("assistant_message", "assistantMessage", "message", "text"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        messages = payload.get("messages")
+        if isinstance(messages, list):
+            for msg in reversed(messages):
+                if not isinstance(msg, dict):
+                    continue
+                if msg.get("role") != "assistant":
+                    continue
+                content = msg.get("content")
+                if isinstance(content, str) and content.strip():
+                    return content
+                if isinstance(content, list) and content:
+                    first = content[0]
+                    if isinstance(first, dict):
+                        text = first.get("text")
+                        if isinstance(text, str) and text.strip():
+                            return text
+    return ""
 
 
 def _should_gate_stop(stdin_text: str) -> bool:
     msg = _extract_assistant_message(stdin_text)
     if not msg:
         return False
-    return any(token in msg for token in KEYWORDS)
+    lowered = msg.lower()
+    return any(str(token).lower() in lowered for token in KEYWORDS)
 
 
 def _emit_block(reason: str) -> None:

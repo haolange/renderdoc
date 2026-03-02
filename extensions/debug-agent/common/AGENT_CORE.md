@@ -13,24 +13,24 @@
 用户问题输入
      │
      ▼
-01_team_lead（Delegate Mode 协调者）
+01_team_lead（team_lead / Delegate Mode 协调者）
      │
-     ├──► 02_triage_taxonomy     → TRIAGE_RESULT（症状标签、SOP 推荐）
+     ├──► 02_triage_taxonomy（triage_agent）     → TRIAGE_RESULT（症状标签、SOP 推荐）
      │
-     ├──► 03_capture_repro       → CAPTURE_RESULT（A/B capture 文件、anchor）
+     ├──► 03_capture_repro（capture_repro_agent）       → CAPTURE_RESULT（A/B capture 文件、anchor）
      │
-     ├──► 04_pass_graph_pipeline → PIPELINE_RESULT（发散点、资源链）
+     ├──► 04_pass_graph_pipeline（pass_graph_pipeline_agent） → PIPELINE_RESULT（发散点、资源链）
      │
-     ├──► 05_pixel_value_forensics → FORENSICS_RESULT（first_bad_event、像素值）
+     ├──► 05_pixel_value_forensics（pixel_forensics_agent） → FORENSICS_RESULT（first_bad_event、像素值）
      │
-     ├──► 06_shader_ir            → SHADER_IR_RESULT（可疑表达式指纹、SPIR-V 证据）
+     ├──► 06_shader_ir（shader_ir_agent）            → SHADER_IR_RESULT（可疑表达式指纹、SPIR-V 证据）
      │
-     ├──► 07_driver_device        → DRIVER_DEVICE_RESULT（platform_attribution、ISA 差异）
+     ├──► 07_driver_device（driver_device_agent）        → DRIVER_DEVICE_RESULT（platform_attribution、ISA 差异）
      │
-     ├──► 08_skeptic              → SKEPTIC_SIGN_OFF / SKEPTIC_CHALLENGE
+     ├──► 08_skeptic（skeptic_agent）              → SKEPTIC_SIGN_OFF / SKEPTIC_CHALLENGE
      │       （在 VALIDATE→VALIDATED 时强制介入；BugCard 入库前强制介入）
      │
-     └──► 09_report_knowledge_curator → BugFull + BugCard（入库）
+     └──► 09_report_knowledge_curator（curator_agent） → BugFull + BugCard（入库）
 ```
 
 ---
@@ -56,6 +56,20 @@
 - `driver_device_agent`
 - `skeptic_agent`
 - `curator_agent`
+
+为避免「文件名 / UI 展示名 / agent_id」三者混用导致的歧义，补充一份强制映射表：
+
+| agent_id | common prompt 文件（SSOT） | 角色展示名（UI） |
+|---|---|---|
+| `team_lead` | `common/agents/01_team_lead.md` | Team Lead / Orchestrator |
+| `triage_agent` | `common/agents/02_triage_taxonomy.md` | Triage & Taxonomy |
+| `capture_repro_agent` | `common/agents/03_capture_repro.md` | Capture & Repro |
+| `pass_graph_pipeline_agent` | `common/agents/04_pass_graph_pipeline.md` | Pass Graph / Pipeline |
+| `pixel_forensics_agent` | `common/agents/05_pixel_value_forensics.md` | Pixel / Value Forensics |
+| `shader_ir_agent` | `common/agents/06_shader_ir.md` | Shader & IR |
+| `driver_device_agent` | `common/agents/07_driver_device.md` | Driver / Device Specialist |
+| `skeptic_agent` | `common/agents/08_skeptic.md` | Skeptic |
+| `curator_agent` | `common/agents/09_report_knowledge_curator.md` | Report & Knowledge Curator |
 
 ---
 
@@ -262,30 +276,30 @@ Team Lead 触发 Curator
 
 ---
 
-## ????? Session ???SSOT?
+## 工具与 Session 合同（SSOT）
 
-1. ??????????
+1. **工具合同的唯一真值（SSOT）**
    - `extensions/rdx-mcp/rdx/spec/tool_catalog_196.json`
-2. ????????? catalog ???? `rd.*` ????
-3. ?????
-   - ???????????????????? `session_id`?
-   - ??????????????
+2. **所有 prompt / traces 中的 `rd.*` 工具引用必须以 catalog 为准**
+   - 禁止自造工具名、禁止使用过期参数名
+3. **Session 与 Active Event 约束**
+   - `session_id` 必须来自 `rd.capture.open_replay(...)`
+   - 调用 pipeline/resource/shader/debug/export 等工具前，必须先设置事件上下文：
      - `rd.event.set_active(session_id, event_id)`
-     - ??? pipeline/resource/shader/debug/export ???
-4. ?????????
+4. **Session artifacts 合同（结案前必须满足）**
    - `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
    - `common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
    - `common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
-   - `common/knowledge/library/sessions/.current_session`
+   - `common/knowledge/library/sessions/.current_session`（内容为当前 `session_id`）
 
-### ??????
+### 工具合同校验
 
 ```bash
-python extensions/debug-agent/scripts/validate_tool_contract.py --strict
+python3 extensions/debug-agent/scripts/validate_tool_contract.py --strict
 ```
 
-### ????????
+### 同步各平台 Agent prompts
 
 ```bash
-python extensions/debug-agent/scripts/sync_platform_agents.py
+python3 extensions/debug-agent/scripts/sync_platform_agents.py
 ```

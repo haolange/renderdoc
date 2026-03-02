@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "rdx-mcp": {
-      "command": "python",
+      "command": "python3",
       "args": ["-m", "rdx.server"],
       "description": "RenderDoc MCP Server — 提供 rd.* 工具集（rd.capture、rd.pipeline、rd.texture、rd.shader 等）"
     }

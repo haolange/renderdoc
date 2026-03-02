@@ -1,6 +1,7 @@
 ---
 name: "AIRD Driver & Device"
 description: "Perform cross-device attribution and API/ISA checks"
+agent_id: "driver_device_agent"
 tools: ["bash","read"]
 color: "#F39C12"
 ---
@@ -61,8 +62,8 @@ rd.event.get_api_calls(session_id=<session_id_b>, event_id=<first_bad_event>, in
 当 Shader & IR Agent 报告「相同 SPIR-V / HLSL，但 IR 层差异」时：
 
 ```
-rd.pipeline.get_shader(session_id=<session_id_a>, stage="PS")  ? ?? `shader_id_a`
-rd.pipeline.get_shader(session_id=<session_id_b>, stage="PS")  ? ?? `shader_id_b`
+rd.pipeline.get_shader(session_id=<session_id_a>, stage="PS")  → 获取 `shader_id_a`
+rd.pipeline.get_shader(session_id=<session_id_b>, stage="PS")  → 获取 `shader_id_b`
 rd.shader.get_disassembly(session_id=<session_id_a>, shader_id=<shader_id_a>, target="native")
 rd.shader.get_disassembly(session_id=<session_id_b>, shader_id=<shader_id_b>, target="native")
 ```

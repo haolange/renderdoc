@@ -35,6 +35,19 @@ ANSI_YELLOW = "\033[93m"
 ANSI_RESET  = "\033[0m"
 
 
+def _has_nonempty_field(record: dict, key: str) -> bool:
+    if key not in record:
+        return False
+    value = record.get(key)
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
+
+
 def validate_counterfactual(evidence_list: list) -> tuple:
     """
     检查 evidence 列表中是否有合格的反事实验证记录。
@@ -66,9 +79,9 @@ def validate_counterfactual(evidence_list: list) -> tuple:
     for r in passed_records:
         rid = r.get("evidence_id", "?")
         # 必须有 before/after 对比数据
-        if not r.get("before_value") and not r.get("pixel_before"):
+        if not (_has_nonempty_field(r, "before_value") or _has_nonempty_field(r, "pixel_before")):
             quality_issues.append(f"  - {rid}: 缺少 before_value 或 pixel_before（需量化对比数据）")
-        if not r.get("after_value") and not r.get("pixel_after"):
+        if not (_has_nonempty_field(r, "after_value") or _has_nonempty_field(r, "pixel_after")):
             quality_issues.append(f"  - {rid}: 缺少 after_value 或 pixel_after（需量化对比数据）")
         # 不得有主观描述替代量化数据
         description = str(r.get("description", ""))

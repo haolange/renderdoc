@@ -51,7 +51,7 @@ hypothesis_board:
       title: "<一句话假设>"
       status: ACTIVE                   # ACTIVE | VALIDATE | VALIDATED | REFUTED | SPLIT | ARCHIVED
       priority: HIGH                   # CRITICAL | HIGH | MEDIUM | LOW
-      assigned_to: shader_agent        # 负责验证的 Agent
+      assigned_to: shader_ir_agent     # 负责验证的 Agent（agent_id）
       evidence_refs: []                # 累积的证据引用
       counterfactual_done: false       # 反事实验证是否完成
       skeptic_signed: false            # Skeptic 是否已签署
@@ -391,10 +391,12 @@ unclassified_symptoms: []
 使用 `rd.*` 工具执行捕获，调用顺序：
 
 ```
-rd.capture.open_file(file_path=<capture_path>)  ? ?? capture ??? `session_id`
-rd.event.get_actions(session_id=<session_id>)              → 确认帧内容完整
+rd.capture.open_file(file_path=<capture_path>, read_only=true)         → capture_file_id
+rd.capture.open_replay(capture_file_id=<capture_file_id>, options={}) → session_id
+rd.replay.set_frame(session_id=<session_id>, frame_index=0)           → active_event_id
+rd.event.get_actions(session_id=<session_id>)                         → 确认帧内容完整
 rd.event.set_active(session_id=<session_id>, event_id=<anchor_event_id>)
-rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output_path=<shot_path>)          → 确认截图与用户报告一致
+rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output_path=<shot_path>, file_format="png")  → 确认截图与用户报告一致
 ```
 
 若捕获文件由用户提供，执行相同的验证步骤确认可重放性。
@@ -757,7 +759,7 @@ rd.debug.pixel_history(session_id=<session_id>, x=<X>, y=<Y>, include_tests=true
 对于范围类问题（精度、颜色空间），需要读取更大区域的像素值：
 
 ```
-rd.texture.get_region_values(session_id=<session_id>, texture_id=<RT_ID>, rect=[<X0>,<Y0>,<W>,<H>], mip=0, slice=0, sample=0, stride=1, as_type="float")
+rd.texture.get_region_values(session_id=<session_id>, texture_id=<RT_ID>, rect={x:<X0>, y:<Y0>, w:<W>, h:<H>}, mip=0, slice=0, sample=0, stride=1, as_type="float")
 ```
 
 统计：
@@ -867,7 +869,7 @@ recommended_next:
 
 ```
 rd.event.set_active(session_id=<session_id>, event_id=<first_bad_event>)
-rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  → 获取 `shader_id`
 rd.shader.get_source(session_id=<session_id>, shader_id=<shader_id>, prefer_original=true)
 ```
 
@@ -895,7 +897,7 @@ rd.shader.get_messages(session_id=<session_id>, severity_min="warning")  → 检
 当 trigger_tags 包含 `Adreno_GPU` 或 `RelaxedPrecision`，或 Pixel Forensics 判定为精度问题时：
 
 ```
-rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  → 获取 `shader_id`
 rd.shader.extract_binary(session_id=<session_id>, shader_id=<shader_id>, output_path=<spirv_path>, container="spirv")  → 获取 SPIR-V 或 IR
 ```
 
@@ -1071,8 +1073,8 @@ rd.event.get_api_calls(session_id=<session_id_b>, event_id=<first_bad_event>, in
 当 Shader & IR Agent 报告「相同 SPIR-V / HLSL，但 IR 层差异」时：
 
 ```
-rd.pipeline.get_shader(session_id=<session_id_a>, stage="PS")  ? ?? `shader_id_a`
-rd.pipeline.get_shader(session_id=<session_id_b>, stage="PS")  ? ?? `shader_id_b`
+rd.pipeline.get_shader(session_id=<session_id_a>, stage="PS")  → 获取 `shader_id_a`
+rd.pipeline.get_shader(session_id=<session_id_b>, stage="PS")  → 获取 `shader_id_b`
 rd.shader.get_disassembly(session_id=<session_id_a>, shader_id=<shader_id_a>, target="native")
 rd.shader.get_disassembly(session_id=<session_id_b>, shader_id=<shader_id_b>, target="native")
 ```

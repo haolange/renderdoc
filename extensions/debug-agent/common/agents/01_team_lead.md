@@ -41,7 +41,7 @@ hypothesis_board:
       title: "<一句话假设>"
       status: ACTIVE                   # ACTIVE | VALIDATE | VALIDATED | REFUTED | SPLIT | ARCHIVED
       priority: HIGH                   # CRITICAL | HIGH | MEDIUM | LOW
-      assigned_to: shader_agent        # 负责验证的 Agent
+      assigned_to: shader_ir_agent     # 负责验证的 Agent（agent_id）
       evidence_refs: []                # 累积的证据引用
       counterfactual_done: false       # 反事实验证是否完成
       skeptic_signed: false            # Skeptic 是否已签署

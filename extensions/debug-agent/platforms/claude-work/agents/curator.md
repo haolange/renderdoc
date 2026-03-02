@@ -1,6 +1,7 @@
 ---
 name: "AIRD Report & Knowledge Curator"
 description: "Produce BugFull/BugCard and curate reusable knowledge"
+agent_id: "curator_agent"
 tools: ["bash","read"]
 color: "#16A085"
 ---

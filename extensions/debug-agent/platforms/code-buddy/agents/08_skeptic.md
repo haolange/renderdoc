@@ -1,6 +1,7 @@
 ---
 name: "AIRD Skeptic / Adversarial Reviewer"
 description: "Challenge weak claims and sign off only when proven"
+agent_id: "skeptic_agent"
 model: inherit
 tools: Bash,Read,Write
 skills: aird-debug

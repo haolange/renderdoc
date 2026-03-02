@@ -1,6 +1,7 @@
 ---
 name: "AIRD Triage & Taxonomy"
 description: "Classify symptoms and propose initial SOP"
+agent_id: "triage_agent"
 model: "claude-sonnet-4-5"
 tools: ["bash", "read"]
 color: "#8E44AD"

@@ -1,6 +1,7 @@
 ---
 name: "AIRD Pass Graph / Pipeline"
 description: "Trace event divergence through render passes"
+agent_id: "pass_graph_pipeline_agent"
 model: "claude-sonnet-4-5"
 tools: "bash,read"
 color: "#3498DB"

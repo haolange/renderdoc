@@ -1,6 +1,7 @@
 ---
 name: "AIRD Capture & Repro"
 description: "Capture A/B evidence and anchor the failing event"
+agent_id: "capture_repro_agent"
 model: "claude-sonnet-4-5"
 tools: "bash,read"
 color: "#2ECC71"
@@ -55,10 +56,12 @@ color: "#2ECC71"
 使用 `rd.*` 工具执行捕获，调用顺序：
 
 ```
-rd.capture.open_file(file_path=<capture_path>)  ? ?? capture ??? `session_id`
-rd.event.get_actions(session_id=<session_id>)              → 确认帧内容完整
+rd.capture.open_file(file_path=<capture_path>, read_only=true)         → capture_file_id
+rd.capture.open_replay(capture_file_id=<capture_file_id>, options={}) → session_id
+rd.replay.set_frame(session_id=<session_id>, frame_index=0)           → active_event_id
+rd.event.get_actions(session_id=<session_id>)                         → 确认帧内容完整
 rd.event.set_active(session_id=<session_id>, event_id=<anchor_event_id>)
-rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output_path=<shot_path>)          → 确认截图与用户报告一致
+rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output_path=<shot_path>, file_format="png")  → 确认截图与用户报告一致
 ```
 
 若捕获文件由用户提供，执行相同的验证步骤确认可重放性。

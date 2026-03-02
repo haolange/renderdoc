@@ -51,7 +51,7 @@
 - 改变且仅改变关键变量
 - 结果量化（像素值/误差/频率），禁止“看起来更好”
 
-????????????`common/knowledge/library/sessions/<session_id>/session_evidence.yaml`?? `counterfactual_validator.py` ?????
+反事实验证记录建议写入 `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`（evidence 列表中包含 `type: counterfactual_test`），并在结案前运行 `counterfactual_validator.py` 校验。
 
 ## 7. Skeptic 审查记录
 
@@ -101,13 +101,13 @@ skeptic_signed: true
 bugcard_skeptic_signed: true
 ```
 
-## 11. Session ????????
+## 11. Session Artifacts（强制合同）
 
-?????????????????
+结案前必须将本次 session 的关键产出物落盘（供 Hook 校验、审计与复用）。
 
 - `common/knowledge/library/sessions/<session_id>/session_evidence.yaml`
 - `common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
 - `common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
-- `common/knowledge/library/sessions/.current_session`????????? `session_id`?
+- `common/knowledge/library/sessions/.current_session`（文件内容为当前 `session_id`）
 
-???Stop Hook ??? resolver ?????????????????????????
+Stop Hook 会通过 `common/hooks/utils/resolve_session_artifact.py` 读取 `.current_session` 并解析 artifacts 路径；缺失/不合法会阻断结案。

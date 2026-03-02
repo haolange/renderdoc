@@ -44,6 +44,18 @@ META = {
     "09_report_knowledge_curator.md": ("AIRD Report & Knowledge Curator", "Produce BugFull/BugCard and curate reusable knowledge", "#16A085"),
 }
 
+AGENT_IDS = {
+    "01_team_lead.md": "team_lead",
+    "02_triage_taxonomy.md": "triage_agent",
+    "03_capture_repro.md": "capture_repro_agent",
+    "04_pass_graph_pipeline.md": "pass_graph_pipeline_agent",
+    "05_pixel_value_forensics.md": "pixel_forensics_agent",
+    "06_shader_ir.md": "shader_ir_agent",
+    "07_driver_device.md": "driver_device_agent",
+    "08_skeptic.md": "skeptic_agent",
+    "09_report_knowledge_curator.md": "curator_agent",
+}
+
 
 def _root() -> Path:
     # .../extensions/debug-agent/scripts/sync_platform_agents.py
@@ -59,12 +71,13 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
-def _frontmatter_claude_code(name: str, desc: str, color: str) -> str:
+def _frontmatter_claude_code(name: str, desc: str, color: str, agent_id: str) -> str:
     return "\n".join(
         [
             "---",
             f'name: "{name}"',
             f'description: "{desc}"',
+            f'agent_id: "{agent_id}"',
             'model: "claude-sonnet-4-5"',
             'tools: "bash,read"',
             f'color: "{color}"',
@@ -73,12 +86,13 @@ def _frontmatter_claude_code(name: str, desc: str, color: str) -> str:
     )
 
 
-def _frontmatter_code_buddy(name: str, desc: str, color: str) -> str:
+def _frontmatter_code_buddy(name: str, desc: str, color: str, agent_id: str) -> str:
     return "\n".join(
         [
             "---",
             f'name: "{name}"',
             f'description: "{desc}"',
+            f'agent_id: "{agent_id}"',
             "model: inherit",
             "tools: Bash,Read,Write",
             "skills: aird-debug",
@@ -88,12 +102,13 @@ def _frontmatter_code_buddy(name: str, desc: str, color: str) -> str:
     )
 
 
-def _frontmatter_copilot(name: str, desc: str, color: str) -> str:
+def _frontmatter_copilot(name: str, desc: str, color: str, agent_id: str) -> str:
     return "\n".join(
         [
             "---",
             f'name: "{name}"',
             f'description: "{desc}"',
+            f'agent_id: "{agent_id}"',
             'model: "claude-sonnet-4-5"',
             'tools: ["bash", "read"]',
             f'color: "{color}"',
@@ -102,12 +117,13 @@ def _frontmatter_copilot(name: str, desc: str, color: str) -> str:
     )
 
 
-def _frontmatter_claude_work(name: str, desc: str, color: str) -> str:
+def _frontmatter_claude_work(name: str, desc: str, color: str, agent_id: str) -> str:
     return "\n".join(
         [
             "---",
             f'name: "{name}"',
             f'description: "{desc}"',
+            f'agent_id: "{agent_id}"',
             'tools: ["bash","read"]',
             f'color: "{color}"',
             "---",
@@ -130,8 +146,9 @@ def _sync_indexed_platform(target_dir: Path, frontmatter_builder) -> None:
         if not src.is_file():
             raise FileNotFoundError(f"missing source agent: {src}")
         name, desc, color = META[filename]
+        agent_id = AGENT_IDS[filename]
         body = _read(src)
-        fm = frontmatter_builder(name, desc, color)
+        fm = frontmatter_builder(name, desc, color, agent_id)
         _write(target_dir / filename, _wrap(fm, body))
 
 
@@ -142,9 +159,10 @@ def _sync_claude_work(target_dir: Path) -> None:
         if not src.is_file():
             raise FileNotFoundError(f"missing source agent: {src}")
         name, desc, color = META[filename]
+        agent_id = AGENT_IDS[filename]
         dst_name = CLAUDE_WORK_NAMES[filename]
         body = _read(src)
-        fm = _frontmatter_claude_work(name, desc, color)
+        fm = _frontmatter_claude_work(name, desc, color, agent_id)
         _write(target_dir / dst_name, _wrap(fm, body))
 
 

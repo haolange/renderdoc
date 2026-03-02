@@ -1,6 +1,7 @@
 ---
 name: "AIRD Report & Knowledge Curator"
 description: "Produce BugFull/BugCard and curate reusable knowledge"
+agent_id: "curator_agent"
 model: inherit
 tools: Bash,Read,Write
 skills: aird-debug

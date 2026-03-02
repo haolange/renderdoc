@@ -91,21 +91,23 @@ Agent 在 prompt 中声明加载 Plugin 文件：
 # - project_plugin/<project_name>.yaml
 ```
 
-### ??????????? `project_plugin (local-only)` ???
+### `project_plugin`（local-only）
 
-`project_plugin` ???**?????**?????????? MCP ?????
+`project_plugin` 不是 MCP 工具；它是一份**本地文件接口约定**：Agent 通过读取
+`common/project_plugin/<project_name>.yaml` 获得项目上下文（材质模块、资源映射、
+项目不变量），用于更快定位与归因。
 
-?????
+使用方式（概念步骤）：
 
-1. ? Agent ????? `common/project_plugin/<project_name>.yaml`?
-2. ?? `block_id` ? `material_blocks` ????????
-3. ?? `resource_id_pattern` ? `resource_mapping` ????????
+1. 读取 `common/project_plugin/<project_name>.yaml`
+2. 按 `block_id` 在 `material_blocks` 中检索模块信息（如 `hlsl_fingerprint` / `engine_asset_path` / `shader_files`）
+3. 按 `resource_id_pattern` 在 `resource_mapping` 中匹配运行时 `resource_id`（将其翻译为资产类别/路径前缀）
 
-????????
+示例（伪查询）：
 ```
-?? common/project_plugin/<project_name>.yaml
+read common/project_plugin/<project_name>.yaml
   -> material_blocks[block_id == "LIGHTING_BLOCK"]
-  -> resource_mapping[resource_id_pattern ?? "tex_hair_base_d"]
+  -> resource_mapping[resource_id_pattern matches "tex_hair_base_d"]
 ```
 
 ### Triage Agent 增益

@@ -1,6 +1,7 @@
 ---
 name: "AIRD Pixel Value Forensics"
 description: "Locate first bad event using pixel evidence"
+agent_id: "pixel_forensics_agent"
 model: "claude-sonnet-4-5"
 tools: "bash,read"
 color: "#1ABC9C"
@@ -72,7 +73,7 @@ rd.debug.pixel_history(session_id=<session_id>, x=<X>, y=<Y>, include_tests=true
 对于范围类问题（精度、颜色空间），需要读取更大区域的像素值：
 
 ```
-rd.texture.get_region_values(session_id=<session_id>, texture_id=<RT_ID>, rect=[<X0>,<Y0>,<W>,<H>], mip=0, slice=0, sample=0, stride=1, as_type="float")
+rd.texture.get_region_values(session_id=<session_id>, texture_id=<RT_ID>, rect={x:<X0>, y:<Y0>, w:<W>, h:<H>}, mip=0, slice=0, sample=0, stride=1, as_type="float")
 ```
 
 统计：

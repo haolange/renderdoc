@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -14,15 +15,31 @@ ARTIFACT_FILES = {
     "action_chain": "action_chain.jsonl",
 }
 
+_SAFE_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
 
 def _debug_agent_root() -> Path:
     # .../extensions/debug-agent/common/hooks/utils/resolve_session_artifact.py
     return Path(__file__).resolve().parents[3]
 
 
+def _validate_session_id(session_id: str) -> str:
+    sid = str(session_id or "").strip()
+    if not sid:
+        raise ValueError("empty session id")
+    if sid in {".", ".."}:
+        raise ValueError(f"invalid session id: {sid!r}")
+    if not _SAFE_SESSION_ID_RE.match(sid):
+        raise ValueError(
+            "invalid session id (must be a single path-safe token): "
+            f"{sid!r}",
+        )
+    return sid
+
+
 def _resolve_session_id(root: Path, session_id_arg: str | None) -> str:
     if session_id_arg:
-        return session_id_arg.strip()
+        return _validate_session_id(session_id_arg)
     current = root / "common" / "knowledge" / "library" / "sessions" / ".current_session"
     if not current.is_file():
         raise FileNotFoundError(
@@ -31,7 +48,7 @@ def _resolve_session_id(root: Path, session_id_arg: str | None) -> str:
     value = current.read_text(encoding="utf-8").lstrip("\ufeff").strip()
     if not value:
         raise ValueError(f"empty current session marker: {current}")
-    return value
+    return _validate_session_id(value)
 
 
 def main() -> int:

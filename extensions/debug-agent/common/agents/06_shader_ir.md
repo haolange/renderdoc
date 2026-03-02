@@ -23,7 +23,7 @@
 
 ```
 rd.event.set_active(session_id=<session_id>, event_id=<first_bad_event>)
-rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  → 获取 `shader_id`
 rd.shader.get_source(session_id=<session_id>, shader_id=<shader_id>, prefer_original=true)
 ```
 
@@ -51,7 +51,7 @@ rd.shader.get_messages(session_id=<session_id>, severity_min="warning")  → 检
 当 trigger_tags 包含 `Adreno_GPU` 或 `RelaxedPrecision`，或 Pixel Forensics 判定为精度问题时：
 
 ```
-rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  ? ?? `shader_id`
+rd.pipeline.get_shader(session_id=<session_id>, stage="PS")  → 获取 `shader_id`
 rd.shader.extract_binary(session_id=<session_id>, shader_id=<shader_id>, output_path=<spirv_path>, container="spirv")  → 获取 SPIR-V 或 IR
 ```
 

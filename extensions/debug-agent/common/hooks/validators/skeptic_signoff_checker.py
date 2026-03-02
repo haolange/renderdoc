@@ -233,7 +233,9 @@ def check_signoff(data, mode: str = "hypothesis") -> tuple[bool, list[str], dict
             continue
         normalized.append(rec)
 
-    open_challenge_count = 0
+    # Track challenges by id, so append-only logs can update a challenge status
+    # in a later record without being permanently blocked by an earlier "open".
+    challenge_status: dict[str, str] = {}
     has_signed_hypothesis = False
     has_signed_bugcard = False
     signed_hypothesis_targets: list[str] = []
@@ -247,8 +249,15 @@ def check_signoff(data, mode: str = "hypothesis") -> tuple[bool, list[str], dict
         if rec.get("message_type") == "SKEPTIC_CHALLENGE":
             challenges = rec.get("challenges", [])
             if isinstance(challenges, list):
-                open_here = [c for c in challenges if isinstance(c, dict) and c.get("status") == "open"]
-                open_challenge_count += len(open_here)
+                for cidx, c in enumerate(challenges, start=1):
+                    if not isinstance(c, dict):
+                        continue
+                    cid = str(c.get("challenge_id", "")).strip()
+                    if not cid:
+                        cid = f"record{i}_challenge{cidx}"
+                    status = c.get("status")
+                    if status in ("open", "addressed"):
+                        challenge_status[cid] = status
 
         if rec.get("message_type") == "SKEPTIC_SIGN_OFF":
             sign_off = rec.get("sign_off", {}) if isinstance(rec.get("sign_off"), dict) else {}
@@ -262,9 +271,13 @@ def check_signoff(data, mode: str = "hypothesis") -> tuple[bool, list[str], dict
                     has_signed_hypothesis = True
                     signed_hypothesis_targets.append(target or "?")
 
+    open_challenge_ids = sorted([cid for cid, st in challenge_status.items() if st == "open"])
+    open_challenge_count = len(open_challenge_ids)
+
     details = {
         "records": len(normalized),
         "open_challenges": open_challenge_count,
+        "open_challenge_ids": open_challenge_ids,
         "signed_hypothesis_targets": signed_hypothesis_targets,
         "signed_bugcard_targets": signed_bugcard_targets,
     }
@@ -276,6 +289,10 @@ def check_signoff(data, mode: str = "hypothesis") -> tuple[bool, list[str], dict
         return True, [], details
 
     if open_challenge_count > 0:
+        if open_challenge_ids:
+            ids = ", ".join(open_challenge_ids[:12])
+            suffix = "" if len(open_challenge_ids) <= 12 else f" ...(+{len(open_challenge_ids)-12})"
+            return False, [f"存在 {open_challenge_count} 个未回应的质疑项（status: open）：{ids}{suffix}"], details
         return False, [f"存在 {open_challenge_count} 个未回应的质疑项（status: open）"], details
 
     if mode == "hypothesis":
