@@ -81,7 +81,6 @@ python3 common/hooks/validators/skeptic_signoff_checker.py skeptic_output.yaml -
 | **Code Buddy** | `platforms/code-buddy/hooks/hooks.json` 原生 Hooks | 系统级强制（阻断） |
 | Claude Work | Agent Prompt 内嵌「质量门槛检查」清单 | Prompt 层软约束 |
 | Copilot | Agent Prompt 内嵌「质量门槛检查」清单 | Prompt 层软约束 |
-| MiniMax | 合并文件中各 Agent 的质量门槛节 | Prompt 层软约束 |
 | Manus | 工作流 Step 5 和 Step 8 作为显式质量关卡 | 工作流层中等强制 |
 
 ---

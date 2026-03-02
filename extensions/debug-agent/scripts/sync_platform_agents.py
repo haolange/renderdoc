@@ -166,26 +166,6 @@ def _sync_claude_work(target_dir: Path) -> None:
         _write(target_dir / dst_name, _wrap(fm, body))
 
 
-def _sync_minimax(target_file: Path) -> None:
-    common_dir = _root() / "common" / "agents"
-    parts: List[str] = []
-    header = "\n".join(
-        [
-            "<!-- Auto-generated from common/agents by scripts/sync_platform_agents.py. -->",
-            "",
-            "# AIRD Framework - MiniMax Agent Bundle",
-            "",
-            "This file is generated from common/agents to keep platform prompts aligned.",
-            "",
-        ],
-    )
-    parts.append(header)
-    for filename in COMMON_ORDER:
-        body = _read(common_dir / filename).strip()
-        parts.append(f"---\n\n<!-- Source: common/agents/{filename} -->\n\n{body}\n")
-    _write(target_file, "\n".join(parts))
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync platform agent prompts from common/agents")
     parser.add_argument(
@@ -202,20 +182,17 @@ def main() -> int:
         root / "platforms" / "copilot" / "agents",
         root / "platforms" / "claude-work" / "agents",
     ]
-    minimax_target = root / "platforms" / "minimax" / "expert_agents" / "aird_all_agents.md"
 
     if args.check:
         print("planned targets:")
         for item in targets:
             print(f"  - {item}")
-        print(f"  - {minimax_target}")
         return 0
 
     _sync_indexed_platform(targets[0], _frontmatter_claude_code)
     _sync_indexed_platform(targets[1], _frontmatter_code_buddy)
     _sync_indexed_platform(targets[2], _frontmatter_copilot)
     _sync_claude_work(targets[3])
-    _sync_minimax(minimax_target)
     print("platform agent sync complete")
     return 0
 

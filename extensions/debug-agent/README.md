@@ -16,7 +16,7 @@ AIRD（AI-Driven Invariant-Reasoning Debugger）是面向 GPU 渲染 Bug 的多 
 │   知识层（M1）   │  Agent 层（M2/M3）                         │
 │                 │                                             │
 │  knowledge/spec/│  common/agents/   ← 9 个平台无关核心 Prompt │
-│                 │  platforms/       ← 6 个平台适配版本        │
+│                 │  platforms/       ← 5 个平台适配版本        │
 ├─────────────────┼───────────────────────────────────────────┤
 │  质量层（M4）   │  自进化层（M5）                              │
 │                 │                                             │
@@ -47,7 +47,6 @@ python3 -m pip install -r common/hooks/requirements.txt
 | Code Buddy（腾讯云代码助手） | `platforms/code-buddy/` + `.codebuddy-plugin/plugin.json` |
 | Claude Work（桌面插件） | `platforms/claude-work/` + `plugin.json` |
 | GitHub Copilot | `platforms/copilot/agents/` |
-| MiniMax | `platforms/minimax/expert_agents/aird_all_agents.md` |
 | Manus | `platforms/manus/workflows/00_debug_workflow.md` |
 
 ### 2. 加载知识库

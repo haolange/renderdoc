@@ -266,7 +266,6 @@ Team Lead 触发 Curator
 | Code Buddy | `---\nname: ...\nmodel: inherit\ntools: ...\nskills: aird-debug\n---` | 独立文件 + `.codebuddy-plugin/plugin.json` | Skills 自动加载 + 文件系统路径 |
 | Claude Work | `---\nname: ...\ntools: [...]\ncolor: ...\n---` | 独立文件 + plugin.json | 文件系统路径 |
 | Copilot | `---\nname: ...\nmodel: ...\ntools: ...\n---` | 独立文件 | 文件系统路径 |
-| MiniMax | 无 frontmatter，用 `---` 分隔 | 合并为单文件 | 文件路径声明（Agent 读取） |
 | Manus | 工作流步骤描述 | 合并为工作流文档 | 内嵌知识摘要 |
 
 **平台适配约束：**

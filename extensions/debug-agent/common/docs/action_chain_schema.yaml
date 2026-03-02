@@ -18,7 +18,7 @@ required_fields:
 optional_fields:
   - end_time            # ISO 8601
   - total_duration_min  # 总调试时长（分钟）
-  - platform            # 运行平台：claude-code / code-buddy / claude-work / copilot / minimax / manus
+  - platform            # 运行平台：claude-code / code-buddy / claude-work / copilot / manus
   - triage_result_ref   # 关联的 TRIAGE_RESULT 消息路径
   - notes               # 本次调试的自由备注
 
