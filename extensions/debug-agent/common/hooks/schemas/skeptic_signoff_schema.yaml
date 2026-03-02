@@ -1,5 +1,20 @@
 # Skeptic 签署记录格式
 
+# Artifact file format (sessions/<session_id>/skeptic_signoff.yaml):
+# - Either a single YAML object (one Skeptic message), OR
+# - A YAML list of message objects (recommended; append-only, chronological).
+#
+# BugCard signoff convention:
+# - message_type: SKEPTIC_SIGN_OFF
+# - to: curator_agent
+# - target_hypothesis: bugcard
+# - bugcard_skeptic_signed: true
+#
+# Hypothesis signoff convention:
+# - message_type: SKEPTIC_SIGN_OFF
+# - to: team_lead
+# - target_hypothesis: <H-XXX>
+
 # 用于 SKEPTIC_SIGN_OFF 消息的结构验证
 skeptic_signoff_schema:
   required_fields:
@@ -32,7 +47,10 @@ skeptic_challenge_schema:
   required_fields:
     - message_type          # 必须为 "SKEPTIC_CHALLENGE"
     - from                  # 必须为 "skeptic_agent"
+    - to                    # "team_lead" 或 "curator_agent"
+    - target_hypothesis     # 被质疑的假设 ID（如 H-001）或 "bugcard"
     - challenges            # 质疑列表，至少一条
+    - sign_off              # 签署对象，挑战时必须 signed=false
 
   challenge_item_schema:
     required_fields:

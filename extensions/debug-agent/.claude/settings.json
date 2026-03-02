@@ -36,13 +36,13 @@
     "Stop": [
       {
         "matcher": {
-          "assistant_message_pattern": "????|????|??|VALIDATED|final verdict|case closed"
+          "assistant_message_pattern": ".*"
         },
         "hooks": [
           {
             "type": "command",
-            "command": "python3 common/hooks/utils/codebuddy_hook_dispatch.py stop-gate-force",
-            "description": "Finalization gate: strict contract + session artifacts + validators",
+            "command": "python3 common/hooks/utils/codebuddy_hook_dispatch.py stop-gate",
+            "description": "Finalization gate: only blocks when AIRD_FINAL_VERDICT (or other close keywords) appear",
             "on_failure": "block",
             "failure_message": "Finalization blocked by gate checks."
           }

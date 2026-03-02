@@ -77,6 +77,7 @@ rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output
 □ 3. 异常锚点已明确（精确到 Pass 或像素坐标，不得是"大概在某个区域"）
 □ 4. 若设计了 A/B 捕获，两份 capture 的环境可比性已验证（列出对比清单）
 □ 5. capture 文件路径已正确记录，后续 Agent 可直接使用
+□ 6. Anchor 至少包含 event_id；resource_id 若未知必须标注为 unknown（后续由 Pipeline/Forensics 补全）
 
 如有任何一项未通过 → 重新执行捕获或补充验证。
 ```
@@ -109,6 +110,8 @@ captures:
 anchor:
   type: pixel_coordinates            # pixel_coordinates | pass_drawcall | resource_id
   value: "(512, 384)"
+  event_id: 523
+  resource_id: unknown               # 若无法在 Capture 阶段确定，标注 unknown，后续补全
   description: "头发区域白色异常像素，异常帧中清晰可见"
   confidence: high
 

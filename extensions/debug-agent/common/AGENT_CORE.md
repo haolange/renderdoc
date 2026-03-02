@@ -35,6 +35,30 @@
 
 ---
 
+## Agent Identity SSOT（强制）
+
+为消除平台 UI 命名与内部路由/审计之间的歧义，本框架规定：
+
+- **内部协议统一使用 `agent_id`（机器标识）**：
+  - 消息 `from/to`
+  - Action Chain `steps[].agent` 与 `message_to`
+  - Hook/Validator 对产物的校验
+- **平台展示名仅用于 UI 显示**（如 `plugin.json` 的 `agents[].name`），不得用于路由与校验。
+
+`agent_id` 取值（唯一真值）：
+
+- `team_lead`
+- `triage_agent`
+- `capture_repro_agent`
+- `pass_graph_pipeline_agent`
+- `pixel_forensics_agent`
+- `shader_ir_agent`
+- `driver_device_agent`
+- `skeptic_agent`
+- `curator_agent`
+
+---
+
 ## 9 个 Agent 核心定义
 
 ### 01 · Team Lead（调试团队协调者）
@@ -80,7 +104,7 @@
 
 **质量门槛：**
 - A/B 两个 capture 必须同时存在，不得只捕获异常侧
-- Anchor 精确到像素坐标 + event_id + resource_id
+- Anchor **至少**精确到像素坐标 + event_id；resource_id 若无法在 Capture 阶段确定，允许为 `unknown`，由 Pipeline/Forensics 后续补全并在最终报告中收敛为三维 Anchor（Pass + pixel + resource_id）
 
 **输出消息类型：** `CAPTURE_RESULT`
 
@@ -214,7 +238,7 @@ Team Lead 触发 Skeptic Hook
 
 Team Lead 触发 Curator
   → Curator 发出 BUGCARD_REVIEW_REQUEST
-  → Skeptic 返回 BUGCARD_SIGN_OFF
+  → Skeptic 返回 SKEPTIC_SIGN_OFF（target_hypothesis: bugcard, bugcard_skeptic_signed: true）
   → Curator 执行 KB 入库
 ```
 
@@ -265,4 +289,3 @@ python extensions/debug-agent/scripts/validate_tool_contract.py --strict
 ```bash
 python extensions/debug-agent/scripts/sync_platform_agents.py
 ```
-

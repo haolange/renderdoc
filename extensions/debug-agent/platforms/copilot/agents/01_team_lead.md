@@ -139,6 +139,7 @@ deadline: none
 □ 4. Skeptic 提出的所有质疑均已被专家 Agent 回应，且状态为 addressed
 □ 5. BugCard 已生成且通过完整性检查（含 recommended_sop 字段）
 □ 6. 根因与至少一个 invariant_library.yaml 中的不变量精确对应
+□ 7. 你即将输出最终裁决时，必须包含单行标记：AIRD_FINAL_VERDICT（仅在真正结案时输出，用于 Stop Gate）
 
 如有任何一项未通过 → 不得裁决，必须继续调查或要求补充。
 ```

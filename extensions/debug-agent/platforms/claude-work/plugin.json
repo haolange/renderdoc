@@ -44,7 +44,7 @@
       "prompt_file": "./agents/skeptic.md"
     },
     {
-      "name": "Knowledge Curator",
+      "name": "Report & Knowledge Curator",
       "description": "报告与知识管理专家——生成 BugFull / BugCard，维护知识库与跨设备指纹图",
       "prompt_file": "./agents/curator.md"
     }

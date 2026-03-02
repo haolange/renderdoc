@@ -168,6 +168,7 @@ anomaly_localization:
   divergence_point: "DeferredShadingPass"
   anchor_marker: "DeferredShadingPass"
   anchor_event_id: 523
+  resource_id: "RT_HDR"               # 若能确定，输出与 anchor_event_id 对应的关键资源（资源名或 resource_id）
   anchor_type: drawcall
   confidence: high
   primary_evidence: "Pipeline State Shader 差异 + CB b2 数值差异同时出现在 Event#523"

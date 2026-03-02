@@ -43,7 +43,7 @@ python3 common/hooks/validators/bugcard_validator.py path/to/bugcard.yaml --stri
 
 | 属性 | 值 |
 |------|-----|
-| 触发时机 | Team Lead 输出「最终裁决」关键词时（Stop） |
+| 触发时机 | Team Lead 输出 `AIRD_FINAL_VERDICT`（推荐）或「最终裁决/结案」类关键词时（Stop） |
 | 触发工具 | `counterfactual_validator.py` |
 | 检查项 | evidence 列表中存在 type: counterfactual_test + result: passed + 量化数据 |
 | 失败行为 | 阻止结案，要求补充反事实验证 |

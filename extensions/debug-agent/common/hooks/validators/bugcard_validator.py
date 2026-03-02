@@ -30,27 +30,7 @@ except ModuleNotFoundError:
     sys.exit(2)
 
 # ── 必填字段规则 ────────────────────────────────────────────────
-REQUIRED_FIELDS = [
-    "bugcard_id",
-    "title",
-    "symptom_tags",
-    "trigger_tags",
-    "violated_invariants",
-    "recommended_sop",
-    "root_cause_summary",
-    "fingerprint",
-    "fix_verified",
-    "skeptic_signed",
-    "bugcard_skeptic_signed",
-]
-
-FINGERPRINT_SUBFIELDS = ["pattern", "risk_category", "shader_stage"]
-FIX_VERIFICATION_SUBFIELDS = ["pixel_before", "pixel_after"]
-
-BUGCARD_ID_PATTERN = re.compile(r"^BUG-[A-Z]+-\d{3}$")
-SOP_ID_PATTERN = re.compile(r"^SOP-[A-Z]+-\d{2}$")
-
-VAGUE_PATTERNS = ["可能是", "大概", "不确定", "maybe", "probably", "似乎", "或许"]
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "bugcard_required_fields.yaml"
 
 ANSI_RED   = "\033[91m"
 ANSI_GREEN = "\033[92m"
@@ -68,6 +48,11 @@ def _load_yaml(path: Path):
         return None
     except Exception:
         return None
+
+
+def _load_schema() -> dict:
+    schema = _load_yaml(SCHEMA_PATH)
+    return schema if isinstance(schema, dict) else {}
 
 
 def _load_reference_sets():
@@ -94,85 +79,165 @@ def _load_reference_sets():
     }
 
 
+def _eval_condition(condition: str, data: dict) -> tuple[bool, str | None]:
+    """
+    Evaluate a very small condition language used by bugcard_required_fields.yaml.
+    Currently supports:
+      - "<field> == true"
+      - "<field> == false"
+    Returns (ok, error_message).
+    """
+    cond = str(condition or "").strip()
+    m = re.match(r"^([A-Za-z0-9_]+)\s*==\s*(true|false)$", cond)
+    if not m:
+        return False, f"不支持的 condition 表达式：{cond!r}"
+    field, lit = m.group(1), m.group(2)
+    expected = lit == "true"
+    actual = data.get(field)
+    if not isinstance(actual, bool):
+        return False, f"condition 依赖字段 '{field}' 必须为 boolean（当前类型：{type(actual)}）"
+    return actual is expected, None
+
+
+def _is_nonempty_str(x) -> bool:
+    return isinstance(x, str) and bool(x.strip())
+
+
+def _check_required_fields_from_schema(schema: dict, data: dict) -> list[str]:
+    errors: list[str] = []
+    required = schema.get("required_fields", [])
+    if not isinstance(required, list) or not required:
+        return [f"[schema] 无法加载必填字段清单：{SCHEMA_PATH}"]
+
+    for item in required:
+        if not isinstance(item, dict):
+            errors.append("[schema] required_fields 中存在非对象条目")
+            continue
+        field = str(item.get("field", "")).strip()
+        if not field:
+            errors.append("[schema] required_fields 中存在缺少 field 的条目")
+            continue
+
+        cond = item.get("condition")
+        if cond:
+            cond_ok, cond_err = _eval_condition(str(cond), data)
+            if cond_err:
+                errors.append(f"[schema] {field}: {cond_err}")
+                continue
+            if not cond_ok:
+                continue  # condition not met -> not required
+
+        if field not in data or data[field] is None:
+            errors.append(f"[缺失] 必填字段 '{field}' 不存在或为空")
+
+    return errors
+
+
+def _validate_field_against_rule(field: str, rule: dict, data: dict) -> list[str]:
+    errors: list[str] = []
+    if field not in data or data[field] is None:
+        return errors  # presence handled elsewhere
+
+    val = data.get(field)
+    expected_type = str(rule.get("type", "")).strip().lower()
+
+    if expected_type == "string":
+        if not isinstance(val, str):
+            return [f"[类型] '{field}' 必须为 string"]
+        if "min_length" in rule and len(val) < int(rule["min_length"]):
+            errors.append(f"[长度] {field} 过短（{len(val)} 字），至少需要 {int(rule['min_length'])} 字")
+        if "max_length" in rule and len(val) > int(rule["max_length"]):
+            errors.append(f"[长度] {field} 过长（{len(val)} 字），最多 {int(rule['max_length'])} 字")
+        pattern = rule.get("pattern")
+        if pattern:
+            try:
+                rx = re.compile(str(pattern))
+            except re.error as exc:
+                errors.append(f"[schema] {field}: pattern 正则非法：{exc}")
+            else:
+                if not rx.match(val):
+                    errors.append(f"[格式] {field} '{val}' 不符合 pattern {pattern!r}")
+        disallow = rule.get("disallow_patterns")
+        if isinstance(disallow, list):
+            for token in disallow:
+                if token and str(token) in val:
+                    errors.append(f"[质量] {field} 包含禁止表述 {str(token)!r}")
+                    break
+
+    elif expected_type == "boolean":
+        if not isinstance(val, bool):
+            return [f"[类型] {field} 必须为 boolean（true/false）"]
+        if "must_be" in rule and val is not bool(rule.get("must_be")):
+            errors.append(f"[签署] {field} 必须为 {bool(rule.get('must_be'))}")
+
+    elif expected_type == "list":
+        if not isinstance(val, list):
+            return [f"[类型] '{field}' 必须是列表"]
+        min_items = rule.get("min_items")
+        if min_items is not None and len(val) < int(min_items):
+            errors.append(f"[类型] '{field}' 必须是非空列表（至少 {int(min_items)} 项）")
+        # For required list fields in BugCard, enforce string elements.
+        if field in {"symptom_tags", "trigger_tags", "violated_invariants"}:
+            if any((not _is_nonempty_str(x)) for x in val):
+                errors.append(f"[类型] '{field}' 列表元素必须为非空字符串")
+
+    elif expected_type == "object":
+        if not isinstance(val, dict):
+            return [f"[类型] {field} 必须为对象"]
+        sub = rule.get("required_subfields")
+        if isinstance(sub, list):
+            for sf in sub:
+                sfs = str(sf).strip()
+                if not sfs:
+                    continue
+                if sfs not in val or val.get(sfs) in (None, "", [], {}):
+                    errors.append(f"[缺失] {field}.{sfs} 不存在或为空")
+
+    else:
+        errors.append(f"[schema] {field}: 未支持的 type={expected_type!r}")
+
+    return errors
+
+
 def validate_bugcard(data: dict, strict: bool = False) -> list:
     """验证 BugCard 数据，返回错误列表（空列表表示通过）。"""
     errors = []
 
-    # 1. 必填字段存在性检查
-    for field in REQUIRED_FIELDS:
-        if field not in data or data[field] is None:
-            errors.append(f"[缺失] 必填字段 '{field}' 不存在或为空")
+    schema = _load_schema()
+
+    # 1. 必填字段存在性检查（以 schema 为唯一真值）
+    errors.extend(_check_required_fields_from_schema(schema, data))
 
     if errors:
         return errors  # 字段缺失时不继续深度检查
 
-    # 2. bugcard_id 格式
-    if not BUGCARD_ID_PATTERN.match(str(data.get("bugcard_id", ""))):
-        errors.append(f"[格式] bugcard_id '{data['bugcard_id']}' 不符合格式 BUG-<类别>-<序号>（如 BUG-PREC-002）")
+    # 2. 深度字段校验（以 schema 为准，覆盖 pattern/min/max/disallow/condition 等）
+    required = schema.get("required_fields", [])
+    if isinstance(required, list):
+        for rule in required:
+            if not isinstance(rule, dict):
+                continue
+            field = str(rule.get("field", "")).strip()
+            if not field:
+                continue
+            cond = rule.get("condition")
+            if cond:
+                cond_ok, cond_err = _eval_condition(str(cond), data)
+                if cond_err:
+                    errors.append(f"[schema] {field}: {cond_err}")
+                    continue
+                if not cond_ok:
+                    continue
+            errors.extend(_validate_field_against_rule(field, rule, data))
+    else:
+        errors.append(f"[schema] required_fields 解析失败：{SCHEMA_PATH}")
 
-    # 3. title 长度
-    title = str(data.get("title", ""))
-    if len(title) < 10:
-        errors.append(f"[长度] title 过短（{len(title)} 字），至少需要 10 字")
-    if len(title) > 120:
-        errors.append(f"[长度] title 过长（{len(title)} 字），最多 120 字")
-
-    # 4. symptom_tags / trigger_tags / violated_invariants 非空列表
-    for list_field in ["symptom_tags", "trigger_tags", "violated_invariants"]:
-        val = data.get(list_field)
-        if not isinstance(val, list) or len(val) == 0:
-            errors.append(f"[类型] '{list_field}' 必须是非空列表")
-        elif any(not isinstance(x, str) or not x.strip() for x in val):
-            errors.append(f"[类型] '{list_field}' 列表元素必须为非空字符串")
-
-    # 5. recommended_sop 格式
-    sop = str(data.get("recommended_sop", ""))
-    if not SOP_ID_PATTERN.match(sop):
-        errors.append(f"[格式] recommended_sop '{sop}' 不符合格式 SOP-<类别>-<序号>（如 SOP-PREC-01）")
-
-    # 6. root_cause_summary 长度 + 禁止模糊表述
-    rcs = str(data.get("root_cause_summary", ""))
-    if len(rcs) < 30:
-        errors.append(f"[长度] root_cause_summary 过短（{len(rcs)} 字），至少需要 30 字")
-    for vague in VAGUE_PATTERNS:
-        if vague in rcs:
-            errors.append(f"[质量] root_cause_summary 包含模糊表述 '{vague}'，必须精确描述根因")
-            break
-
-    # 7. fingerprint 子字段
+    # 3. 补充一致性检查（保持历史行为）
     fp = data.get("fingerprint")
     if isinstance(fp, dict):
-        for sub in FINGERPRINT_SUBFIELDS:
-            if sub not in fp or not fp[sub]:
-                errors.append(f"[缺失] fingerprint.{sub} 不存在或为空")
         stage = str(fp.get("shader_stage", "")).strip()
         if stage and stage not in ALLOWED_SHADER_STAGES:
             errors.append(f"[格式] fingerprint.shader_stage '{stage}' 非法，允许值：{sorted(ALLOWED_SHADER_STAGES)}")
-    else:
-        errors.append("[类型] fingerprint 必须是包含 pattern/risk_category/shader_stage 的对象")
-
-    # 8. fix_verification_data（当 fix_verified=True 时）
-    if not isinstance(data.get("fix_verified"), bool):
-        errors.append("[类型] fix_verified 必须为 boolean（true/false）")
-
-    if data.get("fix_verified") is True:
-        fvd = data.get("fix_verification_data")
-        if isinstance(fvd, dict):
-            for sub in FIX_VERIFICATION_SUBFIELDS:
-                if sub not in fvd or not fvd[sub]:
-                    errors.append(f"[缺失] fix_verification_data.{sub} 不存在或为空")
-        else:
-            errors.append("[类型] fix_verification_data 必须包含 pixel_before 和 pixel_after")
-
-    # 9. Skeptic 签署状态
-    if not isinstance(data.get("skeptic_signed"), bool):
-        errors.append("[类型] skeptic_signed 必须为 boolean（true/false）")
-    if data.get("skeptic_signed") is not True:
-        errors.append("[签署] skeptic_signed 必须为 true（需 Skeptic Agent 签署后方可入库）")
-    if not isinstance(data.get("bugcard_skeptic_signed"), bool):
-        errors.append("[类型] bugcard_skeptic_signed 必须为 boolean（true/false）")
-    if data.get("bugcard_skeptic_signed") is not True:
-        errors.append("[签署] bugcard_skeptic_signed 必须为 true（需 Skeptic Agent 对 BugCard 内容二次签署）")
 
     # 10. --strict：跨文件引用一致性检查
     if strict and not errors:

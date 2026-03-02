@@ -26,7 +26,7 @@ optional_fields:
 step_schema:
   required:
     - step_id           # 整数，从 1 开始，单调递增
-    - agent             # 执行 Agent：team_lead / triage / capture / pipeline / forensics / shader / driver / skeptic / curator
+    - agent             # 执行 Agent（agent_id）：team_lead / triage_agent / capture_repro_agent / pass_graph_pipeline_agent / pixel_forensics_agent / shader_ir_agent / driver_device_agent / skeptic_agent / curator_agent
     - action_type       # 动作类型（见 action_types）
     - timestamp         # ISO 8601
 
@@ -45,9 +45,11 @@ step_schema:
 action_types:
   - tool_call           # 调用 rd.* 工具
   - repo_search         # 在仓库/知识库目录中全文搜索（rg/grep/IDE）
+  - taxonomy_lookup     # 分类学/不变量/SOP 的索引查表（纯读取）
   - hypothesis_update   # 假设板状态变更
   - evidence_add        # 新增证据
   - message_send        # Agent 间消息传递
+  - artifact_write      # 写入 session artifacts / library files（如 sessions/<id>/*.yaml）
   - quality_check       # 质量 Hook 触发（validator 运行）
   - human_input         # 用户提供额外信息
 
@@ -77,11 +79,11 @@ example:
     - step_id: 1
       agent: team_lead
       action_type: message_send
-      message_to: triage
+      message_to: triage_agent
       timestamp: "2026-02-27T10:00:30+08:00"
       output_summary: "派发任务：分类头发着色黑化问题"
     - step_id: 2
-      agent: triage
+      agent: triage_agent
       action_type: repo_search
       params: {paths: ["knowledge/library/bugcards/"], query: "hair blackout Adreno"}
       output_summary: "在 bugcards/ 中命中 BUG-PREC-001（相似指纹），推荐 SOP-PREC-01"

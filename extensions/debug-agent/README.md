@@ -106,7 +106,7 @@ Team Lead 将自动调度 Triage → Capture → 并行专家分析 → Skeptic 
 | 06 Shader & IR | HLSL/SPIR-V/ISA 分析，代码指纹 | `SHADER_IR_RESULT` |
 | 07 Driver & Device | API Trace + ISA 对比，驱动归因 | `DRIVER_DEVICE_RESULT` |
 | 08 Skeptic | 五把解剖刀审查，双重签署门禁 | `SKEPTIC_SIGN_OFF` / `SKEPTIC_CHALLENGE` |
-| 09 Knowledge Curator | BugFull + BugCard 生成，知识库入库 | `BUGCARD_REVIEW_REQUEST` |
+| 09 Report & Knowledge Curator | BugFull + BugCard 生成，知识库入库 | `BUGCARD_REVIEW_REQUEST` |
 
 权威定义：`common/AGENT_CORE.md`
 
@@ -157,7 +157,7 @@ common/project_plugin/
 |------|------|
 | **不变量（Invariant）** | 渲染过程中必须永远成立的约束（如「禁止 NaN/Inf 传播」） |
 | **First Bad Event** | 像素历史中最早产生异常值的 DrawCall（event_id） |
-| **Anchor** | 问题定位的三维坐标：Pass + 像素坐标 + resource_id |
+| **Anchor** | 问题定位的三维坐标（最终态）：Pass + 像素坐标 + resource_id（Capture 阶段允许 resource_id=unknown，后续补全） |
 | **Hypothesis Board** | Team Lead 维护的假设状态机（ACTIVE→VALIDATE→VALIDATED/REFUTED） |
 | **五把解剖刀** | Skeptic Agent 的审查框架：相关性/覆盖性/反事实/工具证据/替代假设 |
 | **BugCard** | 轻量 YAML 检索卡片（< 50 行），可在 `knowledge/library/bugcards/` 中全文检索（rg/grep/IDE 搜索） |
@@ -193,4 +193,3 @@ Artifacts must be written to:
 - `extensions/debug-agent/common/knowledge/library/sessions/<session_id>/skeptic_signoff.yaml`
 - `extensions/debug-agent/common/knowledge/library/sessions/<session_id>/action_chain.jsonl`
 - `extensions/debug-agent/common/knowledge/library/sessions/.current_session`
-

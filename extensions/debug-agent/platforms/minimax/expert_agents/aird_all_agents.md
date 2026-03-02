@@ -139,6 +139,7 @@ deadline: none
 □ 4. Skeptic 提出的所有质疑均已被专家 Agent 回应，且状态为 addressed
 □ 5. BugCard 已生成且通过完整性检查（含 recommended_sop 字段）
 □ 6. 根因与至少一个 invariant_library.yaml 中的不变量精确对应
+□ 7. 你即将输出最终裁决时，必须包含单行标记：AIRD_FINAL_VERDICT（仅在真正结案时输出，用于 Stop Gate）
 
 如有任何一项未通过 → 不得裁决，必须继续调查或要求补充。
 ```
@@ -422,6 +423,7 @@ rd.export.screenshot(session_id=<session_id>, event_id=<anchor_event_id>, output
 □ 3. 异常锚点已明确（精确到 Pass 或像素坐标，不得是"大概在某个区域"）
 □ 4. 若设计了 A/B 捕获，两份 capture 的环境可比性已验证（列出对比清单）
 □ 5. capture 文件路径已正确记录，后续 Agent 可直接使用
+□ 6. Anchor 至少包含 event_id；resource_id 若未知必须标注为 unknown（后续由 Pipeline/Forensics 补全）
 
 如有任何一项未通过 → 重新执行捕获或补充验证。
 ```
@@ -454,6 +456,8 @@ captures:
 anchor:
   type: pixel_coordinates            # pixel_coordinates | pass_drawcall | resource_id
   value: "(512, 384)"
+  event_id: 523
+  resource_id: unknown               # 若无法在 Capture 阶段确定，标注 unknown，后续补全
   description: "头发区域白色异常像素，异常帧中清晰可见"
   confidence: high
 
@@ -651,6 +655,7 @@ anomaly_localization:
   divergence_point: "DeferredShadingPass"
   anchor_marker: "DeferredShadingPass"
   anchor_event_id: 523
+  resource_id: "RT_HDR"               # 若能确定，输出与 anchor_event_id 对应的关键资源（资源名或 resource_id）
   anchor_type: drawcall
   confidence: high
   primary_evidence: "Pipeline State Shader 差异 + CB b2 数值差异同时出现在 Event#523"
