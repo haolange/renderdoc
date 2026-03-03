@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -14,7 +15,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "rdx" / "spec" / "tool_catalog_196.json"
-DEFAULT_RDX_RENDERDOC_PATH = Path(r"d:\Projects\Native\Renderdoc MCP\x64\Development\pymodules")
+DEFAULT_RDX_RENDERDOC_PATH = (ROOT.parents[2] / "x64" / "Development" / "pymodules").resolve()
 TMP_DIR = Path(tempfile.gettempdir()) / "rdx_mcp_pytest_tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -48,7 +49,11 @@ REMOVED_EXTENSION_TOOLS = {
 
 
 def _pick_rdc_path() -> Path:
+    env_path = os.environ.get("RDX_TEST_RDC")
+    if env_path and Path(env_path).is_file():
+        return Path(env_path)
     candidates = [
+        Path.home() / "Desktop" / "03.rdc",
         Path(r"C:\Users\a1824\Desktop\rdcFiles\TestRdc.rdc"),
         Path(r"C:\Users\a1824\Desktop\rdcFiles\TestRdc_Desktop.rdc"),
         Path(r"C:\Users\a1824\Desktop\rdcFiles\TestRdc_Mobile.rdc"),
@@ -91,6 +96,11 @@ def _parse_tool_result(result: Any) -> Tuple[Dict[str, Any] | None, str]:
 async def _call_tool(session: ClientSession, name: str, args: Dict[str, Any]) -> Tuple[Dict[str, Any] | None, str]:
     result = await session.call_tool(name, args)
     return _parse_tool_result(result)
+
+
+def _is_canonical_payload(payload: Dict[str, Any]) -> bool:
+    required = {"schema_version", "tool_version", "result_kind", "ok", "data", "artifacts", "error"}
+    return all(key in payload for key in required)
 
 
 def _param_map() -> Dict[str, List[str]]:
@@ -234,7 +244,7 @@ def _build_args(tool: str, param_names: List[str], ctx: Dict[str, Any]) -> Dict[
 
 @pytest.mark.asyncio
 async def test_tool_list_contract_196():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -247,7 +257,7 @@ async def test_tool_list_contract_196():
 
 @pytest.mark.asyncio
 async def test_response_contract_all_tools_called_once():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     mapping = _param_map()
 
     async with stdio_client(params) as (read, write):
@@ -260,39 +270,39 @@ async def test_response_contract_all_tools_called_once():
             if RDC_PATH.is_file():
                 await _call_tool(session, "rd.core.init", {"global_env": {"artifact_dir": str(TMP_DIR)}, "enable_remote": True, "enable_app_api": True})
                 payload, _ = await _call_tool(session, "rd.capture.open_file", {"file_path": str(RDC_PATH), "read_only": True})
-                if payload and payload.get("success"):
+                if payload and payload.get("ok"):
                     ctx["capture_file_id"] = payload.get("capture_file_id")
                 if ctx.get("capture_file_id"):
                     payload, _ = await _call_tool(session, "rd.capture.open_replay", {"capture_file_id": ctx["capture_file_id"], "options": {}})
-                    if payload and payload.get("success"):
+                    if payload and payload.get("ok"):
                         ctx["session_id"] = payload.get("session_id")
                 if ctx.get("session_id"):
                     await _call_tool(session, "rd.replay.set_frame", {"session_id": ctx["session_id"], "frame_index": 0})
                     payload, _ = await _call_tool(session, "rd.replay.get_frame_info", {"session_id": ctx["session_id"], "frame_index": 0})
-                    if payload and payload.get("success"):
+                    if payload and payload.get("ok"):
                         event_range = payload.get("frame_info", {}).get("event_range", {})
                         ctx["event_id"] = event_range.get("start") or 1
                     payload, _ = await _call_tool(session, "rd.resource.list_textures", {"session_id": ctx["session_id"]})
-                    if payload and payload.get("success") and payload.get("textures"):
+                    if payload and payload.get("ok") and payload.get("textures"):
                         t = payload["textures"][0]
                         ctx["texture_id"] = t.get("texture_id") or t.get("resource_id")
                         ctx["resource_id"] = ctx["texture_id"]
                     payload, _ = await _call_tool(session, "rd.resource.list_buffers", {"session_id": ctx["session_id"]})
-                    if payload and payload.get("success") and payload.get("buffers"):
+                    if payload and payload.get("ok") and payload.get("buffers"):
                         b = payload["buffers"][0]
                         ctx["buffer_id"] = b.get("buffer_id") or b.get("resource_id")
                         ctx.setdefault("resource_id", ctx["buffer_id"])
                     payload, _ = await _call_tool(session, "rd.pipeline.get_shader", {"session_id": ctx["session_id"], "stage": "ps"})
-                    if payload and payload.get("success") and payload.get("shader"):
+                    if payload and payload.get("ok") and payload.get("shader"):
                         ctx["shader_id"] = payload["shader"].get("shader_id")
                     payload, _ = await _call_tool(session, "rd.shader.debug_start", {"session_id": ctx["session_id"], "mode": "pixel", "params": {"x": 1, "y": 1}, "event_id": ctx.get("event_id", 1)})
-                    if payload and payload.get("success"):
+                    if payload and payload.get("ok"):
                         ctx["shader_debug_id"] = payload.get("shader_debug_id")
                     payload, _ = await _call_tool(session, "rd.shader.edit_and_replace", {"session_id": ctx["session_id"], "stage": "ps", "shader_id": ctx.get("shader_id", "")})
-                    if payload and payload.get("success"):
+                    if payload and payload.get("ok"):
                         ctx["replacement_id"] = payload.get("replacement_id")
             payload, _ = await _call_tool(session, "rd.remote.connect", {"host": "127.0.0.1", "port": 38920})
-            if payload and payload.get("success"):
+            if payload and payload.get("ok"):
                 ctx["remote_id"] = payload.get("remote_id")
 
             call_errors: List[Tuple[str, str]] = []
@@ -309,10 +319,10 @@ async def test_response_contract_all_tools_called_once():
                 if payload is None:
                     parse_errors.append((name, raw[:200]))
                     continue
-                if "success" not in payload:
+                if not _is_canonical_payload(payload):
                     schema_errors.append(name)
                     continue
-                if payload.get("success") is False and "error_message" not in payload:
+                if payload.get("ok") is False and payload.get("error") is None:
                     schema_errors.append(name)
 
             assert not call_errors, f"tool call exceptions: {call_errors[:5]}"
@@ -325,20 +335,20 @@ async def test_local_rdc_end_to_end_chain():
     if not RDC_PATH.is_file():
         pytest.skip(f"missing test rdc: {RDC_PATH}")
 
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
             p, _ = await _call_tool(session, "rd.core.init", {"global_env": {"artifact_dir": str(TMP_DIR)}, "enable_remote": True, "enable_app_api": True})
-            assert p and "success" in p
+            assert p and _is_canonical_payload(p)
 
             p, _ = await _call_tool(session, "rd.capture.open_file", {"file_path": str(RDC_PATH), "read_only": True})
-            assert p and p.get("success"), p
+            assert p and p.get("ok"), p
             capture_file_id = p["capture_file_id"]
 
             p, _ = await _call_tool(session, "rd.capture.open_replay", {"capture_file_id": capture_file_id, "options": {}})
-            assert p and p.get("success"), p
+            assert p and p.get("ok"), p
             session_id = p["session_id"]
 
             for tool, args in [
@@ -353,11 +363,11 @@ async def test_local_rdc_end_to_end_chain():
             ]:
                 payload, raw = await _call_tool(session, tool, args)
                 assert payload is not None, f"{tool} returned non-json: {raw[:160]}"
-                assert "success" in payload, f"{tool} missing success: {payload}"
+                assert _is_canonical_payload(payload), f"{tool} missing canonical fields: {payload}"
 
             p_tex, _ = await _call_tool(session, "rd.resource.list_textures", {"session_id": session_id})
             texture_id = None
-            if p_tex and p_tex.get("success") and p_tex.get("textures"):
+            if p_tex and p_tex.get("ok") and p_tex.get("textures"):
                 texture_id = p_tex["textures"][0].get("texture_id") or p_tex["textures"][0].get("resource_id")
 
             if texture_id:
@@ -372,7 +382,7 @@ async def test_local_rdc_end_to_end_chain():
                     },
                 )
                 assert payload is not None, f"rd.texture.get_data non-json: {raw[:160]}"
-                assert "success" in payload
+                assert _is_canonical_payload(payload)
 
                 payload, raw = await _call_tool(
                     session,
@@ -388,15 +398,15 @@ async def test_local_rdc_end_to_end_chain():
                     },
                 )
                 assert payload is not None, f"rd.export.screenshot non-json: {raw[:160]}"
-                assert "success" in payload
+                assert _is_canonical_payload(payload)
 
             payload, raw = await _call_tool(session, "rd.remote.connect", {"host": "127.0.0.1", "port": 38920})
             assert payload is not None, f"rd.remote.connect non-json: {raw[:160]}"
-            assert "success" in payload
+            assert _is_canonical_payload(payload)
             remote_id = payload.get("remote_id")
             if remote_id:
                 payload, raw = await _call_tool(session, "rd.remote.ping", {"remote_id": remote_id})
                 assert payload is not None, f"rd.remote.ping non-json: {raw[:160]}"
-                assert "success" in payload
-                if payload.get("success") is False:
-                    assert "error_message" in payload
+                assert _is_canonical_payload(payload)
+                if payload.get("ok") is False:
+                    assert isinstance(payload.get("error"), dict)

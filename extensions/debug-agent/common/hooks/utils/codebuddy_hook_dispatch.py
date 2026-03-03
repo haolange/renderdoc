@@ -72,6 +72,10 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _py_cmd(*parts: str) -> list[str]:
+    return [sys.executable, *[str(p) for p in parts]]
+
+
 def _validator_paths(root: Path) -> tuple[Path, Path, Path]:
     validators = root / "common" / "hooks" / "validators"
     return (
@@ -135,11 +139,11 @@ def _cmd_write_bugcard(root: Path) -> int:
         return 0
     if not _is_bugcard_path(file_path):
         return 0
-    strict = _run(["python3", str(validate_contract), "--strict"])
+    strict = _run(_py_cmd(str(validate_contract), "--strict"))
     _relay(strict)
     if strict.returncode != 0:
         return strict.returncode
-    proc = _run(["python3", str(bugcard_validator), file_path])
+    proc = _run(_py_cmd(str(bugcard_validator), file_path))
     _relay(proc)
     if proc.returncode != 0:
         return proc.returncode
@@ -164,7 +168,7 @@ def _cmd_write_bugcard(root: Path) -> int:
         print(f"missing skeptic signoff artifact: {signoff_path}", file=sys.stderr)
         return 1
 
-    proc2 = _run(["python3", str(skeptic_checker), str(signoff_path), "--mode", "bugcard"])
+    proc2 = _run(_py_cmd(str(skeptic_checker), str(signoff_path), "--mode", "bugcard"))
     _relay(proc2)
     return proc2.returncode
 
@@ -177,11 +181,11 @@ def _cmd_write_skeptic(root: Path) -> int:
         return 0
     if not _is_skeptic_signoff_path(file_path):
         return 0
-    strict = _run(["python3", str(validate_contract), "--strict"])
+    strict = _run(_py_cmd(str(validate_contract), "--strict"))
     _relay(strict)
     if strict.returncode != 0:
         return strict.returncode
-    proc = _run(["python3", str(skeptic_checker), file_path, "--mode", "format"])
+    proc = _run(_py_cmd(str(skeptic_checker), file_path, "--mode", "format"))
     _relay(proc)
     return proc.returncode
 
@@ -189,13 +193,12 @@ def _cmd_write_skeptic(root: Path) -> int:
 def _resolve_artifact(root: Path, artifact: str) -> Tuple[int, str, str]:
     resolve_artifact, _ = _script_paths(root)
     proc = _run(
-        [
-            "python3",
+        _py_cmd(
             str(resolve_artifact),
             "--artifact",
             artifact,
             "--must-exist",
-        ],
+        ),
     )
     return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
 
@@ -254,7 +257,7 @@ def _cmd_stop_gate(root: Path, force: bool = False) -> int:
 
     errors: list[str] = []
 
-    strict = _run(["python3", str(validate_contract), "--strict"])
+    strict = _run(_py_cmd(str(validate_contract), "--strict"))
     if strict.returncode != 0:
         _relay(strict)
         errors.append("tool contract validation failed")
@@ -271,12 +274,12 @@ def _cmd_stop_gate(root: Path, force: bool = False) -> int:
         errors.append(f"missing action chain artifact ({action_chain_err or 'action_chain.jsonl'})")
 
     if not errors:
-        r1 = _run(["python3", str(counterfactual_validator), evidence_path])
+        r1 = _run(_py_cmd(str(counterfactual_validator), evidence_path))
         _relay(r1)
         if r1.returncode != 0:
             errors.append("counterfactual validator failed")
 
-        r2 = _run(["python3", str(skeptic_checker), signoff_path, "--mode", "hypothesis"])
+        r2 = _run(_py_cmd(str(skeptic_checker), signoff_path, "--mode", "hypothesis"))
         _relay(r2)
         if r2.returncode != 0:
             errors.append("skeptic signoff checker failed")

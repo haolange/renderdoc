@@ -1,88 +1,64 @@
-# 快速开始（Quickstart）
+﻿# 蹇€熷紑濮嬶紙Quickstart锛?
 
-本页目标：**最短路径跑起来**，并能在 MCP 客户端中按步骤调用 `rd.*` 工具完成一次基本的 capture 打开与浏览。
+启动入口：`rdx.bat` 会调用 `rdx_launcher.py`，启动前会先做环境自检（Python 依赖 / uv / ngrok），缺失时会给出安装建议与命令。
+鏈〉鐩爣锛?*鏈€鐭矾寰勮窇璧锋潵**锛屽苟鑳藉湪 MCP 瀹㈡埛绔腑鎸夋楠よ皟鐢?`rd.*` 宸ュ叿瀹屾垚涓€娆″熀鏈殑 capture 鎵撳紑涓庢祻瑙堛€?
+## 鍓嶇疆鏉′欢
 
-## 前置条件
+**蹇呴渶**
 
-**必需**
+- Python `>= 3.10`锛堣 `extensions/rdx-mcp/pyproject.toml`锛夈€?- 闇€瑕佹湰浠撳簱鐨?RenderDoc 婧愮爜骞跺畬鎴愭湰鍦扮紪璇戯紝鐢熸垚 `renderdoc.pyd` 涓?`renderdoc.dll`锛圵indows 榛樿杈撳嚭瑙佷笅锛夈€?- RenderDoc 鐨?Python module 鍙瀵煎叆锛歚import renderdoc`銆?  - 甯歌鍋氭硶锛氳缃?`RDX_RENDERDOC_PATH`锛屽皢 RenderDoc 鐨?Python module 鎵€鍦ㄧ洰褰曞姞鍏?`sys.path`锛坄extensions/rdx-mcp/rdx_launcher.py` 浼氳鍙栧畠锛夈€?  - Windows 涓?`rdx.bat` 浼氳嚜鍔ㄦ帰娴嬮粯璁よ緭鍑哄竷灞€锛堜緥濡?`x64\Development\pymodules`锛夛紝鏈懡涓椂鍐嶆墜鍔ㄨ缃嵆鍙€?
+**鍙€夛紙鎸夐渶锛?*
 
-- Python `>= 3.10`（见 `extensions/rdx-mcp/pyproject.toml`）。
-- 需要本仓库的 RenderDoc 源码并完成本地编译，生成 `renderdoc.pyd` 与 `renderdoc.dll`（Windows 默认输出见下）。
-- RenderDoc 的 Python module 可被导入：`import renderdoc`。
-  - 常见做法：设置 `RDX_RENDERDOC_PATH`，将 RenderDoc 的 Python module 所在目录加入 `sys.path`（`extensions/rdx-mcp/run.py` 会读取它）。
-  - Windows 下 `run.bat` 会自动探测默认输出布局（例如 `x64\Development\pymodules`），未命中时再手动设置即可。
+- 鑻ヤ綘瑕佸仛 shader 鐑慨澶?楠岃瘉锛堝 `rd.shader.edit_and_replace`銆乣rd.macro.shader_hotfix_validate`锛夛細鍏跺彲鐢ㄦ€у彇鍐充簬 capture 鐨?API銆乻hader 缂栫爜浠ュ強 RenderDoc 瀵?`BuildTargetShader` 鐨勬敮鎸侊紙璇﹁ `configuration.md`锛夈€?
+## 瀹夎锛堝彲閫夛級
 
-**可选（按需）**
-
-- 若你要做 shader 热修复/验证（如 `rd.shader.edit_and_replace`、`rd.macro.shader_hotfix_validate`）：其可用性取决于 capture 的 API、shader 编码以及 RenderDoc 对 `BuildTargetShader` 的支持（详见 `configuration.md`）。
-
-## 安装（可选）
-
-RDX-MCP 本质上是一个 Python 包 + MCP server 入口。你可以不安装，直接运行 `run.py`；也可以用 editable 安装得到 `rdx-mcp` 命令。
-
+RDX-MCP 鏈川涓婃槸涓€涓?Python 鍖?+ MCP server 鍏ュ彛銆備綘鍙互涓嶅畨瑁咃紝鐩存帴杩愯 `rdx_launcher.py`锛涗篃鍙互鐢?editable 瀹夎寰楀埌 `rdx-mcp` 鍛戒护銆?
 ```powershell
 cd extensions/rdx-mcp
 python -m pip install -e .
 ```
 
-## RenderDoc 源码构建（必需，Windows 示例）
-
-- 打开仓库根目录的 `renderdoc.sln`。
-- 选择 `x64` + `Development`，编译 `pyrenderdoc_module`（会联动生成 `renderdoc.dll`）。
-- 默认输出：
-  - `x64\Development\pymodules\renderdoc.pyd`
+## RenderDoc 婧愮爜鏋勫缓锛堝繀闇€锛學indows 绀轰緥锛?
+- 鎵撳紑浠撳簱鏍圭洰褰曠殑 `renderdoc.sln`銆?- 閫夋嫨 `x64` + `Development`锛岀紪璇?`pyrenderdoc_module`锛堜細鑱斿姩鐢熸垚 `renderdoc.dll`锛夈€?- 榛樿杈撳嚭锛?  - `x64\Development\pymodules\renderdoc.pyd`
   - `x64\Development\renderdoc.dll`
 
-## 启动服务
+## 鍚姩鏈嶅姟
 
-### 一键启动（Windows）
+### 涓€閿惎鍔紙Windows锛?
+鍙屽嚮 `extensions/rdx-mcp/rdx.bat`锛岃剼鏈細鎻愮ず閫夋嫨锛?
+- `L`锛圠AN锛夛細榛樿杈撳嚭 SSE 鍐呯綉 URL锛堜緥濡?`http://192.168.x.x:PORT/sse`锛?- `I`锛圛NTERNET锛夛細浼氭彁绀洪€夋嫨 **HTTP**锛堟帹鑽愶紝`https://.../mcp`锛夋垨 **SSE**锛坄https://.../sse`锛夊叕缃?URL
 
-双击 `extensions/rdx-mcp/run.bat`，脚本会提示选择：
-
-- `L`（LAN）：默认输出 SSE 内网 URL（例如 `http://192.168.x.x:PORT/sse`）
-- `I`（INTERNET）：会提示选择 **HTTP**（推荐，`https://.../mcp`）或 **SSE**（`https://.../sse`）公网 URL
-
-脚本会做基础自检（IP 类型、ngrok 安装/授权），并把最终 URL 复制到剪贴板，直接粘贴到客户端即可。
-如需跳过提示并强制 SSE 或 HTTP，可在 `run.env.bat` 里设置 `RDX_TRANSPORT=sse` 或 `RDX_TRANSPORT=http`。
-首次运行时会询问默认 `.rdc` 目录，并保存到 `extensions/rdx-mcp/.rdx_mcp.json`（已忽略提交）。
-
-ngrok 安装方式（Windows，任选其一）：
+鑴氭湰浼氬仛鍩虹鑷锛圛P 绫诲瀷銆乶grok 瀹夎/鎺堟潈锛夛紝骞舵妸鏈€缁?URL 澶嶅埗鍒板壀璐存澘锛岀洿鎺ョ矘璐村埌瀹㈡埛绔嵆鍙€?濡傞渶璺宠繃鎻愮ず骞跺己鍒?SSE 鎴?HTTP锛屽彲鍦?`rdx.bat` 启动菜单 閲岃缃?`RDX_TRANSPORT=sse` 鎴?`RDX_TRANSPORT=http`銆?棣栨杩愯鏃朵細璇㈤棶榛樿 `.rdc` 鐩綍锛屽苟淇濆瓨鍒?`extensions/rdx-mcp/.rdx_mcp.json`锛堝凡蹇界暐鎻愪氦锛夈€?
+ngrok 瀹夎鏂瑰紡锛圵indows锛屼换閫夊叾涓€锛夛細
 
 - `winget install ngrok.ngrok`
-- 或手动下载 `ngrok.exe` 并放到 `extensions/rdx-mcp/`（与 `run.bat` 同目录）或仓库根目录
+- 鎴栨墜鍔ㄤ笅杞?`ngrok.exe` 骞舵斁鍒?`extensions/rdx-mcp/`锛堜笌 `rdx.bat` 鍚岀洰褰曪級鎴栦粨搴撴牴鐩綍
 
-安装后需执行一次：`ngrok config add-authtoken <TOKEN>`（否则 INTERNET 模式会自检失败）。
-
-如果未配置 authtoken，脚本会提示你粘贴并将其保存到 `extensions/rdx-mcp/.rdx_mcp.json`（已加入 `.gitignore`，避免意外提交）。
-
-### 方式 A：stdio（默认，适合桌面客户端/Agent 集成）
-
+瀹夎鍚庨渶鎵ц涓€娆★細`ngrok config add-authtoken <TOKEN>`锛堝惁鍒?INTERNET 妯″紡浼氳嚜妫€澶辫触锛夈€?
+濡傛灉鏈厤缃?authtoken锛岃剼鏈細鎻愮ず浣犵矘璐村苟灏嗗叾淇濆瓨鍒?`extensions/rdx-mcp/.rdx_mcp.json`锛堝凡鍔犲叆 `.gitignore`锛岄伩鍏嶆剰澶栨彁浜わ級銆?
+### 鏂瑰紡 A锛歴tdio锛堥粯璁わ紝閫傚悎妗岄潰瀹㈡埛绔?Agent 闆嗘垚锛?
 ```powershell
-python extensions/rdx-mcp/run.py
+python extensions/rdx-mcp/rdx_launcher.py
 ```
 
-### 方式 B：SSE（适合 Web client）
-
+### 鏂瑰紡 B锛歋SE锛堥€傚悎 Web client锛?
 ```powershell
-python extensions/rdx-mcp/run.py --transport sse --host 127.0.0.1 --port 8765
+python extensions/rdx-mcp/rdx_launcher.py --transport sse --host 127.0.0.1 --port 8765
 ```
 
-> **说明**：SSE 监听地址最终由 `RDX_SSE_HOST` / `RDX_SSE_PORT` 决定；`run.py` 会把命令行参数写回环境变量后再启动（见 `extensions/rdx-mcp/run.py`、`extensions/rdx-mcp/rdx/server.py`）。
-
-### 方式 C：使用 `rdx-mcp` 入口（安装后）
-
+> **璇存槑**锛歋SE 鐩戝惉鍦板潃鏈€缁堢敱 `RDX_SSE_HOST` / `RDX_SSE_PORT` 鍐冲畾锛沗rdx_launcher.py` 浼氭妸鍛戒护琛屽弬鏁板啓鍥炵幆澧冨彉閲忓悗鍐嶅惎鍔紙瑙?`extensions/rdx-mcp/rdx_launcher.py`銆乣extensions/rdx-mcp/rdx/server.py`锛夈€?
+### 鏂瑰紡 C锛氫娇鐢?`rdx-mcp` 鍏ュ彛锛堝畨瑁呭悗锛?
 ```powershell
 rdx-mcp
 ```
 
-## MCP 客户端最小配置（示例）
-
-不同客户端的配置文件格式不完全一致，但核心都是“启动一个 stdio MCP server 的命令行”。以下是一个通用形态的示例（仅展示关键字段）：
+## MCP 瀹㈡埛绔渶灏忛厤缃紙绀轰緥锛?
+涓嶅悓瀹㈡埛绔殑閰嶇疆鏂囦欢鏍煎紡涓嶅畬鍏ㄤ竴鑷达紝浣嗘牳蹇冮兘鏄€滃惎鍔ㄤ竴涓?stdio MCP server 鐨勫懡浠よ鈥濄€備互涓嬫槸涓€涓€氱敤褰㈡€佺殑绀轰緥锛堜粎灞曠ず鍏抽敭瀛楁锛夛細
 
 ```json
 {
   "command": "python",
-  "args": ["extensions/rdx-mcp/run.py"],
+  "args": ["extensions/rdx-mcp/rdx_launcher.py"],
   "env": {
     "RDX_RENDERDOC_PATH": "D:/path/to/RenderDoc/python",
     "RDX_ARTIFACT_DIR": "D:/rdx/artifacts",
@@ -91,29 +67,27 @@ rdx-mcp
 }
 ```
 
-## 远程 Agent 如何打开你本机的 .rdc？
-
-远程/云端 Agent 调用 `rd.capture.open_file` 时，传入的 `file_path` 会在 **运行 RDX-MCP 的这台机器**上读取，
-所以它必须是你本机可访问的路径（例如 `D:\captures\foo.rdc`）。
-
-建议在 MCP 客户端侧（或你的 IDE/文件选择器）自行选择 `.rdc` 路径，再传入工具调用参数。
-
-## 第一次调用：最小可执行链路（打开并浏览一帧）
+## 杩滅▼ Agent 濡備綍鎵撳紑浣犳湰鏈虹殑 .rdc锛?
+杩滅▼/浜戠 Agent 璋冪敤 `rd.capture.open_file` 鏃讹紝浼犲叆鐨?`file_path` 浼氬湪 **杩愯 RDX-MCP 鐨勮繖鍙版満鍣?*涓婅鍙栵紝
+鎵€浠ュ畠蹇呴』鏄綘鏈満鍙闂殑璺緞锛堜緥濡?`D:\captures\foo.rdc`锛夈€?
+寤鸿鍦?MCP 瀹㈡埛绔晶锛堟垨浣犵殑 IDE/鏂囦欢閫夋嫨鍣級鑷閫夋嫨 `.rdc` 璺緞锛屽啀浼犲叆宸ュ叿璋冪敤鍙傛暟銆?
+## 绗竴娆¤皟鐢細鏈€灏忓彲鎵ц閾捐矾锛堟墦寮€骞舵祻瑙堜竴甯э級
 
 1. `rd.core.init`
-2. `rd.capture.open_file` → 得到 `capture_file_id`
-3. `rd.capture.open_replay` → 得到 `session_id`
-4. `rd.replay.set_frame`（通常 `frame_index=0`）
-5. `rd.event.get_action_tree`（浏览 action tree/marker）
-6. 可选：
+2. `rd.capture.open_file` 鈫?寰楀埌 `capture_file_id`
+3. `rd.capture.open_replay` 鈫?寰楀埌 `session_id`
+4. `rd.replay.set_frame`锛堥€氬父 `frame_index=0`锛?5. `rd.event.get_action_tree`锛堟祻瑙?action tree/marker锛?6. 鍙€夛細
    - `rd.pipeline.get_state_summary`
    - `rd.resource.list_textures`
    - `rd.export.screenshot`
 
-结束后建议释放资源：
+缁撴潫鍚庡缓璁噴鏀捐祫婧愶細
 
 - `rd.capture.close_replay`
 - `rd.capture.close_file`
 - `rd.core.shutdown`
 
-后续建议阅读：`tools.md`（工具契约与清单）、`workflows.md`（推荐链路与常用组合）。
+鍚庣画寤鸿闃呰锛歚tools.md`锛堝伐鍏峰绾︿笌娓呭崟锛夈€乣workflows.md`锛堟帹鑽愰摼璺笌甯哥敤缁勫悎锛夈€?
+
+
+

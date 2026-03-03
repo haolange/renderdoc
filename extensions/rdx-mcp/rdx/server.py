@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import struct
+import sys
 import tempfile
 import textwrap
 import zipfile
@@ -34,7 +35,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from rdx.config import RdxConfig
+from rdx.core.artifact_publisher import ArtifactPublisher
+from rdx.core.engine import CoreEngine, ExecutionContext
 from rdx.core.event_graph import EventGraphService
+from rdx.core.operation_registry import OperationRegistry
 from rdx.core.perf_service import PerfService
 from rdx.core.pipeline_service import PipelineService
 from rdx.core.render_service import RenderService
@@ -108,6 +112,49 @@ _pipeline_service: Optional[PipelineService] = None
 _perf_service: Optional[PerfService] = None
 _artifact_store: Optional[ArtifactStore] = None
 _runtime: RuntimeState = RuntimeState()
+_runtime_bootstrapped: bool = False
+_operation_registry: Optional[OperationRegistry] = None
+_core_engine: Optional[CoreEngine] = None
+_dll_dir_handles: List[Any] = []
+
+
+def _guess_rdx_root() -> Path:
+    start = Path(__file__).resolve().parent
+    for candidate in (start, *start.parents):
+        if candidate.name.lower() == "rdx-mcp" and (candidate / "pyproject.toml").is_file():
+            return candidate
+        alt = candidate / "extensions" / "rdx-mcp"
+        if alt.is_dir() and (alt / "pyproject.toml").is_file():
+            return alt
+    if start.name.lower() == "rdx":
+        return start.parent
+    return start
+
+
+def _discover_renderdoc_paths() -> list[Path]:
+    root = _guess_rdx_root()
+    repo_root = root.parent if root.name.lower() == "rdx-mcp" else root
+    candidates: list[Path] = []
+    for base in (root, repo_root):
+        candidates.extend(
+            [
+                base / "library" / "renderdoc" / "x64" / "Development" / "pymodules",
+                base / "library" / "renderdoc" / "x64" / "Release" / "pymodules",
+                base / "library" / "renderdoc" / "Win32" / "Development" / "pymodules",
+                base / "library" / "renderdoc" / "Win32" / "Release" / "pymodules",
+                base / "x64" / "Development" / "pymodules",
+                base / "x64" / "Release" / "pymodules",
+            ],
+        )
+    seen: set[str] = set()
+    out: list[Path] = []
+    for candidate in candidates:
+        key = str(candidate.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(candidate)
+    return out
 
 
 def _now_ms() -> int:
@@ -806,9 +853,37 @@ async def _pipeline_snapshot(session_id: str, event_id: Optional[int] = None) ->
 
 @asynccontextmanager
 async def _lifespan(_: FastMCP):
+    await runtime_startup()
+    try:
+        yield
+    finally:
+        await runtime_shutdown()
+
+
+async def runtime_startup() -> None:
     global _config, _session_manager, _event_graph_service, _render_service
     global _pipeline_service, _perf_service
-    global _artifact_store
+    global _artifact_store, _runtime_bootstrapped
+    if _runtime_bootstrapped:
+        return
+
+    renderdoc_path = os.environ.get("RDX_RENDERDOC_PATH")
+    if not renderdoc_path:
+        for candidate in _discover_renderdoc_paths():
+            if (candidate / "renderdoc.pyd").is_file():
+                renderdoc_path = str(candidate)
+                os.environ["RDX_RENDERDOC_PATH"] = renderdoc_path
+                break
+    if renderdoc_path:
+        if renderdoc_path not in sys.path:
+            sys.path.insert(0, renderdoc_path)
+        if os.name == "nt":
+            for candidate in (Path(renderdoc_path), Path(renderdoc_path).parent):
+                try:
+                    if candidate.exists():
+                        _dll_dir_handles.append(os.add_dll_directory(str(candidate)))  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
     _config = RdxConfig.from_env()
     artifact_root = Path(os.environ.get("RDX_ARTIFACT_DIR", "./rdx_artifacts")).resolve()
@@ -828,26 +903,48 @@ async def _lifespan(_: FastMCP):
     }
     _runtime.initialized = False
     _runtime.logs.clear()
-    _record_log("info", "RDX-MCP runtime initialized")
+    _runtime_bootstrapped = True
+    _record_log("info", "RDX runtime initialized")
+    _ensure_core_engine()
 
-    try:
-        yield
-    finally:
-        for debug_id in list(_runtime.shader_debugs.keys()):
-            handle = _runtime.shader_debugs.pop(debug_id, None)
-            if handle is not None:
-                try:
-                    controller = _session_manager.get_controller(handle.session_id)
-                    controller.FreeTrace(handle.trace)
-                except Exception:
-                    pass
-        if _session_manager is not None:
-            for info in list(_session_manager.list_sessions()):
-                try:
-                    await _session_manager.close_session(info.session_id)
-                except Exception:
-                    pass
-        _record_log("info", "RDX-MCP runtime shutdown complete")
+
+async def runtime_shutdown() -> None:
+    global _runtime_bootstrapped
+    if not _runtime_bootstrapped:
+        return
+    for debug_id in list(_runtime.shader_debugs.keys()):
+        handle = _runtime.shader_debugs.pop(debug_id, None)
+        if handle is not None:
+            try:
+                controller = _session_manager.get_controller(handle.session_id)
+                controller.FreeTrace(handle.trace)
+            except Exception:
+                pass
+    if _session_manager is not None:
+        for info in list(_session_manager.list_sessions()):
+            try:
+                await _session_manager.close_session(info.session_id)
+            except Exception:
+                pass
+    _runtime_bootstrapped = False
+    _record_log("info", "RDX runtime shutdown complete")
+
+
+def _ensure_core_engine() -> CoreEngine:
+    global _operation_registry, _core_engine
+    if _operation_registry is None:
+        _operation_registry = OperationRegistry()
+        _operation_registry.set_default(_core_operation_handler)
+    if _core_engine is None:
+        _core_engine = CoreEngine(
+            registry=_operation_registry,
+            artifact_publisher=ArtifactPublisher(),
+        )
+    return _core_engine
+
+
+def get_core_engine() -> CoreEngine:
+    return _ensure_core_engine()
 
 
 def _create_mcp() -> FastMCP:
@@ -880,7 +977,58 @@ def _create_mcp() -> FastMCP:
 mcp = _create_mcp()
 
 
+async def _core_operation_handler(args: Dict[str, Any], env: Dict[str, Any]) -> Dict[str, Any]:
+    operation = str(env.get("operation", "rd.unknown.unknown"))
+    raw = await _dispatch_tool_legacy(operation, args)
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"success": False, "error_message": f"Non-JSON legacy output for {operation}"}
+    if isinstance(raw, dict):
+        return raw
+    return {"success": False, "error_message": f"Unsupported legacy output type: {type(raw).__name__}"}
+
+
+async def dispatch_operation(
+    operation: str,
+    args: Optional[Dict[str, Any]] = None,
+    *,
+    transport: str = "core",
+    remote: bool = False,
+) -> Dict[str, Any]:
+    await runtime_startup()
+    engine = _ensure_core_engine()
+    call_args = dict(args or {})
+    ctx = ExecutionContext(transport=transport, remote=remote)
+    arg_keys = ",".join(sorted(call_args.keys())) if call_args else "-"
+    logger.info(
+        "op.start transport=%s remote=%s op=%s trace_id=%s arg_keys=%s",
+        transport,
+        remote,
+        operation,
+        ctx.trace_id,
+        arg_keys,
+    )
+    payload = await engine.execute(operation, call_args, context=ctx)
+    meta = payload.get("meta", {}) if isinstance(payload, dict) else {}
+    logger.info(
+        "op.done transport=%s op=%s trace_id=%s ok=%s duration_ms=%s",
+        transport,
+        operation,
+        str(meta.get("trace_id") or ctx.trace_id),
+        bool(payload.get("ok")) if isinstance(payload, dict) else False,
+        meta.get("duration_ms"),
+    )
+    return payload
+
+
 async def _dispatch_tool(tool_name: str, args: Dict[str, Any]) -> str:
+    payload = await dispatch_operation(tool_name, args, transport="mcp", remote=tool_name.startswith("rd.remote."))
+    return json.dumps(payload, ensure_ascii=False, default=_json_default)
+
+
+async def _dispatch_tool_legacy(tool_name: str, args: Dict[str, Any]) -> str:
     args = {k: _parse_json_like(v) for k, v in args.items() if v is not None}
     _record_log("debug", f"tool_call {tool_name}", {"args": sorted(args.keys())})
     try:

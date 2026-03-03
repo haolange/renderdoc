@@ -1,37 +1,31 @@
-# 配置与目录结构
+﻿# 閰嶇疆涓庣洰褰曠粨鏋?
 
-本页聚焦：**如何把 RDX-MCP 跑稳**（路径、目录、日志、网络传输安全），以及常见配置项在当前实现中“到底在哪里被读取”。
+启动入口：`rdx.bat` 会调用 `rdx_launcher.py`，启动前会先做环境自检（Python 依赖 / uv / ngrok），缺失时会给出安装建议与命令。
+鏈〉鑱氱劍锛?*濡備綍鎶?RDX-MCP 璺戠ǔ**锛堣矾寰勩€佺洰褰曘€佹棩蹇椼€佺綉缁滀紶杈撳畨鍏級锛屼互鍙婂父瑙侀厤缃」鍦ㄥ綋鍓嶅疄鐜颁腑鈥滃埌搴曞湪鍝噷琚鍙栤€濄€?
+## 鐜鍙橀噺涓€瑙堬紙鎸夊綋鍓嶅疄鐜帮級
 
-## 环境变量一览（按当前实现）
-
-> **约定**：下表以 `extensions/rdx-mcp/rdx/server.py`（server 生命周期）与 `extensions/rdx-mcp/run.py`（启动入口）为准；`extensions/rdx-mcp/rdx/config.py` 会读取一组环境变量并生成 `RdxConfig`，但并非所有字段都会在 server 中被消费。
-
-| 变量 | 作用 | 默认值（代码） | 读取位置（代码） |
+> **绾﹀畾**锛氫笅琛ㄤ互 `extensions/rdx-mcp/rdx/server.py`锛坰erver 鐢熷懡鍛ㄦ湡锛変笌 `extensions/rdx-mcp/rdx_launcher.py`锛堝惎鍔ㄥ叆鍙ｏ級涓哄噯锛沗extensions/rdx-mcp/rdx/config.py` 浼氳鍙栦竴缁勭幆澧冨彉閲忓苟鐢熸垚 `RdxConfig`锛屼絾骞堕潪鎵€鏈夊瓧娈甸兘浼氬湪 server 涓娑堣垂銆?
+| 鍙橀噺 | 浣滅敤 | 榛樿鍊硷紙浠ｇ爜锛?| 璇诲彇浣嶇疆锛堜唬鐮侊級 |
 |---|---|---|---|
-| `RDX_RENDERDOC_PATH` | 将 RenderDoc Python module 目录加入 `sys.path`（解决 `import renderdoc`） | 无 | `extensions/rdx-mcp/run.py`、`extensions/rdx-mcp/rdx/config.py` |
-| `RDX_LOG_LEVEL` | 日志级别 | `INFO` | `extensions/rdx-mcp/run.py`、`extensions/rdx-mcp/rdx/server.py`、`extensions/rdx-mcp/rdx/config.py` |
-| `RDX_SSE_HOST` / `RDX_SSE_PORT` | SSE 监听地址 | `127.0.0.1` / `8765` | `extensions/rdx-mcp/run.py`、`extensions/rdx-mcp/rdx/server.py` |
-| `RDX_ARTIFACT_DIR` | artifact 存储根目录（CAS 目录） | `./rdx_artifacts` | `extensions/rdx-mcp/rdx/server.py` |
-| `RDX_ALLOWED_HOSTS` / `RDX_ALLOWED_ORIGINS` | 允许的 Host/Origin（用于公网转发时放行） | 空（不限制） | `extensions/rdx-mcp/rdx/server.py` |
-| `RDX_ARTIFACT_STORE` | artifact 目录（进入 `RdxConfig`） | `./rdx_artifacts` | `extensions/rdx-mcp/rdx/config.py` |
-| `RDX_DATA_DIR` | `RdxConfig` 数据目录（当前 server 未直接消费） | `./rdx_data` | `extensions/rdx-mcp/rdx/config.py` |
-| `RDX_REPORT_DIR` | `RdxConfig` report 输出目录（当前 server 未直接消费） | `./rdx_reports` | `extensions/rdx-mcp/rdx/config.py` |
-| `RDX_GPU_VENDOR` | GPU vendor 偏好（进入 `RdxConfig`） | `any` | `extensions/rdx-mcp/rdx/config.py` |
-| `RDX_SPIRV_TOOLS_PATH` | SPIRV-Tools 路径（进入 `RdxConfig`） | 空 | `extensions/rdx-mcp/rdx/config.py` |
-| `RDX_HEADLESS` | 强制 headless（进入 `RdxConfig`） | `true` | `extensions/rdx-mcp/rdx/config.py` |
+| `RDX_RENDERDOC_PATH` | 灏?RenderDoc Python module 鐩綍鍔犲叆 `sys.path`锛堣В鍐?`import renderdoc`锛?| 鏃?| `extensions/rdx-mcp/rdx_launcher.py`銆乣extensions/rdx-mcp/rdx/config.py` |
+| `RDX_LOG_LEVEL` | 鏃ュ織绾у埆 | `INFO` | `extensions/rdx-mcp/rdx_launcher.py`銆乣extensions/rdx-mcp/rdx/server.py`銆乣extensions/rdx-mcp/rdx/config.py` |
+| `RDX_SSE_HOST` / `RDX_SSE_PORT` | SSE 鐩戝惉鍦板潃 | `127.0.0.1` / `8765` | `extensions/rdx-mcp/rdx_launcher.py`銆乣extensions/rdx-mcp/rdx/server.py` |
+| `RDX_ARTIFACT_DIR` | artifact 瀛樺偍鏍圭洰褰曪紙CAS 鐩綍锛?| `./rdx_artifacts` | `extensions/rdx-mcp/rdx/server.py` |
+| `RDX_ALLOWED_HOSTS` / `RDX_ALLOWED_ORIGINS` | 鍏佽鐨?Host/Origin锛堢敤浜庡叕缃戣浆鍙戞椂鏀捐锛?| 绌猴紙涓嶉檺鍒讹級 | `extensions/rdx-mcp/rdx/server.py` |
+| `RDX_ARTIFACT_STORE` | artifact 鐩綍锛堣繘鍏?`RdxConfig`锛?| `./rdx_artifacts` | `extensions/rdx-mcp/rdx/config.py` |
+| `RDX_DATA_DIR` | `RdxConfig` 鏁版嵁鐩綍锛堝綋鍓?server 鏈洿鎺ユ秷璐癸級 | `./rdx_data` | `extensions/rdx-mcp/rdx/config.py` |
+| `RDX_REPORT_DIR` | `RdxConfig` report 杈撳嚭鐩綍锛堝綋鍓?server 鏈洿鎺ユ秷璐癸級 | `./rdx_reports` | `extensions/rdx-mcp/rdx/config.py` |
+| `RDX_GPU_VENDOR` | GPU vendor 鍋忓ソ锛堣繘鍏?`RdxConfig`锛?| `any` | `extensions/rdx-mcp/rdx/config.py` |
+| `RDX_SPIRV_TOOLS_PATH` | SPIRV-Tools 璺緞锛堣繘鍏?`RdxConfig`锛?| 绌?| `extensions/rdx-mcp/rdx/config.py` |
+| `RDX_HEADLESS` | 寮哄埗 headless锛堣繘鍏?`RdxConfig`锛?| `true` | `extensions/rdx-mcp/rdx/config.py` |
 
-### 重要差异：`RDX_ARTIFACT_DIR` vs `RDX_ARTIFACT_STORE`
+### 閲嶈宸紓锛歚RDX_ARTIFACT_DIR` vs `RDX_ARTIFACT_STORE`
 
-- **artifact store 的实际根目录**：当前 server 在启动时使用 `RDX_ARTIFACT_DIR` 初始化 `ArtifactStore`（见 `extensions/rdx-mcp/rdx/server.py`）。
-- **`RDX_ARTIFACT_STORE`**：会写入 `RdxConfig.artifact.store_path`，但目前 server 未将该字段用于初始化 `ArtifactStore`。
-
-如果你只想“跑起来且所有 artifacts 都能落盘”，建议**优先设置 `RDX_ARTIFACT_DIR`**。
-
-## 目录结构与产物
-
-### Artifact Store（CAS）
-
-`ArtifactStore` 使用 SHA256 做内容寻址，落盘布局类似 git object storage（见 `extensions/rdx-mcp/rdx/utils/artifact_store.py`）：
+- **artifact store 鐨勫疄闄呮牴鐩綍**锛氬綋鍓?server 鍦ㄥ惎鍔ㄦ椂浣跨敤 `RDX_ARTIFACT_DIR` 鍒濆鍖?`ArtifactStore`锛堣 `extensions/rdx-mcp/rdx/server.py`锛夈€?- **`RDX_ARTIFACT_STORE`**锛氫細鍐欏叆 `RdxConfig.artifact.store_path`锛屼絾鐩墠 server 鏈皢璇ュ瓧娈电敤浜庡垵濮嬪寲 `ArtifactStore`銆?
+濡傛灉浣犲彧鎯斥€滆窇璧锋潵涓旀墍鏈?artifacts 閮借兘钀界洏鈥濓紝寤鸿**浼樺厛璁剧疆 `RDX_ARTIFACT_DIR`**銆?
+## 鐩綍缁撴瀯涓庝骇鐗?
+### Artifact Store锛圕AS锛?
+`ArtifactStore` 浣跨敤 SHA256 鍋氬唴瀹瑰鍧€锛岃惤鐩樺竷灞€绫讳技 git object storage锛堣 `extensions/rdx-mcp/rdx/utils/artifact_store.py`锛夛細
 
 ```
 <RDX_ARTIFACT_DIR>/
@@ -40,13 +34,14 @@
       <sha256>
 ```
 
-工具返回的 `ArtifactRef.uri` 使用 `rdx://` scheme，例如：
+宸ュ叿杩斿洖鐨?`ArtifactRef.uri` 浣跨敤 `rdx://` scheme锛屼緥濡傦細
 
 ```
 rdx://artifacts/ab/cd/abcdef0123...
 ```
 
-### 导出文件（`rd.export.*` / 部分 `rd.macro.*`）
+### 瀵煎嚭鏂囦欢锛坄rd.export.*` / 閮ㄥ垎 `rd.macro.*`锛?
+- 澶у鏁板鍑虹被宸ュ叿瑕佹眰鏄惧紡浼犲叆 `output_path` / `output_dir`锛屽苟鍦?*杩愯 RDX-MCP 鐨勬満鍣?*涓婂啓鏂囦欢銆?- 寤鸿鍦?Windows 涓嬩娇鐢ㄧ粷瀵硅矾寰勶紝鎴栫‘淇濈浉瀵硅矾寰勭殑宸ヤ綔鐩綍鍙啓銆?
 
-- 大多数导出类工具要求显式传入 `output_path` / `output_dir`，并在**运行 RDX-MCP 的机器**上写文件。
-- 建议在 Windows 下使用绝对路径，或确保相对路径的工作目录可写。
+
+

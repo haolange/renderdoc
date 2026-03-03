@@ -15,13 +15,17 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_RDX_RENDERDOC_PATH = Path(r"d:\Projects\Native\Renderdoc MCP\x64\Development\pymodules")
+DEFAULT_RDX_RENDERDOC_PATH = (ROOT.parents[2] / "x64" / "Development" / "pymodules").resolve()
 TMP_DIR = Path(tempfile.gettempdir()) / "rdx_mcp_pytest_regression_tmp"
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _pick_rdc_path() -> Path:
+    env_path = os.environ.get("RDX_TEST_RDC")
+    if env_path and Path(env_path).is_file():
+        return Path(env_path)
     candidates = [
+        Path.home() / "Desktop" / "03.rdc",
         Path(r"C:\Users\a1824\Desktop\rdcFiles\TestRdc.rdc"),
         Path(r"C:\Users\a1824\Desktop\rdcFiles\TestRdc_Desktop.rdc"),
         Path(r"C:\Users\a1824\Desktop\rdcFiles\TestRdc_Mobile.rdc"),
@@ -67,6 +71,11 @@ async def _call_tool(session: ClientSession, name: str, args: Dict[str, Any]) ->
     return _parse_tool_result(result)
 
 
+def _is_canonical_payload(payload: Dict[str, Any]) -> bool:
+    required = {"schema_version", "tool_version", "result_kind", "ok", "data", "artifacts", "error"}
+    return all(key in payload for key in required)
+
+
 async def _open_replay_session(session: ClientSession) -> Tuple[str, str]:
     if not RDC_PATH.is_file():
         pytest.skip(f"missing test rdc: {RDC_PATH}")
@@ -75,15 +84,15 @@ async def _open_replay_session(session: ClientSession) -> Tuple[str, str]:
         "rd.core.init",
         {"global_env": {"artifact_dir": str(TMP_DIR)}, "enable_remote": True, "enable_app_api": True},
     )
-    assert payload is not None and "success" in payload
+    assert payload is not None and _is_canonical_payload(payload)
 
     payload, _ = await _call_tool(session, "rd.capture.open_file", {"file_path": str(RDC_PATH), "read_only": True})
-    if not payload or not payload.get("success"):
+    if not payload or not payload.get("ok"):
         pytest.skip(f"failed to open rdc: {payload}")
     capture_file_id = payload["capture_file_id"]
 
     payload, _ = await _call_tool(session, "rd.capture.open_replay", {"capture_file_id": capture_file_id, "options": {}})
-    if not payload or not payload.get("success"):
+    if not payload or not payload.get("ok"):
         pytest.skip(f"failed to open replay: {payload}")
     session_id = payload["session_id"]
 
@@ -105,20 +114,21 @@ async def _pick_texture_id(session: ClientSession, session_id: str) -> str:
 
 @pytest.mark.asyncio
 async def test_search_actions_accepts_string_query():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             session_id, _ = await _open_replay_session(session)
             payload, raw = await _call_tool(session, "rd.event.search_actions", {"session_id": session_id, "query": "Draw"})
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
-            assert isinstance(payload.get("matches", []), list)
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
+            assert isinstance(payload.get("data", {}).get("matches", []), list)
 
 
 @pytest.mark.asyncio
 async def test_export_screenshot_accepts_scalar_target():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -148,16 +158,16 @@ async def test_export_screenshot_accepts_scalar_target():
             assert call_payload is not None, f"non-json response: {raw[:180]}"
             error_text = str(call_payload.get("error_message", ""))
             assert "Expected dict-compatible value, got: str" not in error_text
-            assert "success" in call_payload
-            if call_payload.get("success"):
-                saved_path = call_payload.get("saved_path") or call_payload.get("image_path")
+            assert _is_canonical_payload(call_payload)
+            if call_payload.get("ok"):
+                saved_path = call_payload.get("saved_path") or call_payload.get("data", {}).get("saved_path") or call_payload.get("image_path")
                 if saved_path:
                     assert Path(saved_path).is_file()
 
 
 @pytest.mark.asyncio
 async def test_texture_save_to_file_dds_is_real_dds():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -175,8 +185,9 @@ async def test_texture_save_to_file_dds_is_real_dds():
                 },
             )
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
-            saved_path = payload.get("saved_path") or str(output_path)
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
+            saved_path = payload.get("saved_path") or payload.get("data", {}).get("saved_path") or str(output_path)
             exported = Path(saved_path)
             assert exported.is_file()
             blob = exported.read_bytes()
@@ -186,7 +197,7 @@ async def test_texture_save_to_file_dds_is_real_dds():
 
 @pytest.mark.asyncio
 async def test_export_texture_dds_not_png_payload():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -204,8 +215,9 @@ async def test_export_texture_dds_not_png_payload():
                 },
             )
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
-            saved_path = payload.get("saved_path") or str(output_path)
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
+            saved_path = payload.get("saved_path") or payload.get("data", {}).get("saved_path") or str(output_path)
             exported = Path(saved_path)
             assert exported.is_file()
             head = exported.read_bytes()[:8]
@@ -215,7 +227,7 @@ async def test_export_texture_dds_not_png_payload():
 
 @pytest.mark.asyncio
 async def test_resource_get_current_contents_texture_output_is_not_npz():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -233,8 +245,11 @@ async def test_resource_get_current_contents_texture_output_is_not_npz():
                 },
             )
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
             contents = payload.get("current_contents", {})
+            if not isinstance(contents, dict):
+                contents = payload.get("data", {}).get("current_contents", {})
             saved_path = contents.get("saved_path") or str(output_path)
             exported = Path(saved_path)
             assert exported.is_file()
@@ -245,15 +260,18 @@ async def test_resource_get_current_contents_texture_output_is_not_npz():
 
 @pytest.mark.asyncio
 async def test_resource_list_textures_exposes_fused_names():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             session_id, _ = await _open_replay_session(session)
             payload, raw = await _call_tool(session, "rd.resource.list_textures", {"session_id": session_id})
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
             textures = payload.get("textures", [])
+            if not textures:
+                textures = payload.get("data", {}).get("textures", [])
             if not textures:
                 pytest.skip("capture has no textures")
             first = textures[0]
@@ -266,7 +284,7 @@ async def test_resource_list_textures_exposes_fused_names():
 
 @pytest.mark.asyncio
 async def test_export_screenshot_all_is_adaptive_and_named():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -286,11 +304,16 @@ async def test_export_screenshot_all_is_adaptive_and_named():
                 },
             )
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
             selected_formats = payload.get("selected_formats", [])
+            if not selected_formats:
+                selected_formats = payload.get("data", {}).get("selected_formats", [])
             assert selected_formats
             assert set(selected_formats).issubset({"png", "jpg", "exr", "hdr"})
             exports = payload.get("exports", [])
+            if not exports:
+                exports = payload.get("data", {}).get("exports", [])
             assert exports
             for item in exports:
                 saved = item.get("saved_path")
@@ -300,7 +323,7 @@ async def test_export_screenshot_all_is_adaptive_and_named():
 
 @pytest.mark.asyncio
 async def test_export_screenshot_without_target_selects_output_slot():
-    params = StdioServerParameters(command="python", args=["run.py"], cwd=str(ROOT), env=_server_env())
+    params = StdioServerParameters(command=sys.executable, args=["rdx_launcher.py"], cwd=str(ROOT), env=_server_env())
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -318,9 +341,11 @@ async def test_export_screenshot_without_target_selects_output_slot():
                 },
             )
             assert payload is not None, f"non-json response: {raw[:180]}"
-            assert payload.get("success") is True, payload
-            if payload.get("saved_path"):
-                assert Path(payload["saved_path"]).is_file()
+            assert payload.get("ok") is True, payload
+            assert _is_canonical_payload(payload)
+            saved_path = payload.get("saved_path") or payload.get("data", {}).get("saved_path")
+            if saved_path:
+                assert Path(saved_path).is_file()
 
 
 def _try_import_renderdoc() -> Any:
@@ -366,9 +391,9 @@ async def test_validation_errors_are_structured_not_exception_logged(caplog: pyt
     caplog.set_level(logging.ERROR, logger="rdx.server")
     response = await server._dispatch_tool("rd.capture.list_frames", {})
     payload = json.loads(response)
-    assert payload.get("success") is False
-    assert "error_message" in payload
-    assert "capture_file_id" in str(payload["error_message"])
+    assert payload.get("ok") is False
+    assert isinstance(payload.get("error"), dict)
+    assert "capture_file_id" in str(payload["error"]["message"])
 
     response = await server._dispatch_tool(
         "rd.util.diff_images",
@@ -378,7 +403,7 @@ async def test_validation_errors_are_structured_not_exception_logged(caplog: pyt
         },
     )
     payload = json.loads(response)
-    assert payload.get("success") is False
-    assert "error_message" in payload
+    assert payload.get("ok") is False
+    assert isinstance(payload.get("error"), dict)
 
     assert not any("Tool dispatch failed" in rec.getMessage() for rec in caplog.records if rec.name == "rdx.server")
