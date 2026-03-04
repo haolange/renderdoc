@@ -40,26 +40,41 @@ for %%A in (%*) do (
 
 set "RDX_USE_UV=0"
 set "PYTHON_EXE=python"
+set "UV_CMD=uv"
+
+where python >nul 2>&1
+if errorlevel 1 (
+  where py >nul 2>&1
+  if errorlevel 1 (
+    echo [RDX] ERROR: Python not found. Install Python 3.10+ first.
+    set "EXITCODE=2"
+    goto :exit_now
+  ) else (
+    set "PYTHON_EXE=py -3"
+  )
+)
+
 where uv >nul 2>&1
 if not errorlevel 1 (
   set "RDX_USE_UV=1"
-)
-
-if "%RDX_USE_UV%"=="0" (
-  where python >nul 2>&1
-  if errorlevel 1 (
-    where py >nul 2>&1
-    if errorlevel 1 (
-      echo [RDX] ERROR: Python not found. Install Python 3.10+ first.
-      set "EXITCODE=2"
-      goto :exit_now
+  set "UV_CMD=uv"
+) else (
+  if "%PYTHON_EXE%"=="py -3" (
+    py -3 -m uv --version >nul 2>&1
+  ) else (
+    python -m uv --version >nul 2>&1
+  )
+  if not errorlevel 1 (
+    set "RDX_USE_UV=1"
+    if "%PYTHON_EXE%"=="py -3" (
+      set "UV_CMD=py -3 -m uv"
     ) else (
-      set "PYTHON_EXE=py -3"
+      set "UV_CMD=python -m uv"
     )
   )
 )
 
-call :run_launcher --ensure-env !RDX_ENSURE_MODE! !RDX_NON_INTERACTIVE_FLAG!
+call :run_launcher_plain --ensure-env !RDX_ENSURE_MODE! !RDX_NON_INTERACTIVE_FLAG!
 if errorlevel 1 (
   echo [RDX] ERROR: Environment check failed. Follow the printed suggestions and retry.
   set "EXITCODE=1"
@@ -119,7 +134,7 @@ if /i "%~1"=="cli" (
     goto :exit_now
   )
 
-  call :run_cli %*
+  call :run_cli %2 %3 %4 %5 %6 %7 %8 %9
   set "EXITCODE=!ERRORLEVEL!"
   goto :exit_now
 )
@@ -194,7 +209,10 @@ echo.
 :cli_loop
 set "USER_CMD="
 set /p "USER_CMD=[RDX-CLI] : "
-if errorlevel 1 goto :exit_now
+if errorlevel 1 (
+  echo [RDX] Input stream closed. Exiting CLI console.
+  goto :exit_now
+)
 if not defined USER_CMD goto :cli_loop
 
 set "USER_CMD_HEAD="
@@ -320,7 +338,7 @@ echo [RDX] MCP server starting...
 echo [RDX]   mode: %RDX_MODE%
 if defined RDX_TRANSPORT echo [RDX]   transport override: %RDX_TRANSPORT%
 if /i "%RDX_MODE%"=="internet" (
-  call :run_launcher --ensure-env --mode internet !RDX_NON_INTERACTIVE_FLAG!
+  call :run_launcher_plain --ensure-env --mode internet !RDX_NON_INTERACTIVE_FLAG!
   if errorlevel 1 (
     set "EXITCODE=1"
     goto :exit_now
@@ -351,13 +369,15 @@ exit /b !EXITCODE!
 :run_cli
 set "CLI_FIRST=%~1"
 if /i "%CLI_FIRST%"=="rdx" shift
+if /i "%CLI_FIRST%"=="cli" shift
 if "%RDX_USE_UV%"=="1" (
-  uv run --project . rdx %*
+  call %UV_CMD% run --project . rdx %*
   if not errorlevel 1 (
     set "EXITCODE=!ERRORLEVEL!"
     exit /b !EXITCODE!
   )
   echo [RDX] WARN: uv CLI launch failed, fallback to Python runtime.
+  set "RDX_USE_UV=0"
 )
 if "%PYTHON_EXE%"=="py -3" (
   py -3 -m rdx.cli %*
@@ -367,14 +387,24 @@ if "%PYTHON_EXE%"=="py -3" (
 set "EXITCODE=!ERRORLEVEL!"
 exit /b !EXITCODE!
 
+:run_launcher_plain
+if "%PYTHON_EXE%"=="py -3" (
+  py -3 rdx_launcher.py %*
+) else (
+  python rdx_launcher.py %*
+)
+set "EXITCODE=!ERRORLEVEL!"
+exit /b !EXITCODE!
+
 :run_launcher
 if "%RDX_USE_UV%"=="1" (
-  uv run --project . python rdx_launcher.py %*
+  call %UV_CMD% run --project . python rdx_launcher.py %*
   if not errorlevel 1 (
     set "EXITCODE=!ERRORLEVEL!"
     exit /b !EXITCODE!
   )
   echo [RDX] WARN: uv launcher failed, fallback to Python runtime.
+  set "RDX_USE_UV=0"
 )
 if "%PYTHON_EXE%"=="py -3" (
   py -3 rdx_launcher.py %*
@@ -386,12 +416,13 @@ exit /b !EXITCODE!
 
 :run_python
 if "%RDX_USE_UV%"=="1" (
-  uv run --project . python %*
+  call %UV_CMD% run --project . python %*
   if not errorlevel 1 (
     set "EXITCODE=!ERRORLEVEL!"
     exit /b !EXITCODE!
   )
   echo [RDX] WARN: uv python launch failed, fallback to Python runtime.
+  set "RDX_USE_UV=0"
 )
 if "%PYTHON_EXE%"=="py -3" (
   py -3 %*

@@ -10,8 +10,10 @@ import json
 import os
 import re
 import socket
+import site
 import subprocess
 import sys
+import sysconfig
 import time
 import traceback
 import urllib.request
@@ -105,6 +107,54 @@ def _print_help_commands(commands: Iterable[str]) -> None:
     print("[RDX] You can run these commands manually:")
     for cmd in commands:
         print(f"[RDX]   {cmd}")
+
+
+def _has_uv() -> bool:
+    if which("uv"):
+        return True
+    try:
+        return (
+            subprocess.run(
+                [sys.executable, "-m", "uv", "--version"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+    except Exception:
+        return False
+
+
+def _prepend_user_scripts_to_path() -> None:
+    current = os.environ.get("PATH", "")
+    parts = [p for p in current.split(os.pathsep) if p]
+    candidates: list[Path] = []
+    try:
+        scripts = Path(sysconfig.get_path("scripts") or "")
+        if scripts:
+            candidates.append(scripts)
+    except Exception:
+        pass
+    try:
+        user_base = site.getuserbase()
+        if user_base:
+            pyver = f"Python{sys.version_info.major}{sys.version_info.minor}"
+            candidates.append(Path(user_base) / pyver / "Scripts")
+    except Exception:
+        pass
+
+    prepend: list[str] = []
+    for path in candidates:
+        if not path.is_dir():
+            continue
+        text = str(path)
+        if text in parts or text in prepend:
+            continue
+        prepend.append(text)
+
+    if not prepend:
+        return
+    os.environ["PATH"] = os.pathsep.join(prepend + ([current] if current else []))
 
 
 def _discover_renderdoc_paths() -> list[Path]:
@@ -451,25 +501,28 @@ def _start_ngrok(port: int, token: str) -> str:
 
 
 def _install_uv(interactive: bool) -> bool:
-    if which("uv"):
+    if _has_uv():
         return True
 
     install_cmds = [
         ["winget", "install", "--id", "astral-sh.uv", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
-        [sys.executable, "-m", "pip", "install", "--user", "uv"],
     ]
+    if _ensure_pip():
+        install_cmds.append([sys.executable, "-m", "pip", "install", "--user", "uv"])
+
     if not interactive:
         _print_help_commands([_to_command_repr(cmd) for cmd in install_cmds])
         print("[RDX] uv is optional. Continue without it.")
         return False
 
-    print("[RDX] I can help install uv (optional).")
-    if not _ask_yes_no("Install uv now?", default=True):
-        return False
+    print("[RDX] Missing uv. I will try to install it automatically.")
 
     for cmd in install_cmds:
         if _run_command(cmd) == 0:
-            return True
+            _prepend_user_scripts_to_path()
+            if _has_uv():
+                print("[RDX] uv installation completed.")
+                return True
 
     _print_help_commands([_to_command_repr(cmd) for cmd in install_cmds])
     return False
@@ -515,16 +568,15 @@ def ensure_environment(interactive: bool, *, require_internet: bool = False) -> 
         print("[RDX] Python runtime not found. Install Python 3.10+ first.")
         return False
 
-    if not _ensure_pip():
-        print("[RDX] pip not available in current Python runtime.")
-        if interactive:
-            print("[RDX] Suggested: python -m ensurepip --upgrade")
-        else:
-            _print_help_commands([f"{sys.executable} -m ensurepip --upgrade"])
-        return False
-
     deps = _missing_dependencies()
     if deps:
+        if not _ensure_pip():
+            print("[RDX] pip not available in current Python runtime.")
+            if interactive:
+                print("[RDX] Suggested: python -m ensurepip --upgrade")
+            else:
+                _print_help_commands([f"{sys.executable} -m ensurepip --upgrade"])
+            return False
         print(f"[RDX] Missing required Python packages: {', '.join(deps)}")
         command = _to_command_repr([sys.executable, "-m", "pip", "install", "--user", *deps])
         if interactive:
