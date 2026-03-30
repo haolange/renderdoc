@@ -163,6 +163,12 @@ rdcstr GetRemoteServerChunkName(uint32_t idx)
 #define WRITE_DATA_SCOPE() WriteSerialiser &ser = writer;
 #define READ_DATA_SCOPE() ReadSerialiser &ser = reader;
 
+static void MarkConnectionLost(Network::Socket *sock)
+{
+  if(sock)
+    sock->Shutdown();
+}
+
 struct ClientThread
 {
   ClientThread()
@@ -1503,9 +1509,14 @@ ResultDetails RemoteServer::Ping()
   }
 
   if(type == RemoteServerPacket::Ping)
+  {
     ret = ResultCode::Succeeded;
+  }
   else
+  {
+    MarkConnectionLost(m_Socket);
     ret = ResultCode::RemoteServerConnectionLost;
+  }
 
   return ret;
 }
@@ -2331,7 +2342,8 @@ bool RemoteServer::HasEmbeddedDependencies()
     }
     else
     {
-      RDCERR("Unexpected response to has embedded dependencies request");
+      RDCWARN("Unexpected response to has embedded dependencies request, treating connection as lost");
+      MarkConnectionLost(m_Socket);
     }
 
     ser.EndChunk();
@@ -2362,7 +2374,8 @@ bool RemoteServer::HasPendingDependencies()
     }
     else
     {
-      RDCERR("Unexpected response to has pending dependencies request");
+      RDCWARN("Unexpected response to has pending dependencies request, treating connection as lost");
+      MarkConnectionLost(m_Socket);
     }
 
     ser.EndChunk();
@@ -2392,7 +2405,8 @@ rdcarray<rdcstr> RemoteServer::GetPendingDependenciesNicknames()
     }
     else
     {
-      RDCERR("Unexpected response to get nicknmes of externally referenced files");
+      RDCWARN("Unexpected response to get nicknames of externally referenced files, treating connection as lost");
+      MarkConnectionLost(m_Socket);
     }
 
     ser.EndChunk();

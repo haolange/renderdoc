@@ -67,6 +67,29 @@
 
 #include "pipestate.inl"
 
+namespace
+{
+template <typename Fn>
+auto InvokeCaptureAccessResult(ReplayManager &replay, Fn &&fn)
+    -> decltype(fn((ICaptureAccess *)nullptr))
+{
+  using Ret = decltype(fn((ICaptureAccess *)nullptr));
+
+  ICaptureAccess *access = replay.GetCaptureAccess();
+  if(!access)
+    return Ret();
+
+  if(replay.CurrentRemote().IsValid())
+  {
+    Ret ret = Ret();
+    replay.BlockInvoke([&](IReplayController *) { ret = fn(replay.GetCaptureAccess()); });
+    return ret;
+  }
+
+  return fn(access);
+}
+}    // namespace
+
 CaptureContext::CaptureContext(PersistantConfig &cfg) : m_Config(cfg)
 {
   RENDERDOC_PROFILEFUNCTION();
@@ -2868,7 +2891,9 @@ void CaptureContext::EmbedDependentFiles()
     return;
 
   // Always operate on the capture access (local or remote)
-  m_Replay.GetCaptureAccess()->EmbedDependenciesIntoCapture();
+  InvokeCaptureAccessResult(m_Replay, [](ICaptureAccess *access) {
+    return access->EmbedDependenciesIntoCapture();
+  });
 
   // Local replay
   if(m_Replay.GetCaptureFile())
@@ -2898,7 +2923,9 @@ void CaptureContext::RemoveDependentFiles()
     return;
 
   // Always operate on the capture access (local or remote)
-  m_Replay.GetCaptureAccess()->RemoveDependenciesFromCapture();
+  InvokeCaptureAccessResult(m_Replay, [](ICaptureAccess *access) {
+    return access->RemoveDependenciesFromCapture();
+  });
 
   // Local replay
   if(m_Replay.GetCaptureFile())

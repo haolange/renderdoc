@@ -62,6 +62,45 @@
 extern "C" void *__stdcall GetModuleHandleA(const char *);
 #endif
 
+namespace
+{
+template <typename Fn>
+auto InvokeCaptureAccess(ICaptureContext &ctx, Fn &&fn)
+    -> decltype(fn((ICaptureAccess *)nullptr))
+{
+  using Ret = decltype(fn((ICaptureAccess *)nullptr));
+
+  ICaptureAccess *access = ctx.Replay().GetCaptureAccess();
+  if(!access)
+    return Ret();
+
+  if(ctx.Replay().CurrentRemote().IsValid())
+  {
+    Ret ret = Ret();
+    ctx.Replay().BlockInvoke([&](IReplayController *) { ret = fn(ctx.Replay().GetCaptureAccess()); });
+    return ret;
+  }
+
+  return fn(access);
+}
+
+template <typename Fn>
+void InvokeCaptureAccessVoid(ICaptureContext &ctx, Fn &&fn)
+{
+  ICaptureAccess *access = ctx.Replay().GetCaptureAccess();
+  if(!access)
+    return;
+
+  if(ctx.Replay().CurrentRemote().IsValid())
+  {
+    ctx.Replay().BlockInvoke([&](IReplayController *) { fn(ctx.Replay().GetCaptureAccess()); });
+    return;
+  }
+
+  fn(access);
+}
+}    // namespace
+
 NetworkWorker::NetworkWorker() : QObject(NULL)
 {
 }
@@ -2240,15 +2279,20 @@ void MainWindow::OnCaptureLoaded()
   statusProgress->setVisible(false);
 
   // don't allow capture recompress on opened images
-  QString driver = m_Ctx.Replay().GetCaptureAccess()->DriverName();
+  rdcstr driverName = InvokeCaptureAccess(m_Ctx, [](ICaptureAccess *access) {
+    return access->DriverName();
+  });
+  QString driver = QString::fromUtf8(driverName.c_str());
   bool is_image = driver == lit("Image");
   ui->action_Recompress_Capture->setEnabled(!is_image);
 
   updateToolsMenuOptions();
 
   ui->action_Start_Replay_Loop->setEnabled(true);
-  ui->action_Open_RGP_Profile->setEnabled(
-      m_Ctx.Replay().GetCaptureAccess()->FindSectionByType(SectionType::AMDRGPProfile) >= 0);
+  int rgpSection = InvokeCaptureAccess(m_Ctx, [](ICaptureAccess *access) {
+    return access->FindSectionByType(SectionType::AMDRGPProfile);
+  });
+  ui->action_Open_RGP_Profile->setEnabled(rgpSection >= 0);
   ui->action_Create_RGP_Profile->setEnabled(m_Ctx.APIProps().rgpCapture && m_Ctx.IsCaptureLocal());
 
   setCaptureHasErrors(!m_Ctx.DebugMessages().empty());
@@ -2743,7 +2787,9 @@ void MainWindow::on_action_Open_RGP_Profile_triggered()
   if(!m_Ctx.IsCaptureLoaded())
     return;
 
-  int idx = m_Ctx.Replay().GetCaptureAccess()->FindSectionByType(SectionType::AMDRGPProfile);
+  int idx = InvokeCaptureAccess(m_Ctx, [](ICaptureAccess *access) {
+    return access->FindSectionByType(SectionType::AMDRGPProfile);
+  });
 
   if(idx < 0)
     return;
@@ -2753,7 +2799,9 @@ void MainWindow::on_action_Open_RGP_Profile_triggered()
   QFile f(path);
   if(f.open(QIODevice::WriteOnly | QIODevice::Truncate))
   {
-    bytebuf buf = m_Ctx.Replay().GetCaptureAccess()->GetSectionContents(idx);
+    bytebuf buf = InvokeCaptureAccess(m_Ctx, [idx](ICaptureAccess *access) {
+      return access->GetSectionContents(idx);
+    });
 
     f.write((const char *)buf.data(), (qint64)buf.size());
     f.flush();
@@ -2772,7 +2820,11 @@ void MainWindow::on_action_Create_RGP_Profile_triggered()
   if(!m_Ctx.IsCaptureLoaded())
     return;
 
-  if(m_Ctx.Replay().GetCaptureAccess()->FindSectionByType(SectionType::AMDRGPProfile) >= 0)
+  int existingRgpSection = InvokeCaptureAccess(m_Ctx, [](ICaptureAccess *access) {
+    return access->FindSectionByType(SectionType::AMDRGPProfile);
+  });
+
+  if(existingRgpSection >= 0)
   {
     QMessageBox::StandardButton res = RDDialog::question(
         this, tr("Existing RGP profile"), tr("Capture already contains an RGP profile. Overwrite?"),
@@ -2818,7 +2870,9 @@ void MainWindow::on_action_Create_RGP_Profile_triggered()
       props.version = 1;
       props.flags = SectionFlags::ZstdCompressed;
 
-      m_Ctx.Replay().GetCaptureAccess()->WriteSection(props, buf);
+      InvokeCaptureAccessVoid(m_Ctx, [&props, &buf](ICaptureAccess *access) {
+        access->WriteSection(props, buf);
+      });
 
       ui->action_Open_RGP_Profile->setEnabled(true);
     }
@@ -3017,14 +3071,12 @@ void MainWindow::loadLayout_triggered()
 
 void MainWindow::updateToolsMenuOptions()
 {
-  bool hasEmbeddedDependencies = false;
-  bool hasPendingDependencies = false;
-
-  if(m_Ctx.Replay().GetCaptureAccess())
-  {
-    hasEmbeddedDependencies = m_Ctx.Replay().GetCaptureAccess()->HasEmbeddedDependencies();
-    hasPendingDependencies = m_Ctx.Replay().GetCaptureAccess()->HasPendingDependencies();
-  }
+  bool hasEmbeddedDependencies = InvokeCaptureAccess(m_Ctx, [](ICaptureAccess *access) {
+    return access->HasEmbeddedDependencies();
+  });
+  bool hasPendingDependencies = InvokeCaptureAccess(m_Ctx, [](ICaptureAccess *access) {
+    return access->HasPendingDependencies();
+  });
 
   ui->action_EmbedExternalFiles->setEnabled(!hasEmbeddedDependencies && hasPendingDependencies);
   ui->action_RemoveExternalFiles->setEnabled(hasEmbeddedDependencies);
