@@ -191,6 +191,9 @@ D3D12PipelineStateViewer::D3D12PipelineStateViewer(ICaptureContext &ctx,
   for(QToolButton *b : sigButtons)
     QObject::connect(b, &QToolButton::clicked, this, &D3D12PipelineStateViewer::rootSigView_clicked);
 
+  QObject::connect(ui->predicateView, &QToolButton::clicked, this,
+                   &D3D12PipelineStateViewer::predicateView_clicked);
+
   for(RDLabel *b : shaderLabels)
   {
     b->setAutoFillBackground(true);
@@ -205,6 +208,13 @@ D3D12PipelineStateViewer::D3D12PipelineStateViewer(ICaptureContext &ctx,
     b->setBackgroundRole(QPalette::ToolTipBase);
     b->setForegroundRole(QPalette::ToolTipText);
     b->setMinimumSizeHint(QSize(100, 0));
+  }
+
+  {
+    ui->predicate->setAutoFillBackground(true);
+    ui->predicate->setBackgroundRole(QPalette::ToolTipBase);
+    ui->predicate->setForegroundRole(QPalette::ToolTipText);
+    ui->predicate->setMinimumSizeHint(QSize(250, 0));
   }
 
   QObject::connect(m_ComputeDebugSelector, &ComputeDebugSelector::beginDebug, this,
@@ -1165,6 +1175,8 @@ void D3D12PipelineStateViewer::clearState()
 
   ui->stencils->clear();
 
+  ui->predicateGroup->setVisible(false);
+
   ui->computeDebugSelector->setEnabled(false);
 }
 
@@ -2076,6 +2088,23 @@ void D3D12PipelineStateViewer::setState()
   ui->shadingRateImage->setText(ToQStr(state.rasterizer.state.shadingRateImage));
 
   ////////////////////////////////////////////////
+  // Predication
+
+  if(state.predication.resourceId == ResourceId())
+  {
+    ui->predicateGroup->setVisible(false);
+  }
+  else
+  {
+    ui->predicateGroup->setVisible(true);
+    ui->predicate->setText(
+        tr("%1 + %2 byte offset")
+            .arg(ToQStr(state.predication.resourceId))
+            .arg(Formatter::HumanFormat(state.predication.offset, Formatter::OffsetSize)));
+    ui->predicateSkipIfZero->setText(state.predication.skipIfZero ? lit("== 0") : lit("!= 0"));
+  }
+
+  ////////////////////////////////////////////////
   // Output Merger
 
   bool targets[32] = {};
@@ -2108,18 +2137,26 @@ void D3D12PipelineStateViewer::setState()
   ui->blends->beginUpdate();
   ui->blends->clear();
   {
+    bool independent = state.outputMerger.blendState.independentBlend;
     int i = 0;
     for(const ColorBlend &blend : state.outputMerger.blendState.blends)
     {
-      bool filledSlot = (blend.enabled || targets[i]);
+      bool filledSlot = true;
       bool usedSlot = (targets[i]);
+
+      if(!independent)
+        usedSlot = i == 0;
 
       if(showNode(usedSlot, filledSlot))
       {
         RDTreeWidgetItem *node = NULL;
 
+        QString slotName = QString::number(i);
+        if(!independent)
+          slotName = i == 0 ? tr("All") : lit("-");
+
         node = new RDTreeWidgetItem(
-            {i, blend.enabled ? tr("True") : tr("False"),
+            {slotName, blend.enabled ? tr("True") : tr("False"),
 
              ToQStr(blend.colorBlend.source), ToQStr(blend.colorBlend.destination),
              ToQStr(blend.colorBlend.operation),
@@ -2134,9 +2171,6 @@ void D3D12PipelineStateViewer::setState()
                  .arg((blend.writeMask & 0x2) == 0 ? lit("_") : lit("G"))
                  .arg((blend.writeMask & 0x4) == 0 ? lit("_") : lit("B"))
                  .arg((blend.writeMask & 0x8) == 0 ? lit("_") : lit("A"))});
-
-        if(!filledSlot)
-          setEmptyRow(node);
 
         if(!usedSlot)
           setInactiveRow(node);
@@ -2636,6 +2670,15 @@ void D3D12PipelineStateViewer::rootSigView_clicked()
   m_Ctx.AddDockWindow(view->Widget(), DockReference::AddTo, this);
 }
 
+void D3D12PipelineStateViewer::predicateView_clicked()
+{
+  IBufferViewer *viewer = m_Ctx.ViewBuffer(m_Ctx.CurD3D12PipelineState()->predication.offset, ~0ULL,
+                                           m_Ctx.CurD3D12PipelineState()->predication.resourceId,
+                                           lit("ulong predicateValue"));
+
+  m_Ctx.AddDockWindow(viewer->Widget(), DockReference::AddTo, this);
+}
+
 void D3D12PipelineStateViewer::shaderSave_clicked()
 {
   const D3D12Pipe::Shader *stage = stageForSender(qobject_cast<QWidget *>(QObject::sender()));
@@ -3101,6 +3144,28 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
 
     QVariantList row = exportViewHTML(used.descriptor, false, shaderInput, QString());
 
+    QString regname;
+    if(shaderInput)
+    {
+      if(!spacesUsed)
+        regname = QFormatStr("%1").arg(shaderInput->fixedBindNumber);
+      else
+        regname = QFormatStr("space%1, %2")
+                      .arg(shaderInput->fixedBindSetOrSpace)
+                      .arg(shaderInput->fixedBindNumber);
+
+      if(!shaderInput->name.empty())
+        regname += lit(": ") + shaderInput->name;
+
+      if(shaderInput->bindArraySize > 1)
+        regname += QFormatStr("[%1]").arg(used.access.arrayElement);
+    }
+    else if(used.access.index == DescriptorAccess::NoShaderBinding)
+    {
+      regname = m_Locations[{used.access.descriptorStore, used.access.byteOffset}].logicalBindName;
+    }
+    row.push_front(regname);
+
     rowsRO.push_back(row);
   }
 
@@ -3115,6 +3180,28 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
       shaderInput = &sh.reflection->readWriteResources[used.access.index];
 
     QVariantList row = exportViewHTML(used.descriptor, true, shaderInput, QString());
+
+    QString regname;
+    if(shaderInput)
+    {
+      if(!spacesUsed)
+        regname = QFormatStr("%1").arg(shaderInput->fixedBindNumber);
+      else
+        regname = QFormatStr("space%1, %2")
+                      .arg(shaderInput->fixedBindSetOrSpace)
+                      .arg(shaderInput->fixedBindNumber);
+
+      if(!shaderInput->name.empty())
+        regname += lit(": ") + shaderInput->name;
+
+      if(shaderInput->bindArraySize > 1)
+        regname += QFormatStr("[%1]").arg(used.access.arrayElement);
+    }
+    else if(used.access.index == DescriptorAccess::NoShaderBinding)
+    {
+      regname = m_Locations[{used.access.descriptorStore, used.access.byteOffset}].logicalBindName;
+    }
+    row.push_front(regname);
 
     rowsRW.push_back(row);
   }
@@ -3226,8 +3313,19 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
     xml.writeEndElement();
 
     m_Common.exportHTMLTable(
+        xml, {tr("Base Shading Rate"), tr("Shading Rate Combiners"), tr("Shading Rate Image")},
+        {QFormatStr("%1x%2").arg(rs.state.baseShadingRate.first).arg(rs.state.baseShadingRate.second),
+         QFormatStr("%1, %2")
+             .arg(ToQStr(rs.state.shadingRateCombiners.first, GraphicsAPI::D3D12))
+             .arg(ToQStr(rs.state.shadingRateCombiners.second, GraphicsAPI::D3D12)),
+         m_Ctx.GetResourceName(rs.state.shadingRateImage)});
+
+    xml.writeStartElement(lit("p"));
+    xml.writeEndElement();
+
+    m_Common.exportHTMLTable(
         xml,
-        {tr("Line Rasteriztion"), tr("Forced Sample Count"), tr("Conservative Raster"),
+        {tr("Line Rasterization"), tr("Forced Sample Count"), tr("Conservative Raster"),
          tr("Sample Mask")},
         {ToQStr(rs.state.lineRasterMode), rs.state.forcedSampleCount,
          rs.state.conservativeRasterization != ConservativeRaster::Disabled ? tr("Yes") : tr("No"),
@@ -3296,12 +3394,10 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
                               .arg(om.blendState.blendFactor[2], 0, 'f', 2)
                               .arg(om.blendState.blendFactor[3], 0, 'f', 2);
 
-    m_Common.exportHTMLTable(xml,
-                             {tr("Independent Blend Enable"), tr("Alpha to Coverage"),
-                              tr("Blend Factor"), tr("Multisampling Rate")},
-                             {om.blendState.independentBlend ? tr("Yes") : tr("No"),
-                              om.blendState.alphaToCoverage ? tr("Yes") : tr("No"), blendFactor,
-                              tr("%1x %2 qual").arg(om.multiSampleCount).arg(om.multiSampleQuality)});
+    m_Common.exportHTMLTable(
+        xml, {tr("Independent Blend Enable"), tr("Alpha to Coverage"), tr("Blend Factor")},
+        {om.blendState.independentBlend ? tr("Yes") : tr("No"),
+         om.blendState.alphaToCoverage ? tr("Yes") : tr("No"), blendFactor});
 
     xml.writeStartElement(lit("h3"));
     xml.writeCharacters(tr("Target Blends"));
@@ -3309,6 +3405,7 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
 
     QList<QVariantList> rows;
 
+    bool independent = om.blendState.independentBlend;
     int i = 0;
     for(const ColorBlend &b : om.blendState.blends)
     {
@@ -3321,7 +3418,11 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
                          .arg((b.writeMask & 0x4) == 0 ? lit("_") : lit("B"))
                          .arg((b.writeMask & 0x8) == 0 ? lit("_") : lit("A"));
 
-      rows.push_back({i, b.enabled ? tr("Yes") : tr("No"),
+      QString slotName = QString::number(i);
+      if(!independent)
+        slotName = i == 0 ? tr("All") : lit("-");
+
+      rows.push_back({slotName, b.enabled ? tr("Yes") : tr("No"),
                       b.logicOperationEnabled ? tr("Yes") : tr("No"), ToQStr(b.colorBlend.source),
                       ToQStr(b.colorBlend.destination), ToQStr(b.colorBlend.operation),
                       ToQStr(b.alphaBlend.source), ToQStr(b.alphaBlend.destination),
@@ -3438,7 +3539,7 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
     m_Common.exportHTMLTable(xml,
                              {
                                  tr("Slot"),
-                                 tr("Name"),
+                                 tr("Resource"),
                                  tr("View Type"),
                                  tr("Resource Type"),
                                  tr("Width"),
@@ -3470,7 +3571,7 @@ void D3D12PipelineStateViewer::exportHTML(QXmlStreamWriter &xml, const D3D12Pipe
 
     m_Common.exportHTMLTable(xml,
                              {
-                                 tr("Name"),
+                                 tr("Resource"),
                                  tr("View Type"),
                                  tr("Resource Type"),
                                  tr("Width"),

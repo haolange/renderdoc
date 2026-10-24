@@ -14,7 +14,10 @@ class VK_Multi_View(rdtest.TestCase):
 
         for test_name in ["Vertex: viewIndex", "Geometry: viewIndex", "Fragment: viewIndex", "No viewIndex"]:
             rdtest.log.print("Test {}".format(test_name))
-            action: rd.ActionDescription = self.find_action(test_name).next
+            label = self.find_action(test_name)
+            if label is None:
+                continue
+            action = label.next
             self.controller.SetFrameEvent(action.eventId, True)
 
             pipe: rd.PipeState = self.controller.GetPipelineState()
@@ -22,6 +25,47 @@ class VK_Multi_View(rdtest.TestCase):
                 raise rdtest.TestFailureException("Test {} shader can not be debugged".format(test_name))
 
             for view in range(2):
+                # Debug the pixel shader
+                inputs = rd.DebugPixelInputs()
+                inputs.view = view
+                trace: rd.ShaderDebugTrace = self.controller.DebugPixel(x, y, inputs)
+                if trace.debugger is None:
+                    self.controller.FreeTrace(trace)
+                    raise rdtest.TestFailureException("Test {} view {} did not debug at all".format(test_name, view))
+
+                cycles, variables = self.process_trace(trace)
+                output: rd.SourceVariableMapping = self.find_output_source_var(trace, rd.ShaderBuiltin.ColorOutput, 0)
+                debugged = self.evaluate_source_var(output, variables)
+                slice = view + 1
+                sub = rd.Subresource(0, slice, 0)
+                self.check_pixel_value(pipe.GetOutputTargets()[0].resource, x, y, debugged.value.f32v[0:4], sub=sub)
+                self.controller.FreeTrace(trace)
+
+                inst = 0
+                postvs = self.get_postvs(action, rd.MeshDataStage.VSOut, instance=inst, view=view)
+                for vtx in range(action.numIndices):
+                    idx = vtx
+                    self.check_debug(vtx, idx, inst, view, postvs)
+                rdtest.log.print(f"View {view} Slice {slice} passed")
+
+        for test_name in ["viewportIndex choice"]:
+            rdtest.log.print("Test {}".format(test_name))
+            label = self.find_action(test_name)
+            if label is None:
+                continue
+            action = label.next
+            self.controller.SetFrameEvent(action.eventId, True)
+
+            pipe: rd.PipeState = self.controller.GetPipelineState()
+            if not pipe.GetShaderReflection(rd.ShaderStage.Pixel).debugInfo.debuggable:
+                raise rdtest.TestFailureException("Test {} shader can not be debugged".format(test_name))
+
+            for view in range(2):
+                if view == 0:
+                    x, y = 100, 140
+                else:
+                    x, y = 300, 140
+
                 # Debug the pixel shader
                 inputs = rd.DebugPixelInputs()
                 inputs.view = view
@@ -74,7 +118,12 @@ class VK_Multi_View(rdtest.TestCase):
                         "Output {} at vert {} (idx {}) instance {} view {} has different size ({} values) to expectation ({} values)"
                             .format(name, vtx, idx, inst, view, value.columns, len(expect)))
 
-                debugged = value.value.f32v[0:value.columns]
+                if value.type == rd.VarType.SInt:
+                    debugged = value.value.s32v[0:value.columns]
+                elif value.type == rd.VarType.UInt:
+                    debugged = value.value.u32v[0:value.columns]
+                else:
+                    debugged = value.value.f32v[0:value.columns]
 
                 if not rdtest.value_compare(expect, debugged):
                     raise rdtest.TestFailureException(

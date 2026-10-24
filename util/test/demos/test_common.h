@@ -221,7 +221,7 @@ struct GraphicsTest
 
   bool headless = false;
 
-  RENDERDOC_API_1_0_0 *rdoc = NULL;
+  RENDERDOC_API_1_7_0 *rdoc = NULL;
 
   // shared parameters
   static int maxFrameCount;

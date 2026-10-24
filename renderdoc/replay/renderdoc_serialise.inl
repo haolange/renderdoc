@@ -261,8 +261,9 @@ void DoSerialise(SerialiserType &ser, ShaderDebugInfo &el)
   SERIALISE_MEMBER(debuggable);
   SERIALISE_MEMBER(sourceDebugInformation);
   SERIALISE_MEMBER(debugStatus);
+  SERIALISE_MEMBER(debugInfoLoadingLog);
 
-  SIZE_CHECK(136);
+  SIZE_CHECK(160);
 }
 
 template <typename SerialiserType>
@@ -299,7 +300,7 @@ void DoSerialise(SerialiserType &ser, ShaderReflection &el)
   SERIALISE_MEMBER(rayPayload);
   SERIALISE_MEMBER(rayAttributes);
 
-  SIZE_CHECK(632);
+  SIZE_CHECK(656);
 }
 
 template <typename SerialiserType>
@@ -442,8 +443,9 @@ void DoSerialise(SerialiserType &ser, ResourceDescription &el)
   SERIALISE_MEMBER(initialisationChunks);
   SERIALISE_MEMBER(derivedResources);
   SERIALISE_MEMBER(parentResources);
+  // SERIALISE_MEMBER(annotations);
 
-  SIZE_CHECK(112);
+  SIZE_CHECK(120);
 }
 
 template <typename SerialiserType>
@@ -539,8 +541,9 @@ void DoSerialise(SerialiserType &ser, APIEvent &el)
   SERIALISE_MEMBER(eventId);
   SERIALISE_MEMBER(chunkIndex);
   SERIALISE_MEMBER(fileOffset);
+  // SERIALISE_MEMBER(annotations);
 
-  SIZE_CHECK(16);
+  SIZE_CHECK(24);
 }
 
 template <typename SerialiserType>
@@ -773,8 +776,9 @@ void DoSerialise(SerialiserType &ser, FrameDescription &el)
   SERIALISE_MEMBER(captureTime);
   SERIALISE_MEMBER(stats);
   SERIALISE_MEMBER(debugMessages);
+  SERIALISE_MEMBER(containsAnnotations);
 
-  SIZE_CHECK(504);
+  SIZE_CHECK(512);
 }
 
 template <typename SerialiserType>
@@ -783,7 +787,7 @@ void DoSerialise(SerialiserType &ser, FrameRecord &el)
   SERIALISE_MEMBER(frameInfo);
   SERIALISE_MEMBER(actionList);
 
-  SIZE_CHECK(528);
+  SIZE_CHECK(536);
 }
 
 template <typename SerialiserType>
@@ -943,9 +947,8 @@ void DoSerialise(SerialiserType &ser, EventUsage &el)
 {
   SERIALISE_MEMBER(eventId);
   SERIALISE_MEMBER(usage);
-  SERIALISE_MEMBER(view);
 
-  SIZE_CHECK(16);
+  SIZE_CHECK(8);
 }
 
 template <typename SerialiserType>
@@ -1571,10 +1574,7 @@ void DoSerialise(SerialiserType &ser, D3D12Pipe::OM &el)
   SERIALISE_MEMBER(depthReadOnly);
   SERIALISE_MEMBER(stencilReadOnly);
 
-  SERIALISE_MEMBER(multiSampleCount);
-  SERIALISE_MEMBER(multiSampleQuality);
-
-  SIZE_CHECK(240);
+  SIZE_CHECK(232);
 }
 
 template <typename SerialiserType>
@@ -1642,6 +1642,16 @@ void DoSerialise(SerialiserType &ser, D3D12Pipe::RootSignature &el)
 }
 
 template <typename SerialiserType>
+void DoSerialise(SerialiserType &ser, D3D12Pipe::Predication &el)
+{
+  SERIALISE_MEMBER(resourceId);
+  SERIALISE_MEMBER(offset);
+  SERIALISE_MEMBER(skipIfZero);
+
+  SIZE_CHECK(24);
+}
+
+template <typename SerialiserType>
 void DoSerialise(SerialiserType &ser, D3D12Pipe::State &el)
 {
   SERIALISE_MEMBER(pipelineResourceId);
@@ -1665,9 +1675,11 @@ void DoSerialise(SerialiserType &ser, D3D12Pipe::State &el)
 
   SERIALISE_MEMBER(outputMerger);
 
+  SERIALISE_MEMBER(predication);
+
   SERIALISE_MEMBER(resourceStates);
 
-  SIZE_CHECK(776);
+  SIZE_CHECK(792);
 }
 
 #pragma endregion D3D12 pipeline state

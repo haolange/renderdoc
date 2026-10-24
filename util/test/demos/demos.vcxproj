@@ -135,6 +135,7 @@
     </ClCompile>
     <ClCompile Include="d3d11\d3d11_1_many_uavs.cpp" />
     <ClCompile Include="d3d11\d3d11_amd_shader_extensions.cpp" />
+    <ClCompile Include="d3d11\d3d11_annotations.cpp" />
     <ClCompile Include="d3d11\d3d11_array_interpolator.cpp" />
     <ClCompile Include="d3d11\d3d11_binding_hazards.cpp" />
     <ClCompile Include="d3d11\d3d11_buffer_truncation.cpp" />
@@ -192,6 +193,7 @@
     <ClCompile Include="d3d11\d3d11_video_textures.cpp" />
     <ClCompile Include="d3d11\d3d11_workgroup_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_amd_shader_extensions.cpp" />
+    <ClCompile Include="d3d12\d3d12_annotations.cpp" />
     <ClCompile Include="d3d12\d3d12_blend.cpp" />
     <ClCompile Include="d3d12\d3d12_buffer_truncation.cpp" />
     <ClCompile Include="d3d12\d3d12_cbuffer_zoo.cpp" />
@@ -216,6 +218,7 @@
     <ClCompile Include="d3d12\d3d12_overlay_test.cpp" />
     <ClCompile Include="d3d12\d3d12_parameter_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_pixel_history.cpp" />
+    <ClCompile Include="d3d12\d3d12_predication.cpp" />
     <ClCompile Include="d3d12\d3d12_primitiveid.cpp" />
     <ClCompile Include="d3d12\d3d12_reflection_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_rendertarget_binds.cpp" />
@@ -252,6 +255,7 @@
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="3rdparty\glad\glad_wgl.c" />
+    <ClCompile Include="gl\gl_annotations.cpp" />
     <ClCompile Include="gl\gl_buffer_resizing.cpp" />
     <ClCompile Include="gl\gl_buffer_spam.cpp" />
     <ClCompile Include="gl\gl_buffer_truncation.cpp" />
@@ -315,6 +319,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="test_common.cpp" />
     <ClCompile Include="texture_zoo.cpp" />
+    <ClCompile Include="vk\vk_annotations.cpp" />
     <ClCompile Include="vk\vk_blend.cpp" />
     <ClCompile Include="vk\vk_descriptor_buffer.cpp" />
     <ClCompile Include="vk\vk_compute_only.cpp" />
@@ -328,6 +333,7 @@
     <ClCompile Include="vk\vk_dynamic_rendering.cpp" />
     <ClCompile Include="vk\vk_empty_capture.cpp" />
     <ClCompile Include="vk\vk_extended_dyn_state.cpp" />
+    <ClCompile Include="vk\vk_custom_resolve.cpp" />
     <ClCompile Include="vk\vk_graphics_pipeline.cpp" />
     <ClCompile Include="vk\vk_groupshared.cpp" />
     <ClCompile Include="vk\vk_khr_buffer_address.cpp" />
@@ -352,6 +358,7 @@
     <ClCompile Include="vk\vk_query_pool.cpp" />
     <ClCompile Include="vk\vk_ray_query.cpp" />
     <ClCompile Include="vk\vk_read_before_overwrite.cpp" />
+    <ClCompile Include="vk\vk_resource_usage.cpp" />
     <ClCompile Include="vk\vk_robustness2.cpp" />
     <ClCompile Include="vk\vk_separate_depth_stencil_layouts.cpp" />
     <ClCompile Include="vk\vk_shader_debug_zoo.cpp" />

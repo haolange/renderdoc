@@ -765,6 +765,34 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
         break;
       }
 
+      // SPV_EXT_shader_invocation_reorder
+      case Capability::ShaderInvocationReorderEXT:
+      {
+        supported = false;
+        break;
+      }
+
+      // SPV_EXT_shader_subgroup_partitioned
+      case Capability::GroupNonUniformPartitionedEXT:
+      {
+        supported = false;
+        break;
+      }
+
+      // SPV_EXT_long_vector
+      case Capability::LongVectorEXT:
+      {
+        supported = false;
+        break;
+      }
+
+      // SPV_EXT_descriptor_heap
+      case Capability::DescriptorHeapEXT:
+      {
+        supported = false;
+        break;
+      }
+
       // no plans to support these - mostly Kernel/OpenCL related or vendor extensions
       case Capability::Addresses:
       case Capability::Linkage:
@@ -792,7 +820,6 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::PerViewAttributesNV:
       case Capability::MeshShadingNV:
       case Capability::ImageFootprintNV:
-      case Capability::GroupNonUniformPartitionedNV:
       case Capability::CooperativeMatrixNV:
       case Capability::ShaderSMBuiltinsNV:
       case Capability::SubgroupShuffleINTEL:
@@ -899,6 +926,7 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
       case Capability::BindlessImagesINTEL:
       case Capability::RayTracingNV:
       case Capability::ShaderInvocationReorderNV:
+      case Capability::PushConstantBanksNV:
       case Capability::Max:
       case Capability::Invalid:
       {
@@ -932,6 +960,33 @@ void Reflector::CheckDebuggable(bool &debuggable, rdcstr &debugStatus) const
 
     debuggable = false;
     debugStatus += StringFormat::Fmt("Unsupported extended instruction set: '%s'\n", setname.c_str());
+  }
+
+  // we don't currently support debugging unbounded arrays of cbuffers
+  for(const Variable &v : globals)
+  {
+    if(v.storage == StorageClass::Uniform)
+    {
+      const DataType &type = dataTypes[v.type];
+
+      // global variables should all be pointers into opaque storage
+      RDCASSERT(type.type == DataType::PointerType);
+
+      const DataType *innertype = &dataTypes[type.InnerType()];
+
+      if(innertype->type == DataType::ArrayType)
+      {
+        if(innertype->length == Id())
+        {
+          debuggable = false;
+          rdcstr name = strings[v.id];
+          if(name.empty())
+            name = GetRawName(v.id);
+          debugStatus +=
+              StringFormat::Fmt("Unsupported unbounded uniform buffer array: '%s'\n", name.c_str());
+        }
+      }
+    }
   }
 
   debugStatus.trim();
@@ -1230,7 +1285,9 @@ ShaderDebugTrace *Debugger::BeginDebug(DebugAPIWrapper *api, const ShaderStage s
           if(curDecorations.flags & Decorations::HasBuiltIn)
             builtin = MakeShaderBuiltin(stage, curDecorations.builtIn);
 
-          this->apiWrapper->FillInputValue(var, builtin, laneIndex, (uint32_t)location, component);
+          // Only set inputs for active lanes
+          if(apiWrapper->GetThreadProperty(laneIndex, ThreadProperty::Active) != 0)
+            this->apiWrapper->FillInputValue(var, builtin, laneIndex, (uint32_t)location, component);
         }
         else
         {
@@ -5324,6 +5381,7 @@ void Debugger::ProcessQueuedDeviceThreadSteps()
   }
 }
 
+// Can be called from any thread
 void Debugger::FillInputValue(ShaderVariable &var, ShaderBuiltin builtin, uint32_t threadIndex) const
 {
   apiWrapper->FillInputValue(var, builtin, threadIndex, 0, 0);

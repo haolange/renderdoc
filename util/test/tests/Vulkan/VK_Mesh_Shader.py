@@ -8,7 +8,9 @@ class VK_Mesh_Shader(rdtest.TestCase):
 
     def build_local_taskout_reference(self):
         reference = {}
-        reference[0] = { 'tri': [0, 1, 2, 3] }
+        reference[0] = { 'padArr' : [1000,1001,1002,1003] }
+        reference[1] = { 'pad': [123] }
+        reference[2] = { 'tri': [0, 1, 2, 3] }
         return reference
 
     def build_meshout_reference(self, orgY, color):
@@ -51,34 +53,53 @@ class VK_Mesh_Shader(rdtest.TestCase):
 
         action = action.next
         name = f"Pure Mesh Shader Test EID:{action.eventId}"
-        rdtest.log.begin_section(name)
-        self.controller.SetFrameEvent(action.eventId, False)
+        with rdtest.log.auto_section(name):
+            self.controller.SetFrameEvent(action.eventId, False)
 
-        x = 70
-        y = 240
-        
-        orgY = 0.65
-        color = [1.0, 0.0, 0.0, 1.0]
-        postms_ref = self.build_meshout_reference(orgY, color)
-        postms_data = self.get_postvs(action, rd.MeshDataStage.MeshOut, 0, action.numIndices)
-        self.check_mesh_data(postms_ref, postms_data)
-        self.check_debug_pixel(x, y)
-        rdtest.log.end_section(name)
+            x = 70
+            y = 240
+            
+            orgY = 0.65
+            color = [1.0, 0.0, 0.0, 1.0]
+            postms_ref = self.build_meshout_reference(orgY, color)
+            postms_data = self.get_postvs(action, rd.MeshDataStage.MeshOut, 0, action.numIndices)
+            self.check_mesh_data(postms_ref, postms_data)
+            self.check_debug_pixel(x, y)
 
         y -= 100
         action = action.next
-        name = f"Amplification Shader with Local Payload EID:{action.eventId}"
-        rdtest.log.begin_section(name)
-        self.controller.SetFrameEvent(action.eventId, False)
+        name = f"Task Shader with Local Payload EID:{action.eventId}"
+        with rdtest.log.auto_section(name):
+            self.controller.SetFrameEvent(action.eventId, False)
 
-        postts_ref = self.build_local_taskout_reference()
-        postts_data = self.get_task_data(action)
-        self.check_task_data(postts_ref, postts_data)
+            postts_ref = self.build_local_taskout_reference()
+            postts_data = self.get_task_data(action)
+            self.check_task_data(postts_ref, postts_data)
 
-        orgY = 0.0
-        color = [0.0, 0.0, 1.0, 1.0]
-        postms_ref = self.build_meshout_reference(orgY, color)
-        postms_data = self.get_postvs(action, rd.MeshDataStage.MeshOut, 0, action.numIndices)
-        self.check_mesh_data(postms_ref, postms_data)
-        self.check_debug_pixel(x, y)
-        rdtest.log.end_section(name)
+            orgY = 0.0
+            color = [0.0, 0.0, 1.0, 1.0]
+            postms_ref = self.build_meshout_reference(orgY, color)
+            postms_data = self.get_postvs(action, rd.MeshDataStage.MeshOut, 0, action.numIndices)
+            self.check_mesh_data(postms_ref, postms_data)
+            self.check_debug_pixel(x, y)
+        
+        name = f"Mesh Shader with Points output"
+        with rdtest.log.auto_section(name):
+            action = action.next
+            self.controller.SetFrameEvent(action.eventId, False)
+            x = 290
+            y = 90
+        
+            color = [0.0, 1.0, 0.0, 1.0]
+            postms_ref = {}
+            for i in range(6):
+                    postms_ref[i] = {
+                        'vtx': i,
+                        'idx': i,
+                        'gl_Position': [-0.4+0.21*i, -0.4, 0.0, 1.0],
+                        'gl_PointSize': 20.0,
+                        'outColor': color,
+                    }
+            postms_data = self.get_postvs(action, rd.MeshDataStage.MeshOut, 0, action.numIndices)
+            self.check_mesh_data(postms_ref, postms_data)
+            self.check_debug_pixel(x, y)

@@ -1675,6 +1675,15 @@ void main()
       Color = vec4(x, y, z, w);
       break;
     }
+    case 187:
+    {
+      uint a = zerou + 0x44b82a80;
+      int b = zeroi + 0x44b82a80;
+
+      Color = vec4(float(bitfieldExtract(a, 0, 32)), float(bitfieldExtract(b, 0, 32)),
+                   float(bitfieldExtract(a, 32, 0)), float(bitfieldExtract(b, 32, 0)));
+      break;
+    }
     default: break;
   }
 }
@@ -1963,6 +1972,7 @@ layout(local_size_x = GROUP_SIZE_X, local_size_y = GROUP_SIZE_Y, local_size_z = 
 layout(QUAD_LAYOUT) in;
 
 uvec3 tid;
+uvec3 gid;
 uint flatId;
 
 #if WORKGROUP_SUPPORT
@@ -1976,25 +1986,31 @@ void SetOutput(vec4 val)
 
 void Init(vec4 val)
 {
-  tid = gl_LocalInvocationID;
-  flatId = tid.z * gl_WorkGroupSize.x * gl_WorkGroupSize.y + tid.y * gl_WorkGroupSize.x + tid.x;
+  flatId = gid.z * gl_WorkGroupSize.x * gl_WorkGroupSize.y + gid.y * gl_WorkGroupSize.x + gid.x;
   SetOutput(val);
 }
 
 void main()
 {
+  // Only want the workgroup (1,0,0) to output results
+  if ((gl_WorkGroupID.x != 1) || (gl_WorkGroupID.y != 0) || (gl_WorkGroupID.z != 0))
+    return;
+
   vec4 testResult = vec4(0);
+  gid = gl_LocalInvocationID;
+  tid = gl_GlobalInvocationID;
   Init(testResult);
   uint id = flatId;
   uint ZERO = id / 10000;
   vec2 inpos;
-  inpos.xy = gl_LocalInvocationID.xy / 8.0;
+  inpos.xy = gid.xy / 8.0;
 
 #if WORKGROUP_SUPPORT
   gsmUint4[flatId].xyz = tid;
 #endif // #if WORKGROUP_SUPPORT
 #if SUBGROUP_SUPPORT
-  id += gl_SubgroupInvocationID * ZERO;
+  id += gl_SubgroupInvocationID;
+  testResult.w = id * ZERO;
 #endif // #if SUBGROUP_SUPPORT
 
   if(IsTest(0))
@@ -2008,32 +2024,32 @@ void main()
   }
   if(IsTest(1))
   {
-    vec3 test1 = dFdx(gl_LocalInvocationID*gl_LocalInvocationID);
+    vec3 test1 = gid;
     testResult.xyz = test1;
   }
   if(IsTest(2))
   {
-    vec3 test2 = dFdy(gl_LocalInvocationID*gl_LocalInvocationID);
+    vec3 test2 = tid;
     testResult.xyz = test2;
   }
   if(IsTest(3))
   {
-    vec3 test3 = dFdxFine(gl_LocalInvocationID*gl_LocalInvocationID);
+    vec3 test3 = dFdxFine(gid*gid*gid);
     testResult.xyz = test3;
   }
   if(IsTest(4))
   {
-    vec3 test4 = dFdyFine(gl_LocalInvocationID*gl_LocalInvocationID);
+    vec3 test4 = dFdyFine(gid*gid*gid);
     testResult.xyz = test4;
   }
   if(IsTest(5))
   {
-    vec3 test5 = dFdxCoarse(gl_LocalInvocationID*gl_LocalInvocationID);
+    vec3 test5 = dFdxCoarse(gid*gid);
     testResult.xyz = test5;
   }
   if(IsTest(6))
   {
-    vec3 test6 = dFdyCoarse(gl_LocalInvocationID*gl_LocalInvocationID);
+    vec3 test6 = dFdyCoarse(gid*gid);
     testResult.xyz = test6;
   }
   if(IsTest(7))
@@ -2078,9 +2094,6 @@ void main()
   SetOutput(testResult);
 }
 )EOSHADER";
-
-#if 0
-#endif    // #if 0
 
   std::string capabilities = "OpCapability Shader\n";
   std::string spv_extensions;
@@ -3387,15 +3400,15 @@ OpBranch %_bottomlabel
       // Packed 4x8-bit
       append_tests({
           R"EOTEST(
-%_x = OpSDotKHR %int %int_dyn_0x01020304 %int_dyn_0x05060708
-%_y = OpSUDotKHR %int %int_dyn_0x090A0B0C %uint_dyn_0x0D0E0F10
-%_z = OpSDotAccSatKHR %int %int_dyn_0x01020304 %int_dyn_0x05060708 %int_191
-%_w = OpSUDotAccSatKHR %int %int_dyn_0x090A0B0C %uint_dyn_0x0D0E0F10 %int_neg237
+%_x = OpSDotKHR %int %int_dyn_0x01020304 %int_dyn_0x05060708 PackedVectorFormat4x8BitKHR
+%_y = OpSUDotKHR %int %int_dyn_0x090A0B0C %uint_dyn_0x0D0E0F10 PackedVectorFormat4x8BitKHR
+%_z = OpSDotAccSatKHR %int %int_dyn_0x01020304 %int_dyn_0x05060708 %int_191 PackedVectorFormat4x8BitKHR
+%_w = OpSUDotAccSatKHR %int %int_dyn_0x090A0B0C %uint_dyn_0x0D0E0F10 %int_neg237 PackedVectorFormat4x8BitKHR
 %_out_int4 = OpCompositeConstruct %int4 %_x %_y %_z %_w
 )EOTEST",
           R"EOTEST(
-%_x = OpUDotKHR %uint %uint_dyn_0x01020304 %uint_dyn_0x05060708
-%_y = OpUDotAccSatKHR %uint %uint_dyn_0x090A0B0C0D %uint_dyn_0x0E0F1011 %uint_73
+%_x = OpUDotKHR %uint %uint_dyn_0x01020304 %uint_dyn_0x05060708 PackedVectorFormat4x8BitKHR
+%_y = OpUDotAccSatKHR %uint %uint_dyn_0x090A0B0C0D %uint_dyn_0x0E0F1011 %uint_73 PackedVectorFormat4x8BitKHR
 %_out_uint4 = OpCompositeConstruct %uint4 %_x %_y %_x %_y
 )EOTEST",
       });

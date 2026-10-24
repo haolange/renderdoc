@@ -1251,7 +1251,7 @@ struct ClearValue
   VkClearValue clear;
 
   operator const VkClearValue *() const { return (VkClearValue *)this; }
-  operator const VkClearValue &() const { return (VkClearValue &)*this; }
+  operator const VkClearValue &() const { return clear; }
 };
 
 struct Viewport : public VkViewport
@@ -1302,7 +1302,7 @@ struct ComputePipelineCreateInfo : public VkComputePipelineCreateInfo
   {
     sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     pNext = NULL;
-    this->flags = 0;
+    this->flags = flags;
     this->stage = stage;
     this->layout = layout;
     this->basePipelineHandle = basePipelineHandle;

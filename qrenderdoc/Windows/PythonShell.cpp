@@ -671,6 +671,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   {
     return InvokeRetFunction<IAPIInspector *>(&ICaptureContext::GetAPIInspector);
   }
+  virtual IAnnotationViewer *GetAnnotationViewer() override
+  {
+    return InvokeRetFunction<IAnnotationViewer *>(&ICaptureContext::GetAnnotationViewer);
+  }
   virtual ITextureViewer *GetTextureViewer() override
   {
     return InvokeRetFunction<ITextureViewer *>(&ICaptureContext::GetTextureViewer);
@@ -728,6 +732,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   {
     return InvokeRetFunction<bool>(&ICaptureContext::HasAPIInspector);
   }
+  virtual bool HasAnnotationViewer() override
+  {
+    return InvokeRetFunction<bool>(&ICaptureContext::HasAnnotationViewer);
+  }
   virtual bool HasTextureViewer() override
   {
     return InvokeRetFunction<bool>(&ICaptureContext::HasTextureViewer);
@@ -784,6 +792,10 @@ struct CaptureContextInvoker : ObjectForwarder<ICaptureContext>
   virtual void ShowAPIInspector() override
   {
     InvokeVoidFunction(&ICaptureContext::ShowAPIInspector);
+  }
+  virtual void ShowAnnotationViewer() override
+  {
+    InvokeVoidFunction(&ICaptureContext::ShowAnnotationViewer);
   }
   virtual void ShowTextureViewer() override
   {

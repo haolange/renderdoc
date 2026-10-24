@@ -79,7 +79,7 @@ struct OpenGLGraphicsTest : public GraphicsTest
   GLuint DefaultTriProgram;
   GLuint swapBlitFBO;
 
-  static constexpr GLfloat DefaultClearCol[] = {0.2f, 0.2f, 0.2f, 1.0f};
+  GLfloat DefaultClearCol[4] = {0.2f, 0.2f, 0.2f, 1.0f};
 
   GraphicsWindow *mainWindow = NULL;
   void *mainContext = NULL;

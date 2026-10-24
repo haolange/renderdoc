@@ -80,7 +80,7 @@ struct FilterExpression
 
   QString printName() const
   {
-    if(name == lit("$any$"))
+    if(name == lit("$subexp$"))
       return lit("(...)");
     if(function)
       return QFormatStr("$%1(%2)").arg(name).arg(params);
@@ -140,6 +140,12 @@ public:
   void SetShowParameterNames(bool show) override;
   void SetShowAllParameters(bool show) override;
   void SetEmptyRegionsVisible(bool show) override;
+
+  void SetHighlightedAnnotation(const rdcstr &annotationPath) override;
+  rdcstr GetHighlightedAnnotation() override;
+
+  void SetDurationColumnVisible(bool show) override;
+  void SetAnnotationColumnVisible(bool show) override;
 
   // ICaptureViewer
   void OnCaptureLoaded() override;

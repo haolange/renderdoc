@@ -75,6 +75,7 @@ private slots:
   // manual slots
   void shaderView_clicked();
   void rootSigView_clicked();
+  void predicateView_clicked();
   void shaderSave_clicked();
   void resource_itemActivated(RDTreeWidgetItem *item, int column);
   void cbuffer_itemActivated(RDTreeWidgetItem *item, int column);

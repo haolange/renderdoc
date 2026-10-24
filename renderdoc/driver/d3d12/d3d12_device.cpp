@@ -931,6 +931,9 @@ WrappedID3D12Device::~WrappedID3D12Device()
 
   SAFE_DELETE(m_StoredStructuredData);
 
+  for(auto it = m_Annotations.begin(); it != m_Annotations.end(); ++it)
+    delete it->second;
+
   RenderDoc::Inst().RemoveDeviceFrameCapturer((ID3D12Device *)this);
 
   if(!m_InternalCmds.pendingcmds.empty())
@@ -2558,6 +2561,10 @@ HRESULT WrappedID3D12Device::Present(ID3D12GraphicsCommandList *pOverlayCommandL
         rdcstr overlayText =
             RenderDoc::Inst().GetOverlayText(RDCDriver::D3D12, devWnd, m_FrameCounter, 0);
 
+        if(m_LastCaptureFailed > 0 && Timing::GetUnixTimestamp() - m_LastCaptureFailed < 5)
+          overlayText += StringFormat::Fmt("\nCapture failed: %s",
+                                           ResultDetails(m_LastCaptureError).Message().c_str());
+
         if(D3D12_Debug_RT_Overlay() && m_UsedRT)
         {
           ASStats blasStats = {}, tlasStats = {};
@@ -2744,6 +2751,39 @@ bool WrappedID3D12Device::Serialise_BeginCaptureFrame(SerialiserType &ser)
                                                   m_InitialResourceStates);
   }
 
+  if(ser.VersionAtLeast(0x17))
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+
+    SERIALISE_ELEMENT_LOCAL(numAnnotations, uint32_t(m_Annotations.size()));
+
+    auto it = m_Annotations.begin();
+    for(uint32_t i = 0; i < numAnnotations; i++)
+    {
+      SERIALISE_ELEMENT_LOCAL(id, it->first);
+      SDObject *annotation = NULL;
+      if(ser.IsReading())
+      {
+        annotation = new SDObject(""_lit, ""_lit);    // will be overwritten below
+      }
+      else
+      {
+        annotation = it->second;
+        it++;
+      }
+      ser.Serialise("annotation"_lit, *annotation);
+
+      if(ser.IsReading() && IsLoading(m_State))
+      {
+        m_Annotations[id] = annotation;
+        m_Replay->GetResourceDesc(id).annotations = annotation;
+      }
+    }
+
+    if(numAnnotations > 0)
+      m_Replay->WriteFrameRecord().frameInfo.containsAnnotations = true;
+  }
+
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading() && !barriers.empty())
@@ -2783,6 +2823,8 @@ void WrappedID3D12Device::StartFrameCapture(DeviceOwnedWindow devWnd)
 {
   if(!IsBackgroundCapturing(m_State))
     return;
+
+  m_CaptureFailure = false;
 
   RDCLOG("Starting capture");
 
@@ -2899,6 +2941,14 @@ bool WrappedID3D12Device::EndFrameCapture(DeviceOwnedWindow devWnd)
 {
   if(!IsActiveCapturing(m_State))
     return true;
+
+  if(m_CaptureFailure)
+  {
+    m_LastCaptureFailed = Timing::GetUnixTimestamp();
+    return DiscardFrameCapture(devWnd);
+  }
+
+  m_CaptureFailure = false;
 
   IDXGISwapper *swapper = NULL;
   SwapPresentInfo swapInfo = {};
@@ -3216,8 +3266,18 @@ bool WrappedID3D12Device::EndFrameCapture(DeviceOwnedWindow devWnd)
     captureSectionSize = captureWriter->GetOffset();
   }
 
-  RDCLOG("Captured D3D12 frame with %f MB capture section in %f seconds",
-         double(captureSectionSize) / (1024.0 * 1024.0), m_CaptureTimer.GetMilliseconds() / 1000.0);
+  if(m_CaptureFailure)
+  {
+    m_LastCaptureFailed = Timing::GetUnixTimestamp();
+    SAFE_DELETE(rdc);
+  }
+  else
+  {
+    RDCLOG("Captured D3D12 frame with %f MB capture section in %f seconds",
+           double(captureSectionSize) / (1024.0 * 1024.0), m_CaptureTimer.GetMilliseconds() / 1000.0);
+  }
+
+  m_CaptureFailure = false;
 
   if(D3D12Core)
   {
@@ -3307,6 +3367,8 @@ bool WrappedID3D12Device::DiscardFrameCapture(DeviceOwnedWindow devWnd)
   if(!IsActiveCapturing(m_State))
     return true;
 
+  m_CaptureFailure = false;
+
   RDCLOG("Discarding frame capture.");
 
   RenderDoc::Inst().FinishCaptureWriting(NULL, m_CapturedFrames.back().frameNumber);
@@ -3314,6 +3376,9 @@ bool WrappedID3D12Device::DiscardFrameCapture(DeviceOwnedWindow devWnd)
   m_CapturedFrames.pop_back();
 
   rdcarray<WrappedID3D12CommandQueue *> queues;
+
+  rdcarray<WrappedID3D12CommandQueue *> refQueues;
+  rdcarray<ID3D12Resource *> refBuffers;
 
   // transition back to IDLE and readback initial states atomically
   {
@@ -3325,12 +3390,8 @@ bool WrappedID3D12Device::DiscardFrameCapture(DeviceOwnedWindow devWnd)
 
     queues = m_Queues;
 
-    // remove the reference held during capture, potentially releasing the queue.
-    for(WrappedID3D12CommandQueue *q : m_RefQueues)
-      q->Release();
-
-    for(ID3D12Resource *r : m_RefBuffers)
-      r->Release();
+    refQueues.swap(m_RefQueues);
+    refBuffers.swap(m_RefBuffers);
   }
 
   rdcarray<MapState> maps = GetMaps();
@@ -3342,6 +3403,13 @@ bool WrappedID3D12Device::DiscardFrameCapture(DeviceOwnedWindow devWnd)
 
   for(auto it = queues.begin(); it != queues.end(); ++it)
     (*it)->ClearAfterCapture();
+
+  // remove the references held during capture, potentially releasing the queue/buffer.
+  for(WrappedID3D12CommandQueue *q : refQueues)
+    q->Release();
+
+  for(ID3D12Resource *r : refBuffers)
+    r->Release();
 
   for(ID3D12Heap *h : m_InitialStateHeaps)
     h->Release();
@@ -3356,6 +3424,121 @@ bool WrappedID3D12Device::DiscardFrameCapture(DeviceOwnedWindow devWnd)
   GetResourceManager()->FreeInitialContents();
 
   return true;
+}
+
+uint32_t WrappedID3D12Device::SetObjectAnnotation(void *object, const char *key,
+                                                  RENDERDOC_AnnotationType valueType,
+                                                  uint32_t valueVectorWidth,
+                                                  const RENDERDOC_AnnotationValue *value)
+{
+  ID3D12Object *d3d12Obj = (ID3D12Object *)object;
+
+  D3D12ResourceType type = TryIdentifyTypeByPtr(d3d12Obj);
+
+  if(type == Resource_Unknown)
+    return 2;
+
+  ResourceId id = GetResID(d3d12Obj);
+
+  if(id != ResourceId())
+  {
+    RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+    if(valueType == eRENDERDOC_APIObject)
+    {
+      ResourceId valId = GetResID((ID3D12Object *)val.apiObject);
+      RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(valId), "ResourceId isn't 64-bit!");
+      memcpy(&val.uint64, &valId, sizeof(valId));
+    }
+
+    SDObject *root = NULL;
+    {
+      SCOPED_LOCK(m_AnnotationsLock);
+      root = m_Annotations[id];
+      if(!root)
+        root = m_Annotations[id] = new SDObject("Object Annotations"_lit, "Object Annotations"_lit);
+    }
+
+    if(valueType == eRENDERDOC_Empty)
+    {
+      root->EraseChildByKeyPath(key);
+    }
+    else
+    {
+      WriteAnnotation(root->CreateChildByKeyPath(key), valueType, valueVectorWidth, val);
+    }
+
+    return 0;
+  }
+
+  return 2;
+}
+
+uint32_t WrappedID3D12Device::SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                                   RENDERDOC_AnnotationType valueType,
+                                                   uint32_t valueVectorWidth,
+                                                   const RENDERDOC_AnnotationValue *value)
+{
+  ID3D12Object *d3d12Obj = (ID3D12Object *)queueOrCommandBuffer;
+
+  D3D12ResourceType type = TryIdentifyTypeByPtr(d3d12Obj);
+
+  if(type == Resource_CommandQueue)
+  {
+    WrappedID3D12CommandQueue *queue = (WrappedID3D12CommandQueue *)d3d12Obj;
+
+    if(IsActiveCapturing(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(D3D12Chunk::SetQueueAnnotation);
+
+      RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+      if(valueType == eRENDERDOC_APIObject)
+      {
+        ResourceId id = GetResID((ID3D12Object *)val.apiObject);
+        RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(id), "ResourceId isn't 64-bit!");
+        memcpy(&val.uint64, &id, sizeof(id));
+      }
+
+      queue->Serialise_SetQueueAnnotation(ser, key, valueType, valueVectorWidth, val);
+
+      m_FrameCaptureRecord->AddChunk(scope.Get());
+    }
+
+    return 0;
+  }
+  else if(type == Resource_GraphicsCommandList)
+  {
+    WrappedID3D12GraphicsCommandList *list = (WrappedID3D12GraphicsCommandList *)d3d12Obj;
+
+    if(IsCaptureMode(m_State))
+    {
+      CACHE_THREAD_SERIALISER();
+      ser.SetActionChunk();
+      SCOPED_SERIALISE_CHUNK(D3D12Chunk::SetCommandAnnotation);
+
+      RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+      if(valueType == eRENDERDOC_APIObject)
+      {
+        ResourceId id = GetResID((ID3D12Object *)val.apiObject);
+        RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(id), "ResourceId isn't 64-bit!");
+        memcpy(&val.uint64, &id, sizeof(id));
+      }
+
+      list->Serialise_SetCommandAnnotation(ser, key, valueType, valueVectorWidth, val);
+
+      GetRecord(list)->AddChunk(scope.Get());
+    }
+
+    return 0;
+  }
+  else
+  {
+    return 2;
+  }
 }
 
 void WrappedID3D12Device::UploadBLASBufferAddresses()
@@ -3502,6 +3685,11 @@ void WrappedID3D12Device::ReleaseResource(ID3D12DeviceChild *res)
     SCOPED_LOCK(m_SparseLock);
     m_SparseResources.erase(id);
     m_SparseHeaps.erase(id);
+  }
+
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+    m_Annotations.erase(id);
   }
 
   D3D12ResourceRecord *record = GetRecord(res);
@@ -5092,6 +5280,8 @@ bool WrappedID3D12Device::ProcessChunk(ReadSerialiser &ser, D3D12Chunk context)
     case D3D12Chunk::List_SetPipelineState1:
     case D3D12Chunk::List_SetProgram:
     case D3D12Chunk::List_DispatchGraph:
+    case D3D12Chunk::SetCommandAnnotation:
+    case D3D12Chunk::SetQueueAnnotation:
       RDCERR("Unexpected chunk while processing initialisation: %s", ToStr(context).c_str());
       return false;
 

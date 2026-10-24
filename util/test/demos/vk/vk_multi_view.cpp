@@ -67,6 +67,32 @@ void main()
 
 )EOSHADER";
 
+  const std::string multiviewViewportVertex = common + R"EOSHADER(
+
+#extension GL_ARB_shader_viewport_layer_array : require
+
+layout(location = 0) in vec3 Position;
+layout(location = 1) in vec4 Color;
+layout(location = 2) in vec2 UV;
+
+layout(location = 0) out v2f vertOut;
+
+void main()
+{
+	vertOut.pos = vec4(Position.xyz*vec3(1,-1,1), 1);
+	gl_Position = vertOut.pos;
+	vertOut.col = Color;
+	vertOut.uv = vec4(UV.xy, 0, 1);
+
+  gl_ViewportIndex = gl_ViewIndex;
+  if (gl_ViewIndex == 0)
+	  vertOut.col = vec4(1, 0, 0, 1);
+  if (gl_ViewIndex == 1)
+	  vertOut.col = vec4(0, 1, 0, 1);
+}
+
+)EOSHADER";
+
   const std::string multiViewGeom = common + R"EOSHADER(
 
 layout(triangles) in;
@@ -122,10 +148,19 @@ void main()
 }
 
 )EOSHADER";
+
+  bool geometryTest = false;
+
   void Prepare(int argc, char **argv)
   {
     features.geometryShader = VK_TRUE;
+    features.multiViewport = VK_TRUE;
     devExts.push_back(VK_KHR_MULTIVIEW_EXTENSION_NAME);
+    optDevExts.push_back(VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME);
+
+    // this extension is all-or-nothing and prevents us doing any other tests normally with single
+    // viewports
+    // optDevExts.push_back(VK_QCOM_MULTIVIEW_PER_VIEW_VIEWPORTS_EXTENSION_NAME);
 
     VulkanGraphicsTest::Prepare(argc, argv);
 
@@ -137,7 +172,20 @@ void main()
     if(!multiview.multiview)
       Avail = "Multiview feature 'multiview' not available";
 
+    geometryTest = multiview.multiviewGeometryShader == VK_TRUE;
+
     devInfoNext = &multiview;
+
+    static VkPhysicalDeviceMultiviewPerViewViewportsFeaturesQCOM perviewQC = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_VIEWPORTS_FEATURES_QCOM,
+    };
+
+    if(hasExt(VK_QCOM_MULTIVIEW_PER_VIEW_VIEWPORTS_EXTENSION_NAME))
+    {
+      perviewQC.multiviewPerViewViewports = VK_TRUE;
+      perviewQC.pNext = (void *)devInfoNext;
+      devInfoNext = &perviewQC;
+    }
   }
 
   int main()
@@ -223,30 +271,72 @@ void main()
 
     std::vector<std::string> testNames;
     std::vector<VkPipeline> testPipes;
-    testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
-    testNames.push_back("Vertex: viewIndex");
 
-    pipeCreateInfo.stages = {
-        CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
-        CompileShaderModule(multiViewPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
-    };
-    testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
-    testNames.push_back("Fragment: viewIndex");
+    size_t viewportChoosePipe = ~0U;
+    size_t viewportAutoPipe = ~0U;
 
-    pipeCreateInfo.stages = {
-        CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
-        CompileShaderModule(VKDefaultPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
-        CompileShaderModule(multiViewGeom, ShaderLang::glsl, ShaderStage::geom, "main"),
-    };
-    testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
-    testNames.push_back("Geometry: viewIndex");
+    if(hasExt(VK_QCOM_MULTIVIEW_PER_VIEW_VIEWPORTS_EXTENSION_NAME))
+    {
+      pipeCreateInfo.stages = {
+          CompileShaderModule(multiviewVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
+          CompileShaderModule(VKDefaultPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+      };
 
-    pipeCreateInfo.stages = {
-        CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
-        CompileShaderModule(VKDefaultPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
-    };
-    testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
-    testNames.push_back("No viewIndex");
+      pipeCreateInfo.viewportState.viewportCount = 2;
+      pipeCreateInfo.viewportState.scissorCount = 2;
+
+      viewportAutoPipe = testPipes.size();
+
+      testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
+      testNames.push_back("viewportIndex auto");
+    }
+    else
+    {
+      testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
+      testNames.push_back("Vertex: viewIndex");
+
+      pipeCreateInfo.stages = {
+          CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
+          CompileShaderModule(multiViewPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+      };
+      testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
+      testNames.push_back("Fragment: viewIndex");
+
+      if(geometryTest)
+      {
+        pipeCreateInfo.stages = {
+            CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
+            CompileShaderModule(VKDefaultPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+            CompileShaderModule(multiViewGeom, ShaderLang::glsl, ShaderStage::geom, "main"),
+        };
+        testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
+        testNames.push_back("Geometry: viewIndex");
+      }
+
+      pipeCreateInfo.stages = {
+          CompileShaderModule(VKDefaultVertex, ShaderLang::glsl, ShaderStage::vert, "main"),
+          CompileShaderModule(VKDefaultPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+      };
+      testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
+      testNames.push_back("No viewIndex");
+
+      if(hasExt(VK_EXT_SHADER_VIEWPORT_INDEX_LAYER_EXTENSION_NAME))
+      {
+        pipeCreateInfo.stages = {
+            CompileShaderModule(multiviewViewportVertex, ShaderLang::glsl, ShaderStage::vert,
+                                "main"),
+            CompileShaderModule(VKDefaultPixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+        };
+
+        pipeCreateInfo.viewportState.viewportCount = 2;
+        pipeCreateInfo.viewportState.scissorCount = 2;
+
+        viewportChoosePipe = testPipes.size();
+
+        testPipes.push_back(createGraphicsPipeline(pipeCreateInfo));
+        testNames.push_back("viewportIndex choice");
+      }
+    }
 
     AllocatedBuffer vb(
         this,
@@ -280,6 +370,38 @@ void main()
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, testPipes[i]);
         vkCmdSetViewport(cmd, 0, 1, &mainWindow->viewport);
         vkCmdSetScissor(cmd, 0, 1, &mainWindow->scissor);
+
+        if(i == viewportChoosePipe || i == viewportAutoPipe)
+        {
+          VkViewport v = mainWindow->viewport;
+          VkRect2D s = mainWindow->scissor;
+
+          VkViewport vs[2];
+
+          v.width /= 2.0f;
+          vs[0] = v;
+          // vkCmdSetViewport(cmd, 0, 1, &v);
+          v.x += v.width;
+          vs[1] = v;
+          // vkCmdSetViewport(cmd, 1, 1, &v);
+          vkCmdSetViewport(cmd, 0, 2, vs);
+
+          s.extent.width /= 2;
+          s.extent.width -= 150;
+          s.offset.x += 75;
+          s.extent.height -= 200;
+          s.offset.y += 100;
+
+          VkRect2D ss[2];
+
+          ss[0] = s;
+          // vkCmdSetScissor(cmd, 0, 1, &s);
+          s.offset.x += mainWindow->scissor.extent.width / 2;
+          ss[1] = s;
+          // vkCmdSetScissor(cmd, 1, 1, &s);
+          vkCmdSetScissor(cmd, 0, 2, ss);
+        }
+
         vkh::cmdBindVertexBuffers(cmd, 0, {vb.buffer}, {0});
         setMarker(cmd, testNames[i]);
         vkCmdDraw(cmd, 3, 1, 0, 0);

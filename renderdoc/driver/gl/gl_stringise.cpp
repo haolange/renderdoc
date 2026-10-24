@@ -54,6 +54,8 @@ rdcstr DoStringise(const GLChunk &el)
     STRINGISE_ENUM_CLASS(eglSwapBuffersWithDamageEXT);
     STRINGISE_ENUM_CLASS(eglSwapBuffersWithDamageKHR);
 
+    STRINGISE_ENUM_CLASS_NAMED(SetCommandAnnotation, "Internal::SetCommandAnnotation");
+
     STRINGISE_ENUM_CLASS_NAMED(ImplicitThreadSwitch, "Internal::Implicit thread context-switch");
 
 // re-use list of GL functions as chunks. Many of these will be aliased. This may not appear in the

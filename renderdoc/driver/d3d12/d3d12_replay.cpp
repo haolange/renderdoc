@@ -394,7 +394,8 @@ rdcarray<BufferDescription> D3D12Replay::GetBuffers()
   rdcarray<BufferDescription> ret;
 
   for(auto it = m_pDevice->GetResourceList().begin(); it != m_pDevice->GetResourceList().end(); it++)
-    if(it->second->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+    if(it->second->GetDesc().Dimension == D3D12_RESOURCE_DIMENSION_BUFFER &&
+       !ResourceIDGen::IsReplayOnlyID(it->first))
       ret.push_back(GetBuffer(it->first));
 
   return ret;
@@ -1697,6 +1698,14 @@ void D3D12Replay::SavePipelineState(uint32_t eventId)
     }
   }
 
+  /////////////////////////////////////////////////
+  // Predication
+  /////////////////////////////////////////////////
+
+  state.predication.resourceId = rs.predication.buffer;
+  state.predication.offset = rs.predication.offset;
+  state.predication.skipIfZero = rs.predication.op == D3D12_PREDICATION_OP_EQUAL_ZERO;
+
   // resource states
   {
     const std::map<ResourceId, SubresourceStateVector> &states = m_pDevice->GetSubresourceStates();
@@ -1823,7 +1832,7 @@ rdcarray<Descriptor> D3D12Replay::GetDescriptors(ResourceId descriptorStore,
         WrappedID3D12Resource::GetResIDFromAddr(cbv.BufferLocation, ret[dst].resource,
                                                 ret[dst].byteOffset);
 
-        ret[dst].resource = ret[dst].resource;
+        ret[dst].type = DescriptorType::ConstantBuffer;
         ret[dst].byteSize = cbv.SizeInBytes;
       }
       else if(desc->GetType() == D3D12DescriptorType::Sampler)
@@ -3626,6 +3635,13 @@ void D3D12Replay::ClearReplayCache()
   ClearFeedbackCache();
 }
 
+void D3D12Replay::ReloadShaderDebugInformation()
+{
+  DXBC::ResetSearchDirsCache();
+  WrappedID3D12Shader::ReloadShaderDebugInformation();
+  ClearReplayCache();
+}
+
 void D3D12Replay::RefreshDerivedReplacements()
 {
   D3D12ResourceManager *rm = m_pDevice->GetResourceManager();
@@ -4737,7 +4753,7 @@ RDResult D3D12_CreateReplayDevice(RDCFile *rdc, const ReplayOptions &opts, IRepl
       config->devfactory->EnableExperimentalFeatures(1, &D3D12GPUUploadHeapsOnUnsupportedOS, NULL,
                                                      NULL);
     }
-    else
+    else if(enableExperimentalPtr)
     {
       enableExperimentalPtr(1, &D3D12GPUUploadHeapsOnUnsupportedOS, NULL, NULL);
     }

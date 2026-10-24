@@ -1266,6 +1266,10 @@ bool GLInitParams::IsSupportedVersion(uint64_t ver)
   if(ver == 0x22)
     return true;
 
+  // 0x23 -> 0x24 - added serialised annotations
+  if(ver == 0x23)
+    return true;
+
   return false;
 }
 

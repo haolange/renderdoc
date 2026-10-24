@@ -201,8 +201,8 @@ private:
   static rdcstr GetChunkName(uint32_t idx);
   D3D12ResourceManager *GetResourceManager() { return m_pDevice->GetResourceManager(); }
 
-  rdcarray<std::function<bool()>> m_ImmediateASCallbacks;
-  rdcarray<std::function<bool()>> m_PendingASCallbacks;
+  rdcarray<std::function<bool()>> m_ImmediateCallbacks;
+  rdcarray<std::function<bool()>> m_PendingCallbacks;
   rdcarray<std::function<void()>> m_UnusedCleanupCallbacks;
 public:
   ALLOCATE_WITH_WRAPPED_POOL(WrappedID3D12GraphicsCommandList);
@@ -253,35 +253,45 @@ public:
 
   bool ValidateRootGPUVA(D3D12_GPU_VIRTUAL_ADDRESS buffer);
 
-  void AddSubmissionASBuildCallback(bool waitForSubmission, const std::function<bool()> &postBldExec,
-                                    const std::function<void()> &unusedCleanup)
+  void AddSubmissionASBuildCallback(bool waitForSubmission, const std::function<bool()> &callback,
+                                    const std::function<void()> &cleanupCallback)
   {
-    if(waitForSubmission)
-      m_PendingASCallbacks.push_back(postBldExec);
-    else
-      m_ImmediateASCallbacks.push_back(postBldExec);
-    m_UnusedCleanupCallbacks.push_back(unusedCleanup);
+    if(callback)
+    {
+      if(waitForSubmission)
+        m_PendingCallbacks.push_back(callback);
+      else
+        m_ImmediateCallbacks.push_back(callback);
+    }
+
+    if(cleanupCallback)
+      m_UnusedCleanupCallbacks.push_back(cleanupCallback);
   }
 
-  bool ExecuteImmediateASBuildCallbacks()
+  bool ExecuteImmediateCallbacks()
   {
     bool success = true;
 
-    for(std::function<bool()> &func : m_ImmediateASCallbacks)
+    for(std::function<bool()> &func : m_ImmediateCallbacks)
     {
       success &= func();
     }
 
-    m_ImmediateASCallbacks.clear();
+    m_ImmediateCallbacks.clear();
     m_UnusedCleanupCallbacks.clear();
     return success;
   }
 
-  void TakeWaitingASBuildCallbacks(rdcarray<std::function<bool()>> &callbacks)
+  void TakeWaitingCallbacks(rdcarray<std::function<bool()>> &callbacks)
   {
-    callbacks.append(std::move(m_PendingASCallbacks));
-    m_PendingASCallbacks.clear();
+    callbacks.append(std::move(m_PendingCallbacks));
+    m_PendingCallbacks.clear();
   }
+
+  template <typename SerialiserType>
+  bool Serialise_SetCommandAnnotation(SerialiserType &ser, rdcstr key,
+                                      RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                      RENDERDOC_AnnotationValue value);
 
   //////////////////////////////
   // implement IUnknown

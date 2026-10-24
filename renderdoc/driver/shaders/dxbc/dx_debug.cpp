@@ -221,13 +221,15 @@ void GatherInputDataForInitialValues(const DXBC::DXBCContainer *dxbc, InputFetch
     if(included && numCols <= 3 && (sig.regChannelMask & 0x1))
     {
       uint32_t nextIdx = sig.semanticIndex + 1;
+      uint32_t nextReg = sig.regIndex + 1;
 
       for(size_t j = i + 1; j < numInputs; j++)
       {
         const SigParameter &jSig = stageInputSig[j];
 
         // if we've found the 'next' semantic
-        if(sig.semanticName == jSig.semanticName && nextIdx == jSig.semanticIndex)
+        if(sig.semanticName == jSig.semanticName && nextIdx == jSig.semanticIndex &&
+           nextReg == jSig.regIndex)
         {
           int jNumCols = (jSig.regChannelMask & 0x1 ? 1 : 0) + (jSig.regChannelMask & 0x2 ? 1 : 0) +
                          (jSig.regChannelMask & 0x4 ? 1 : 0) + (jSig.regChannelMask & 0x8 ? 1 : 0);
@@ -247,6 +249,7 @@ void GatherInputDataForInitialValues(const DXBC::DXBCContainer *dxbc, InputFetch
 
             // continue searching now
             nextIdx++;
+            nextReg++;
             j = i + 1;
             continue;
           }
@@ -961,7 +964,13 @@ void ExtractInputs(Inputs IN
 
   quadLaneIndex = (2u * (uint(debug_pixelPos.y) & 1u)) + (uint(debug_pixelPos.x) & 1u);
   derivValid = ddx(debug_pixelPos.x);
+
+#if __SHADER_TARGET_MINOR >= 6
+  // IsHelperLane() can fail when software emulated on MSAA, because it checks SV_Coverage != 0
   isHelper = IsHelperLane() ? 1 : 0;
+#else
+  isHelper = (coverage & (1u << sample)) == 0;
+#endif
 
   helperBallot = WaveActiveBallot(isHelper != 0);
 

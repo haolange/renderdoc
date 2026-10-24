@@ -36,10 +36,25 @@
 #include "common/timing.h"
 #include "os/os_specific.h"
 
+DECLARE_REFLECTION_ENUM(RENDERDOC_AnnotationType);
+DECLARE_REFLECTION_STRUCT(RENDERDOC_AnnotationValue);
+
 class Chunk;
 struct RDCThumb;
 struct ReplayOptions;
 struct SDObject;
+
+void WriteAnnotation(SDObject *obj, RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                     RENDERDOC_AnnotationValue value);
+
+struct PendingAnnotation
+{
+  uint32_t eventId;
+  rdcstr key;
+  RENDERDOC_AnnotationType valueType;
+  uint32_t valueVectorWidth;
+  RENDERDOC_AnnotationValue value;
+};
 
 // not provided by tinyexr, just do by hand
 bool is_exr_file(const byte *headerBuffer, size_t size);
@@ -103,6 +118,13 @@ struct IFrameCapturer
   virtual void StartFrameCapture(DeviceOwnedWindow devWnd) = 0;
   virtual bool EndFrameCapture(DeviceOwnedWindow devWnd) = 0;
   virtual bool DiscardFrameCapture(DeviceOwnedWindow devWnd) = 0;
+
+  virtual uint32_t SetObjectAnnotation(void *object, const char *key,
+                                       RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                       const RENDERDOC_AnnotationValue *value) = 0;
+  virtual uint32_t SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                        RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                        const RENDERDOC_AnnotationValue *value) = 0;
 };
 
 struct IDeviceProtocolHandler;
@@ -572,6 +594,8 @@ public:
   void AddDeviceFrameCapturer(void *dev, IFrameCapturer *cap);
   void RemoveDeviceFrameCapturer(void *dev);
 
+  IFrameCapturer *MatchFrameCapturer(DeviceOwnedWindow devWnd);
+
   void StartFrameCapture(DeviceOwnedWindow devWnd);
   bool IsFrameCapturing() { return m_CapturesActive > 0; }
   void SetActiveWindow(DeviceOwnedWindow devWnd);
@@ -632,11 +656,18 @@ private:
   struct TrackedFile
   {
     TrackedFile() = default;
-    TrackedFile(const rdcstr &name, const rdcstr &path) : nickname(name), filepath(path) {}
-    TrackedFile(const rdcstr &name, const bytebuf &contents) : nickname(name), data(contents) {}
+    TrackedFile(const rdcstr &name, const rdcstr &path)
+        : nickname(name), filepath(path), hasData(false)
+    {
+    }
+    TrackedFile(const rdcstr &name, const bytebuf &contents)
+        : nickname(name), data(contents), hasData(true)
+    {
+    }
     rdcstr nickname;
     rdcstr filepath;
     bytebuf data;
+    bool hasData;
   };
 
   void SyncAvailableGPUThread();
@@ -723,8 +754,6 @@ private:
   std::map<DeviceOwnedWindow, FrameCap> m_WindowFrameCapturers;
   DeviceOwnedWindow m_ActiveWindow;
   std::map<void *, IFrameCapturer *> m_DeviceFrameCapturers;
-
-  IFrameCapturer *MatchFrameCapturer(DeviceOwnedWindow devWnd);
 
   bool m_VendorExts[arraydim<VendorExtensions>()] = {};
 

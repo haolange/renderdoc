@@ -61,7 +61,7 @@ struct VkInitParams
   uint64_t GetSerialiseSize();
 
   // check if a frame capture section version is supported
-  static const uint64_t CurrentVersion = 0x18;
+  static const uint64_t CurrentVersion = 0x20;
   static bool IsSupportedVersion(uint64_t ver);
 };
 
@@ -580,6 +580,7 @@ private:
   bool m_DynVertexInput = false;
   bool m_DynAttachmentLoop = false;
   bool m_MultiView = false;
+  bool m_MultiViewGeometryShaders = false;
   bool m_MeshQueries = false;
   bool m_MeshShaders = false;
   bool m_TaskShaders = false;
@@ -590,12 +591,18 @@ private:
   bool m_Maintenance6 = false;
   bool m_Maintenance9 = false;
   bool m_DescriptorBuffers = false;
+  bool m_MultiviewPerViewViewports = false;
 
   uint32_t m_RTCaptureReplayHandleSize = 0;
 
   PFN_vkSetDeviceLoaderData m_SetDeviceLoaderData;
 
   InstanceDeviceInfo m_EnabledExtensions;
+
+  const void *m_UserInstance = NULL;
+  const void *m_UserDevice = NULL;
+  std::unordered_map<const void *, VkQueue> m_UserQueues;
+  std::unordered_map<const void *, VkPhysicalDevice> m_UserPhysicalDevices;
 
   // the instance corresponding to this WrappedVulkan
   VkInstance m_Instance;
@@ -686,6 +693,7 @@ private:
 
   GPUBuffer m_IndirectBuffer;
   size_t m_IndirectBufferSize = 0;
+  GPUBuffer m_IndirectBufferCB;
   VkCommandBuffer m_IndirectCommandBuffer = VK_NULL_HANDLE;
   bool m_IndirectDraw = false;
 
@@ -812,6 +820,7 @@ private:
     rdcarray<APIEvent> curEvents;
     rdcarray<DebugMessage> debugMessages;
     rdcarray<VulkanActionTreeNode *> actionStack;
+    rdcarray<PendingAnnotation> annotations;
 
     rdcarray<VkIndirectRecordData> indirectCopies;
 
@@ -845,6 +854,9 @@ private:
     // every call to
     // vkCmdNextSubpass for valid barrier counting.
     int activeSubpass = 0;
+
+    // Is custom resolve active : when it is active the resolve target of the colour attachment is the output
+    bool customResolve;
 
     ResourceId GetPushDescriptorID(VkPipelineBindPoint bindpoint, uint32_t set)
     {
@@ -1128,6 +1140,10 @@ private:
   GPUAddressRangeTracker m_AddressTracker;
   GPUAddressRange CreateAddressRange(VkDevice device, VkBuffer buffer);
 
+  Threading::CriticalSection m_AnnotationsLock;
+  std::unordered_map<ResourceId, SDObject *> m_Annotations;
+  rdcarray<SDObject *> m_EventAnnotations;
+
   // on replay we may need to allocate several bits of temporary memory, so the single-region
   // doesn't work as well. We're not quite as performance-sensitive so we allocate 4MB per thread
   // and use it in a ring-buffer fashion. This allows multiple allocations to live at once as long
@@ -1171,6 +1187,9 @@ private:
                                         VkDeviceSize counterOffset = 0);
   void ExecuteIndirectReadback(VkCommandBuffer commandBuffer,
                                const VkIndirectRecordData &indirectcopy);
+  void ReplayIndirectCB(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset,
+                        uint32_t countToReplay, uint32_t stride, uint32_t curEID,
+                        uint32_t baseEventID, VkIndirectPatchType type);
 
   WriteSerialiser &GetThreadSerialiser();
   template <typename SerialiserType>
@@ -1200,6 +1219,21 @@ private:
   bool EndFrameCapture(DeviceOwnedWindow devWnd);
   bool DiscardFrameCapture(DeviceOwnedWindow devWnd);
 
+  ResourceId GetIDForUserObject(void *object);
+  uint32_t SetObjectAnnotation(void *object, const char *key, RENDERDOC_AnnotationType valueType,
+                               uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
+  template <typename SerialiserType>
+  bool Serialise_SetCommandAnnotation(SerialiserType &ser, VkCommandBuffer cmd, rdcstr key,
+                                      RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                      RENDERDOC_AnnotationValue value);
+  template <typename SerialiserType>
+  bool Serialise_SetQueueAnnotation(SerialiserType &ser, VkQueue queue, rdcstr key,
+                                    RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                    RENDERDOC_AnnotationValue value);
+  uint32_t SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                const RENDERDOC_AnnotationValue *value);
+
   void AdvanceFrame();
   void Present(DeviceOwnedWindow devWnd);
 
@@ -1218,6 +1252,8 @@ private:
 
   rdcarray<APIEvent> m_RootEvents, m_Events;
   bool m_AddedAction;
+
+  SDObject *m_RootAnnotation = NULL;
 
   uint64_t m_CurChunkOffset;
   SDChunkMetaData m_ChunkMetadata;
@@ -1478,6 +1514,7 @@ public:
   VkSemaphore GetNextSemaphore();
   void SubmitSemaphores();
   void FlushQ();
+  void ReloadShaderDebugInformation();
 
   bool SelectGraphicsComputeQueue(const rdcarray<VkQueueFamilyProperties> &queueProps,
                                   VkDeviceCreateInfo &createInfo, uint32_t &queueFamilyIndex);
@@ -1543,6 +1580,8 @@ public:
   bool Maintenance6() const { return m_Maintenance6; }
   bool Maintenance9() const { return m_Maintenance9; }
   bool DescriptorBuffers() const { return m_DescriptorBuffers; }
+  bool MultiViewGeometryShaders() const { return m_MultiViewGeometryShaders; }
+  bool MultiviewPerViewViewports() const { return m_MultiviewPerViewViewports; }
   VulkanRenderState &GetRenderState() { return m_RenderState; }
   void SetActionCB(VulkanActionCallback *cb) { m_ActionCallback = cb; }
   void SetSubmitChain(void *submitChain) { m_SubmitChain = submitChain; }
@@ -1636,6 +1675,12 @@ public:
     }
 
     return NULL;
+  }
+
+  void RemoveAnnotations(ResourceId id)
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+    m_Annotations.erase(id);
   }
 
   // Device initialization
@@ -2991,7 +3036,7 @@ public:
 
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdEndRendering, VkCommandBuffer commandBuffer);
   IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdEndRendering2EXT, VkCommandBuffer commandBuffer,
-                                const VkRenderingEndInfoEXT *pRenderingEndInfo);
+                                const VkRenderingEndInfoKHR *pRenderingEndInfo);
 
   // VK_KHR_dynamic_rendering_local_read
 
@@ -3317,4 +3362,12 @@ public:
   IMPLEMENT_FUNCTION_SERIALISED(
       void, vkCmdPushDescriptorSetWithTemplate2, VkCommandBuffer commandBuffer,
       const VkPushDescriptorSetWithTemplateInfo *pPushDescriptorSetWithTemplateInfo);
+
+  // VK_EXT_image_drm_format_modifier
+  VkResult vkGetImageDrmFormatModifierPropertiesEXT(VkDevice device, VkImage image,
+                                                    VkImageDrmFormatModifierPropertiesEXT *pProperties);
+
+  // VK_EXT_custom_resolve
+  IMPLEMENT_FUNCTION_SERIALISED(void, vkCmdBeginCustomResolveEXT, VkCommandBuffer commandBuffer,
+                                const VkBeginCustomResolveInfoEXT *pBeginCustomResolveInfo);
 };

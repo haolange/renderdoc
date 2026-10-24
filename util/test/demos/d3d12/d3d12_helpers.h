@@ -83,6 +83,8 @@ COM_SMARTPTR(ID3D12CommandQueueDownlevel);
 COM_SMARTPTR(ID3D12StateObject);
 COM_SMARTPTR(ID3D12StateObjectProperties);
 
+COM_SMARTPTR(ID3D12QueryHeap);
+
 struct D3D12GraphicsTest;
 
 class D3D12PSOCreator

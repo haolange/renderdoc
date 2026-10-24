@@ -360,6 +360,8 @@ void RDTreeView::contextMenuEvent(QContextMenuEvent *event)
 
   QObject::connect(&copy, &QAction::triggered, [this, index, pos]() { copyIndex(pos, index); });
 
+  emit customContextMenu(index, &contextMenu);
+
   RDDialog::show(&contextMenu, viewport()->mapToGlobal(pos));
 }
 

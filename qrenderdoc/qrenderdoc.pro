@@ -209,6 +209,7 @@ SOURCES += Code/qrenderdoc.cpp \
     Widgets/ReplayOptionsSelector.cpp \
     Widgets/TextureGoto.cpp \
     Widgets/RangeHistogram.cpp \
+    Widgets/AnnotationDisplay.cpp \
     Widgets/CollapseGroupBox.cpp \
     Windows/Dialogs/TextureSaveDialog.cpp \
     Windows/Dialogs/CaptureDialog.cpp \
@@ -296,6 +297,7 @@ HEADERS += Code/CaptureContext.h \
     Widgets/ThumbnailStrip.h \
     Widgets/ReplayOptionsSelector.h \
     Widgets/TextureGoto.h \
+    Widgets/AnnotationDisplay.h \
     Widgets/RangeHistogram.h \
     Widgets/CollapseGroupBox.h \
     Windows/Dialogs/TextureSaveDialog.h \

@@ -35,8 +35,19 @@ RD_TEST(VK_Mesh_Shader, VulkanGraphicsTest)
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
+struct Inner
+{
+  uint a;
+  uint b;
+  uint c;
+};
+
 struct PayLoad
 {
+  uint padArr[4];
+  uint pad;
+  Inner inner;
+  Inner innerArr[4];
   uint tri[4];
 };
 
@@ -44,10 +55,25 @@ taskPayloadSharedEXT PayLoad payLoad;
 
 void main()
 {
-	payLoad.tri[0] = 0;
-	payLoad.tri[1] = 1;
-	payLoad.tri[2] = 2;
-	payLoad.tri[3] = 3;
+  for (int i = 0; i < 4; ++i)
+    payLoad.tri[i] = i;
+
+  for (int i = 0; i < 4; ++i)
+    payLoad.padArr[i] = 1000 + i;
+
+  payLoad.pad = 123;
+
+  for (int i = 0; i < 4; ++i)
+  {
+    payLoad.innerArr[i].a = 10*i + 0;
+    payLoad.innerArr[i].b = 10*i + 1;
+    payLoad.innerArr[i].c = 10*i + 2;
+  }
+
+  payLoad.inner.a = 500;
+  payLoad.inner.b = 501;
+  payLoad.inner.c = 502;
+
   EmitMeshTasksEXT(4, 1, 1);
 }
 
@@ -58,8 +84,19 @@ void main()
 #version 460
 #extension GL_EXT_mesh_shader : require
 
+struct Inner
+{
+  uint a;
+  uint b;
+  uint c;
+};
+
 struct PayLoad
 {
+  uint padArr[4];
+  uint pad;
+  Inner inner;
+  Inner innerArr[4];
   uint tri[4];
 };
 
@@ -77,9 +114,9 @@ void main()
   SetMeshOutputsEXT(vertexCount, triangleCount);
 
   uint dtid = gl_GlobalInvocationID.x;
-	uint tri = payLoad.tri[dtid];
+  uint tri = payLoad.tri[dtid];
   uint vertIdx = 0;
-	vec4 org = vec4(-0.65, 0.0, 0.0, 0.0) + vec4(0.42, 0.0, 0.0, 0.0) * tri;
+  vec4 org = vec4(-0.65, 0.0, 0.0, 0.0) + vec4(0.42, 0.0, 0.0, 0.0) * tri;
 
   uint vert0 = 0 + vertIdx;
   uint vert1 = 1 + vertIdx;
@@ -134,6 +171,42 @@ void main()
     outColor[vert2] = vec4(1.0, 0.0, 0.0, 1.0);
 
     gl_PrimitiveTriangleIndicesEXT[i] =  uvec3(vert0, vert1, vert2);
+  }
+}
+
+)EOSHADER";
+
+  std::string point_mesh = R"EOSHADER(
+
+#version 460
+#extension GL_EXT_mesh_shader : require
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(points, max_vertices = 2, max_primitives = 2) out;
+layout(location = 0) out vec4 outColor[];
+
+void main()
+{
+  uint primCount = 2;
+  uint vertexCount = 1 * primCount;
+
+  SetMeshOutputsEXT(vertexCount, primCount);
+
+  for (uint i = 0; i < primCount; ++i)
+  {
+    uint vertIdx = i * 1;
+    uint tri = i + 2 * gl_WorkGroupID.x;
+    vec4 org = vec4(0.21, 0.0, 0.0, 0.0) * tri;
+
+    uint vert0 = 0 + vertIdx;
+
+    gl_MeshVerticesEXT[vert0].gl_Position = vec4(-0.4, -0.4, 0.0, 1.0) + org;
+    gl_MeshVerticesEXT[vert0].gl_PointSize = 20.0f;
+
+    outColor[vert0] = vec4(0.0, 1.0, 0.0, 1.0);
+
+    gl_PrimitivePointIndicesEXT[i] = vert0;
   }
 }
 
@@ -207,8 +280,8 @@ void main()
     pipeCreateInfo.layout = layout;
     pipeCreateInfo.renderPass = mainWindow->rp;
 
-    VkPipeline pipelines[2];
-    int countTasks[2];
+    VkPipeline pipelines[3];
+    int countTasks[3];
 
     pipeCreateInfo.stages = {
         CompileShaderModule(simple_mesh, ShaderLang::glsl, ShaderStage::mesh, "main", {},
@@ -237,6 +310,19 @@ void main()
 
     pipelines[1] = createGraphicsPipeline(vkPipeCreateInfo);
     countTasks[1] = 1;
+
+    pipeCreateInfo.stages = {
+        CompileShaderModule(point_mesh, ShaderLang::glsl, ShaderStage::mesh, "main", {},
+                            SPIRVTarget::vulkan12),
+        CompileShaderModule(pixel, ShaderLang::glsl, ShaderStage::frag, "main"),
+    };
+
+    vkPipeCreateInfo = pipeCreateInfo;
+    vkPipeCreateInfo->pVertexInputState = NULL;
+    vkPipeCreateInfo->pInputAssemblyState = NULL;
+
+    pipelines[2] = createGraphicsPipeline(vkPipeCreateInfo);
+    countTasks[2] = 3;
 
     while(Running())
     {

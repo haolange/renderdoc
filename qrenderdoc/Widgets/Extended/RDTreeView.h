@@ -183,6 +183,7 @@ public:
 signals:
   void leave(QEvent *e);
   void keyPress(QKeyEvent *e);
+  void customContextMenu(QModelIndex index, QMenu *menu);
 
 protected:
   void mouseMoveEvent(QMouseEvent *e) override;

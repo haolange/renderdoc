@@ -244,6 +244,13 @@ WrappedVulkan::~WrappedVulkan()
   if(VkMarkerRegion::vk == this)
     VkMarkerRegion::vk = NULL;
 
+  for(auto it = m_Annotations.begin(); it != m_Annotations.end(); ++it)
+    delete it->second;
+  for(SDObject *o : m_EventAnnotations)
+    delete o;
+
+  delete m_RootAnnotation;
+
   SAFE_DELETE(m_StoredStructuredData);
 
   SAFE_DELETE(m_ASManager);
@@ -517,6 +524,17 @@ void WrappedVulkan::FlushQ()
   {
     m_InternalCmds.freesems.append(m_InternalCmds.submittedsems);
     m_InternalCmds.submittedsems.clear();
+  }
+}
+
+void WrappedVulkan::ReloadShaderDebugInformation()
+{
+  // Reload the shader module debug information
+  for(auto it = m_CreationInfo.m_ShaderModule.begin(); it != m_CreationInfo.m_ShaderModule.end(); ++it)
+  {
+    if(ResourceIDGen::IsReplayOnlyID(it->first))
+      continue;
+    it->second.Reload(m_ResourceManager, m_CreationInfo, it->first);
   }
 }
 
@@ -1101,6 +1119,12 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME,
         VK_EXT_CUSTOM_BORDER_COLOR_SPEC_VERSION,
     },
+#ifdef VK_EXT_custom_resolve
+    {
+        VK_EXT_CUSTOM_RESOLVE_EXTENSION_NAME,
+        VK_EXT_CUSTOM_RESOLVE_SPEC_VERSION,
+    },
+#endif
     {
         VK_EXT_DEBUG_MARKER_EXTENSION_NAME,
         VK_EXT_DEBUG_MARKER_SPEC_VERSION,
@@ -1238,6 +1262,10 @@ static const VkExtensionProperties supportedExtensions[] = {
     {
         VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_EXTENSION_NAME,
         VK_EXT_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_SPEC_VERSION,
+    },
+    {
+        VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME,
+        VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_SPEC_VERSION,
     },
     {
         VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME,
@@ -2062,6 +2090,10 @@ static const VkExtensionProperties supportedExtensions[] = {
         VK_QCOM_FRAGMENT_DENSITY_MAP_OFFSET_SPEC_VERSION,
     },
     {
+        VK_QCOM_MULTIVIEW_PER_VIEW_VIEWPORTS_EXTENSION_NAME,
+        VK_QCOM_MULTIVIEW_PER_VIEW_VIEWPORTS_SPEC_VERSION,
+    },
+    {
         VK_QCOM_RENDER_PASS_SHADER_RESOLVE_EXTENSION_NAME,
         VK_QCOM_RENDER_PASS_SHADER_RESOLVE_SPEC_VERSION,
     },
@@ -2607,6 +2639,39 @@ bool WrappedVulkan::Serialise_BeginCaptureFrame(SerialiserType &ser)
 
   GetResourceManager()->SerialiseImageStates(ser, m_ImageStates);
 
+  if(ser.VersionAtLeast(0x19))
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+
+    SERIALISE_ELEMENT_LOCAL(numAnnotations, uint32_t(m_Annotations.size()));
+
+    auto it = m_Annotations.begin();
+    for(uint32_t i = 0; i < numAnnotations; i++)
+    {
+      SERIALISE_ELEMENT_LOCAL(id, it->first);
+      SDObject *annotation = NULL;
+      if(ser.IsReading())
+      {
+        annotation = new SDObject(""_lit, ""_lit);    // will be overwritten below
+      }
+      else
+      {
+        annotation = it->second;
+        it++;
+      }
+      ser.Serialise("annotation"_lit, *annotation);
+
+      if(ser.IsReading() && IsLoading(m_State))
+      {
+        m_Annotations[id] = annotation;
+        m_Replay->GetResourceDesc(id).annotations = annotation;
+      }
+    }
+
+    if(numAnnotations > 0)
+      m_Replay->WriteFrameRecord().frameInfo.containsAnnotations = true;
+  }
+
   SERIALISE_CHECK_READ_ERRORS();
 
   return true;
@@ -2724,14 +2789,19 @@ void WrappedVulkan::StartFrameCapture(DeviceOwnedWindow devWnd)
   // way of knowing how it's used
   for(auto it = forced.begin(); it != forced.end(); ++it)
   {
-    // reference the buffer/image
+    // reference the resource
     GetResourceManager()->MarkResourceFrameReferenced((*it)->GetResourceID(), eFrameRef_Read);
-    // and its backing memory
-    GetResourceManager()->MarkMemoryFrameReferenced((*it)->baseResourceMem, (*it)->memOffset,
-                                                    (*it)->memSize, eFrameRef_ReadBeforeWrite);
-    // and sparse memory (yuck yuck yuck)
-    if(((*it)->resType == eResBuffer || (*it)->resType == eResImage) && (*it)->resInfo)
-      GetResourceManager()->MarkSparseMapReferenced((*it)->resInfo);
+    // and backing memory for buffers
+    if((*it)->resType == eResBuffer)
+    {
+      ResourceId mem = (*it)->baseResourceMem;
+      if(mem != ResourceId())
+        GetResourceManager()->MarkMemoryFrameReferenced(mem, (*it)->memOffset, (*it)->memSize,
+                                                        eFrameRef_ReadBeforeWrite);
+      // and sparse memory (yuck yuck yuck)
+      if((*it)->resInfo)
+        GetResourceManager()->MarkSparseMapReferenced((*it)->resInfo);
+    }
   }
 }
 
@@ -3729,6 +3799,10 @@ RDResult WrappedVulkan::ReadLogInitialisation(RDCFile *rdc, bool storeStructured
                             GPUBuffer::eGPUBufferGPULocal | GPUBuffer::eGPUBufferIndirectBuffer);
     m_IndirectBuffer.Name("m_IndirectBuffer");
 
+    m_IndirectBufferCB.Create(this, GetDev(), m_IndirectBufferSize * 2, 1,
+                              GPUBuffer::eGPUBufferGPULocal | GPUBuffer::eGPUBufferIndirectBuffer);
+    m_IndirectBufferCB.Name("m_IndirectBufferActionCB");
+
     m_IndirectCommandBuffer = GetNextCmd();
 
     // steal the command buffer out of the pending commands - we'll manage its lifetime ourselves
@@ -4014,7 +4088,8 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
     // boundaries, the event IDs would no longer match up).
     if(m_LastCmdBufferID == ResourceId() || startEventID > 1)
     {
-      m_RootEventID++;
+      if(chunktype != VulkanChunk::SetQueueAnnotation)
+        m_RootEventID++;
 
       if(startEventID > 1)
         ser.GetReader()->SetOffset(GetEvent(m_RootEventID).fileOffset);
@@ -4023,7 +4098,8 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
     {
       // these events are completely omitted, so don't increment the curEventID
       if(chunktype != VulkanChunk::vkBeginCommandBuffer &&
-         chunktype != VulkanChunk::vkEndCommandBuffer)
+         chunktype != VulkanChunk::vkEndCommandBuffer &&
+         chunktype != VulkanChunk::SetCommandAnnotation)
         m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID++;
     }
   }
@@ -4032,7 +4108,11 @@ RDResult WrappedVulkan::ContextReplayLog(CaptureState readType, uint32_t startEv
     AddFrameTerminator(AMDRGPControl::GetEndTag());
 
   // Save the current render state in the partial command buffer.
-  m_RenderState = m_BakedCmdBufferInfo[GetPartialCommandBuffer()].state;
+  ResourceId cmdBuf = GetPartialCommandBuffer();
+  if(cmdBuf != ResourceId())
+    m_RenderState = m_BakedCmdBufferInfo[cmdBuf].state;
+  else
+    m_RenderState = VulkanRenderState();
 
   // swap the structure back now that we've accumulated the frame as well.
   if(IsLoading(m_State) || IsStructuredExporting(m_State))
@@ -4275,6 +4355,9 @@ bool WrappedVulkan::ContextProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
     else if(chunk == VulkanChunk::vkQueueEndDebugUtilsLabelEXT)
     {
       // also ignore, this just pops the action stack
+    }
+    else if(chunk == VulkanChunk::SetCommandAnnotation || chunk == VulkanChunk::SetQueueAnnotation)
+    {
     }
     else
     {
@@ -4858,6 +4941,15 @@ bool WrappedVulkan::ProcessChunk(ReadSerialiser &ser, VulkanChunk chunk)
       return Serialise_vkCmdPushDescriptorSet2(ser, VK_NULL_HANDLE, NULL);
     case VulkanChunk::vkCmdPushDescriptorSetWithTemplate2:
       return Serialise_vkCmdPushDescriptorSetWithTemplate2(ser, VK_NULL_HANDLE, NULL);
+    case VulkanChunk::vkCmdBeginCustomResolveEXT:
+      return Serialise_vkCmdBeginCustomResolveEXT(ser, VK_NULL_HANDLE, NULL);
+
+    case VulkanChunk::SetQueueAnnotation:
+      return Serialise_SetQueueAnnotation(ser, VK_NULL_HANDLE, rdcstr(), eRENDERDOC_AnnotationMax,
+                                          0, RENDERDOC_AnnotationValue());
+    case VulkanChunk::SetCommandAnnotation:
+      return Serialise_SetCommandAnnotation(ser, VK_NULL_HANDLE, rdcstr(), eRENDERDOC_AnnotationMax,
+                                            0, RENDERDOC_AnnotationValue());
 
     // chunks that are reserved but not yet serialised
     case VulkanChunk::vkResetCommandPool:
@@ -4998,6 +5090,16 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
   {
     startEventID = 1;
     partial = false;
+
+    AddPendingObjectCleanup([this]() {
+      for(const rdcpair<VkCommandPool, VkCommandBuffer> &rerecord : m_RerecordCmdList)
+      {
+        m_commandQueueFamilies.erase(GetResID(rerecord.second));
+        vkFreeCommandBuffers(GetDev(), rerecord.first, 1, &rerecord.second);
+      }
+
+      m_RerecordCmdList.clear();
+    });
   }
 
   if(!partial)
@@ -5023,7 +5125,9 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
     else
     {
       // Copy the state in case m_RenderState was modified externally for the partial replay.
-      m_BakedCmdBufferInfo[GetPartialCommandBuffer()].state = m_RenderState;
+      ResourceId cmdBuf = GetPartialCommandBuffer();
+      if(cmdBuf != ResourceId())
+        m_BakedCmdBufferInfo[cmdBuf].state = m_RenderState;
     }
 
     VkResult vkr = VK_SUCCESS;
@@ -5136,7 +5240,7 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
 
     if(m_OutsideCmdBuffer != VK_NULL_HANDLE)
     {
-      if(replayType == eReplay_OnlyDraw)
+      if((replayType == eReplay_OnlyDraw) && (m_LastCmdBufferID != ResourceId()))
         UpdateImageStates(m_BakedCmdBufferInfo[m_LastCmdBufferID].imageStates);
 
       VkCommandBuffer cmd = m_OutsideCmdBuffer;
@@ -5187,14 +5291,6 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
         ObjDisp(GetDev())->DestroyEvent(Unwrap(GetDev()), m_CleanupEvents[i], NULL);
 
       m_CleanupEvents.clear();
-
-      for(const rdcpair<VkCommandPool, VkCommandBuffer> &rerecord : m_RerecordCmdList)
-      {
-        m_commandQueueFamilies.erase(GetResID(rerecord.second));
-        vkFreeCommandBuffers(GetDev(), rerecord.first, 1, &rerecord.second);
-      }
-
-      m_RerecordCmdList.clear();
     });
   }
 
@@ -5395,8 +5491,9 @@ rdcstr WrappedVulkan::GetPhysDeviceCompatString(bool externalResource, bool orig
   if(externalResource)
   {
     ret =
-        "This resource was externally imported, which cannot happen at replay time.\n"
-        "Some drivers do not allow externally-imported resources to be bound to non-external "
+        "This resource was externally imported or had external API properties, which does not "
+        "happen at replay time.\n"
+        "Some drivers do not allow externally-interacting resources to be bound to non-external "
         "memory, meaning that captures using resources like this can't be replayed.\n\n";
   }
 
@@ -5560,6 +5657,11 @@ VkBool32 WrappedVulkan::DebugCallback(MessageSeverity severity, MessageCategory 
 
     // dedicated allocation size must match, but we have no choice but to ignore this one
     if(strstr(pMessageId, "VUID-VkMemoryDedicatedAllocateInfo-image-02964"))
+      return false;
+
+    // this complains about access flags being set when not valid but we commonly hit this with our
+    // all-access barriers. We do not expect this to actually break so ignore the spam
+    if(strstr(pMessageId, "VUID-vkCmdPipelineBarrier-pImageMemoryBarriers-02820"))
       return false;
 
     // "Missing extension required by the device extension VK_KHR_driver_properties:
@@ -5993,10 +6095,11 @@ void WrappedVulkan::AddAction(const ActionDescription &a)
   {
     VulkanActionTreeNode node(action);
 
-    node.resourceUsage.swap(m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage);
-
     if(m_LastCmdBufferID != ResourceId())
+    {
+      node.resourceUsage.swap(m_BakedCmdBufferInfo[m_LastCmdBufferID].resourceUsage);
       AddUsage(node, m_BakedCmdBufferInfo[m_LastCmdBufferID].debugMessages);
+    }
 
     node.children.reserve(action.children.size());
     for(const ActionDescription &child : action.children)
@@ -6473,9 +6576,8 @@ void WrappedVulkan::AddFramebufferUsage(VulkanActionTreeNode &actionNode,
         uint32_t att = sub.inputAttachments[i];
         if(att == VK_ATTACHMENT_UNUSED)
           continue;
-        actionNode.resourceUsage.push_back(
-            make_rdcpair(c.m_ImageView[fbattachments[att]].image,
-                         EventUsage(e, ResourceUsage::InputTarget, fbattachments[att])));
+        actionNode.resourceUsage.push_back(make_rdcpair(c.m_ImageView[fbattachments[att]].image,
+                                                        EventUsage(e, ResourceUsage::InputTarget)));
       }
 
       for(size_t i = 0; i < sub.colorAttachments.size(); i++)
@@ -6485,7 +6587,8 @@ void WrappedVulkan::AddFramebufferUsage(VulkanActionTreeNode &actionNode,
           continue;
         actionNode.resourceUsage.push_back(
             make_rdcpair(c.m_ImageView[fbattachments[att]].image,
-                         EventUsage(e, ResourceUsage::ColorTarget, fbattachments[att])));
+                         EventUsage(e, sub.customResolve ? ResourceUsage::ResolveDst
+                                                         : ResourceUsage::ColorTarget)));
       }
 
       if(sub.depthstencilAttachment >= 0)
@@ -6493,7 +6596,7 @@ void WrappedVulkan::AddFramebufferUsage(VulkanActionTreeNode &actionNode,
         int32_t att = sub.depthstencilAttachment;
         actionNode.resourceUsage.push_back(
             make_rdcpair(c.m_ImageView[fbattachments[att]].image,
-                         EventUsage(e, ResourceUsage::DepthStencilTarget, fbattachments[att])));
+                         EventUsage(e, ResourceUsage::DepthStencilTarget)));
       }
     }
   }
@@ -6506,23 +6609,66 @@ void WrappedVulkan::AddFramebufferUsage(VulkanActionTreeNode &actionNode,
       if(dyn.color[i].imageView == VK_NULL_HANDLE)
         continue;
 
-      actionNode.resourceUsage.push_back(make_rdcpair(
-          c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
-          EventUsage(e, ResourceUsage::ColorTarget, GetResID(dyn.color[i].imageView))));
+      bool isCustomResolve = renderState.dynamicRendering.beginCustomResolve &&
+                             (dyn.color[i].resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
+      if(!isCustomResolve)
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
+                         EventUsage(e, ResourceUsage::ColorTarget)));
+      }
+      else
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.color[i].imageView)].image,
+                         EventUsage(e, ResourceUsage::InputTarget)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.color[i].resolveImageView)].image,
+                         EventUsage(e, ResourceUsage::ResolveDst)));
+      }
     }
 
     if(dyn.depth.imageView != VK_NULL_HANDLE)
     {
-      actionNode.resourceUsage.push_back(make_rdcpair(
-          c.m_ImageView[GetResID(dyn.depth.imageView)].image,
-          EventUsage(e, ResourceUsage::DepthStencilTarget, GetResID(dyn.depth.imageView))));
+      bool isCustomResolve = renderState.dynamicRendering.beginCustomResolve &&
+                             (dyn.depth.resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
+      if(!isCustomResolve)
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                         EventUsage(e, ResourceUsage::DepthStencilTarget)));
+      }
+      else
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.depth.imageView)].image,
+                         EventUsage(e, ResourceUsage::InputTarget)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.depth.resolveImageView)].image,
+                         EventUsage(e, ResourceUsage::ResolveDst)));
+      }
     }
 
     if(dyn.stencil.imageView != VK_NULL_HANDLE && dyn.depth.imageView != dyn.stencil.imageView)
     {
-      actionNode.resourceUsage.push_back(make_rdcpair(
-          c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
-          EventUsage(e, ResourceUsage::DepthStencilTarget, GetResID(dyn.stencil.imageView))));
+      bool isCustomResolve = renderState.dynamicRendering.beginCustomResolve &&
+                             (dyn.stencil.resolveMode & VK_RESOLVE_MODE_CUSTOM_BIT_EXT);
+      if(!isCustomResolve)
+
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                         EventUsage(e, ResourceUsage::DepthStencilTarget)));
+      }
+      else
+      {
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.stencil.imageView)].image,
+                         EventUsage(e, ResourceUsage::InputTarget)));
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(c.m_ImageView[GetResID(dyn.stencil.resolveImageView)].image,
+                         EventUsage(e, ResourceUsage::ResolveDst)));
+      }
     }
   }
 }
@@ -6533,7 +6679,10 @@ void WrappedVulkan::AddFramebufferUsageAllChildren(VulkanActionTreeNode &actionN
   for(VulkanActionTreeNode &c : actionNode.children)
     AddFramebufferUsageAllChildren(c, renderState);
 
-  AddFramebufferUsage(actionNode, renderState);
+  ActionDescription &action = actionNode.action;
+  ActionFlags DrawMask = ActionFlags::MeshDispatch | ActionFlags::Drawcall;
+  if(action.flags & DrawMask)
+    AddFramebufferUsage(actionNode, renderState);
 }
 
 void WrappedVulkan::AddEvent()
@@ -6559,6 +6708,12 @@ void WrappedVulkan::AddEvent()
   }
   else
   {
+    if(m_RootAnnotation)
+    {
+      apievent.annotations = m_RootAnnotation->Duplicate();
+      m_EventAnnotations.push_back(apievent.annotations);
+    }
+
     m_RootEvents.push_back(apievent);
     m_Events.resize(apievent.eventId + 1);
     m_Events[apievent.eventId] = apievent;
@@ -6669,10 +6824,10 @@ bool WrappedVulkan::EraseImageState(ResourceId id)
 
 void WrappedVulkan::UpdateImageStates(const rdcflatmap<ResourceId, ImageState> &dstStates)
 {
-  // this function expects the number of updates to be orders of magnitude fewer than the number of
-  // existing images. If there are a small number of images in total then it doesn't matter much,
-  // and if there are a large number of images then it's better to do repeated map lookups rather
-  // than spend time iterating linearly across the map for a sparse set of updates.
+  // this function expects the number of updates to be orders of magnitude fewer than the number
+  // of existing images. If there are a small number of images in total then it doesn't matter
+  // much, and if there are a large number of images then it's better to do repeated map lookups
+  // rather than spend time iterating linearly across the map for a sparse set of updates.
   SCOPED_LOCK(m_ImageStatesLock);
   auto dstIt = dstStates.begin();
   ImageTransitionInfo info = GetImageTransitionInfo();
@@ -6716,8 +6871,8 @@ void WrappedVulkan::ReplayDraw(VkCommandBuffer cmd, const ActionDescription &act
   }
   else
   {
-    // otherwise it's a bit more complex, we need to set up a multidraw with the first N draws nop'd
-    // out and the parameters added into the last one
+    // otherwise it's a bit more complex, we need to set up a multidraw with the first N draws
+    // nop'd out and the parameters added into the last one
 
     VkMarkerRegion::Begin(StringFormat::Fmt("ReplayDraw(drawIndex=%u)", action.drawIndex), cmd);
 

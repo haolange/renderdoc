@@ -251,28 +251,109 @@ static uint32_t ShowReplayUI()
   return RenderDoc::Inst().ShowReplayUI() ? 1 : 0;
 }
 
+static uint32_t SetObjectAnnotation(void *device, void *object, const char *key,
+                                    RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                    const RENDERDOC_AnnotationValue *value)
+{
+  if(object == NULL)
+  {
+    RDCWARN("Invalid annotation - object must not be NULL.");
+    return 3;
+  }
+
+  if((valueType == eRENDERDOC_Empty && value != NULL) ||
+     (valueType != eRENDERDOC_Empty && value == NULL))
+  {
+    RDCWARN("Invalid annotation - value should be NULL and type should be empty");
+    return 3;
+  }
+
+  if((valueType == eRENDERDOC_Empty || valueType == eRENDERDOC_String ||
+      valueType == eRENDERDOC_APIObject) &&
+     valueVectorWidth != 0)
+  {
+    RDCWARN(
+        "Invalid annotation - for deletion, or setting strings and objects, vector width must be "
+        "0");
+    return 3;
+  }
+
+  if(key == NULL || key[0] == 0 || key[0] == '.')
+  {
+    RDCWARN("Invalid annotation - key should not be NULL, empty, or start with a .");
+    return 3;
+  }
+
+  DeviceOwnedWindow devWnd(device, NULL);
+
+  IFrameCapturer *capturer = RenderDoc::Inst().MatchFrameCapturer(devWnd);
+
+  if(!capturer)
+    return 1;
+
+  return capturer->SetObjectAnnotation(object, key, valueType, valueVectorWidth, value);
+}
+
+static uint32_t SetCommandAnnotation(void *device, void *queueOrCommandBuffer, const char *key,
+                                     RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                     const RENDERDOC_AnnotationValue *value)
+{
+  if((valueType == eRENDERDOC_Empty && value != NULL) ||
+     (valueType != eRENDERDOC_Empty && value == NULL))
+  {
+    RDCWARN("Invalid annotation - value should be NULL and type should be empty");
+    return 3;
+  }
+
+  if(key == NULL || key[0] == 0 || key[0] == '.')
+  {
+    RDCWARN("Invalid annotation - key should not be NULL, empty, or start with a .");
+    return 3;
+  }
+
+  if((valueType == eRENDERDOC_Empty || valueType == eRENDERDOC_String ||
+      valueType == eRENDERDOC_APIObject) &&
+     valueVectorWidth != 0)
+  {
+    RDCWARN(
+        "Invalid annotation - for deletion, or setting strings and objects, vector width must be "
+        "0");
+    return 3;
+  }
+
+  DeviceOwnedWindow devWnd(device, NULL);
+
+  IFrameCapturer *capturer = RenderDoc::Inst().MatchFrameCapturer(devWnd);
+
+  if(!capturer)
+    return 1;
+
+  return capturer->SetCommandAnnotation(queueOrCommandBuffer, key, valueType, valueVectorWidth,
+                                        value);
+}
+
 // defined in capture_options.cpp
 int RENDERDOC_CC SetCaptureOptionU32(RENDERDOC_CaptureOption opt, uint32_t val);
 int RENDERDOC_CC SetCaptureOptionF32(RENDERDOC_CaptureOption opt, float val);
 uint32_t RENDERDOC_CC GetCaptureOptionU32(RENDERDOC_CaptureOption opt);
 float RENDERDOC_CC GetCaptureOptionF32(RENDERDOC_CaptureOption opt);
 
-void RENDERDOC_CC GetAPIVersion_1_6_0(int *major, int *minor, int *patch)
+void RENDERDOC_CC GetAPIVersion_1_7_0(int *major, int *minor, int *patch)
 {
   if(major)
     *major = 1;
   if(minor)
-    *minor = 6;
+    *minor = 7;
   if(patch)
     *patch = 0;
 }
 
-RENDERDOC_API_1_6_0 api_1_6_0;
-void Init_1_6_0()
+RENDERDOC_API_1_7_0 api_1_7_0;
+void Init_1_7_0()
 {
-  RENDERDOC_API_1_6_0 &api = api_1_6_0;
+  RENDERDOC_API_1_7_0 &api = api_1_7_0;
 
-  api.GetAPIVersion = &GetAPIVersion_1_6_0;
+  api.GetAPIVersion = &GetAPIVersion_1_7_0;
 
   api.SetCaptureOptionU32 = &SetCaptureOptionU32;
   api.SetCaptureOptionF32 = &SetCaptureOptionF32;
@@ -315,6 +396,9 @@ void Init_1_6_0()
   api.ShowReplayUI = &ShowReplayUI;
 
   api.SetCaptureTitle = &SetCaptureTitle;
+
+  api.SetObjectAnnotation = &SetObjectAnnotation;
+  api.SetCommandAnnotation = &SetCommandAnnotation;
 }
 
 extern "C" RENDERDOC_API int RENDERDOC_CC RENDERDOC_GetAPI(RENDERDOC_Version version,
@@ -341,19 +425,20 @@ extern "C" RENDERDOC_API int RENDERDOC_CC RENDERDOC_GetAPI(RENDERDOC_Version ver
     ret = 1;                                                       \
   }
 
-  API_VERSION_HANDLE(1_0_0, 1_6_0);
-  API_VERSION_HANDLE(1_0_1, 1_6_0);
-  API_VERSION_HANDLE(1_0_2, 1_6_0);
-  API_VERSION_HANDLE(1_1_0, 1_6_0);
-  API_VERSION_HANDLE(1_1_1, 1_6_0);
-  API_VERSION_HANDLE(1_1_2, 1_6_0);
-  API_VERSION_HANDLE(1_2_0, 1_6_0);
-  API_VERSION_HANDLE(1_3_0, 1_6_0);
-  API_VERSION_HANDLE(1_4_0, 1_6_0);
-  API_VERSION_HANDLE(1_4_1, 1_6_0);
-  API_VERSION_HANDLE(1_4_2, 1_6_0);
-  API_VERSION_HANDLE(1_5_0, 1_6_0);
-  API_VERSION_HANDLE(1_6_0, 1_6_0);
+  API_VERSION_HANDLE(1_0_0, 1_7_0);
+  API_VERSION_HANDLE(1_0_1, 1_7_0);
+  API_VERSION_HANDLE(1_0_2, 1_7_0);
+  API_VERSION_HANDLE(1_1_0, 1_7_0);
+  API_VERSION_HANDLE(1_1_1, 1_7_0);
+  API_VERSION_HANDLE(1_1_2, 1_7_0);
+  API_VERSION_HANDLE(1_2_0, 1_7_0);
+  API_VERSION_HANDLE(1_3_0, 1_7_0);
+  API_VERSION_HANDLE(1_4_0, 1_7_0);
+  API_VERSION_HANDLE(1_4_1, 1_7_0);
+  API_VERSION_HANDLE(1_4_2, 1_7_0);
+  API_VERSION_HANDLE(1_5_0, 1_7_0);
+  API_VERSION_HANDLE(1_6_0, 1_7_0);
+  API_VERSION_HANDLE(1_7_0, 1_7_0);
 
 #undef API_VERSION_HANDLE
 

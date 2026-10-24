@@ -55,14 +55,8 @@ bool WrappedVulkan::Serialise_vkGetDeviceQueue(SerialiserType &ser, VkDevice dev
 
     ObjDisp(device)->GetDeviceQueue(Unwrap(device), remapFamily, remapIndex, &queue);
 
-    if(GetResourceManager()->HasWrapper(ToTypedHandle(queue)))
-    {
-      ResourceId live = GetResourceManager()->GetDispWrapper(queue)->id;
+    GetResourceManager()->OverrideWrapper(ToTypedHandle(queue));
 
-      // whenever the new ID is requested, return the old ID, via replacements.
-      GetResourceManager()->ReplaceResource(Queue, live);
-    }
-    else
     {
       GetResourceManager()->WrapResource(Queue, Unwrap(device), queue);
     }
@@ -285,7 +279,8 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
     // we're adding multiple events, need to increment ourselves
     m_RootEventID++;
 
-    if(submitInfo.commandBufferInfoCount == 0)
+    uint32_t numCmds = submitInfo.commandBufferInfoCount;
+    if(numCmds == 0)
     {
       DoSubmit(queue, submitInfo);
 
@@ -304,7 +299,6 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
     }
 
     // submit command buffers one by one
-    uint32_t numCmds = submitInfo.commandBufferInfoCount;
     submitInfo.commandBufferInfoCount = 1;
     for(uint32_t c = 0; c < numCmds; c++)
     {
@@ -312,6 +306,7 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       FlushQ();
 
       ResourceId cmd = GetResID(submitInfo.pCommandBufferInfos[0].commandBuffer);
+      RDCASSERTNOTEQUAL(cmd, ResourceId());
 
       submitInfo.pCommandBufferInfos++;
 
@@ -344,7 +339,7 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       CommandBufferNode *rebaseNode = BuildSubmitTree(cmd, m_RootEventID);
       m_Partial.commandTree.push_back(rebaseNode);
 
-      // insert the baked command buffer in-line into this list of notes, assigning new event
+      // insert the baked command buffer in-line into this list of nodes, assigning new event
       // and drawIDs
       InsertActionsAndRefreshIDs(cmdBufInfo);
 
@@ -354,30 +349,28 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
         m_DebugMessages.back().eventId += m_RootEventID;
       }
 
-      m_RootEventID += cmdBufInfo.eventCount;
-      m_RootActionID += cmdBufInfo.actionCount;
-
       {
         // pull in any remaining events on the command buffer that weren't added to an action
-        uint32_t i = 0;
-        for(APIEvent &apievent : cmdBufInfo.curEvents)
+        for(const APIEvent &event : cmdBufInfo.curEvents)
         {
-          apievent.eventId = m_RootEventID - cmdBufInfo.curEvents.count() + i;
+          APIEvent apievent(event);
+          apievent.eventId += m_RootEventID;
 
           m_RootEvents.push_back(apievent);
           m_Events.resize(apievent.eventId + 1);
           m_Events[apievent.eventId] = apievent;
-
-          i++;
         }
 
         for(auto it = cmdBufInfo.resourceUsage.begin(); it != cmdBufInfo.resourceUsage.end(); ++it)
         {
           EventUsage u = it->second;
-          u.eventId += m_RootEventID - cmdBufInfo.curEvents.count();
+          u.eventId += m_RootEventID;
           m_ResourceUses[it->first].push_back(u);
           m_EventFlags[u.eventId] |= PipeRWUsageEventFlags(u.usage);
         }
+
+        m_RootEventID += cmdBufInfo.eventCount;
+        m_RootActionID += cmdBufInfo.actionCount;
 
         name = StringFormat::Fmt("=> %s[%u]: vkEndCommandBuffer(%s)", basename.c_str(), c,
                                  ToStr(cmd).c_str());
@@ -393,10 +386,6 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
         m_RootEventID++;
       }
     }
-
-    // account for the outer loop thinking we've added one event and incrementing,
-    // since we've done all the handling ourselves this will be off by one.
-    m_RootEventID--;
   }
   else
   {
@@ -411,24 +400,23 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
     }
 
     uint32_t startEID = m_RootEventID;
-
     // advance m_CurEventID to match the events added when reading
     for(uint32_t c = 0; c < submitInfo.commandBufferInfoCount; c++)
     {
       ResourceId cmd = GetResID(submitInfo.pCommandBufferInfos[c].commandBuffer);
-
-      m_RootEventID += m_BakedCmdBufferInfo[cmd].eventCount;
-      m_RootActionID += m_BakedCmdBufferInfo[cmd].actionCount;
-
-      // 2 extra for the virtual labels around the command buffer
+      // cmd is not valid when selecting a vkQueueSubmit event
+      if(cmd != ResourceId())
       {
-        m_RootEventID += 2;
-        m_RootActionID += 2;
+        m_RootEventID += m_BakedCmdBufferInfo[cmd].eventCount;
+        m_RootActionID += m_BakedCmdBufferInfo[cmd].actionCount;
+
+        // 2 extra for the virtual labels around the command buffer
+        {
+          m_RootEventID += 2;
+          m_RootActionID += 2;
+        }
       }
     }
-
-    // same accounting for the outer loop as above
-    m_RootEventID--;
 
     if(submitInfo.commandBufferInfoCount == 0)
     {
@@ -455,6 +443,7 @@ void WrappedVulkan::ReplayQueueSubmit(VkQueue queue, VkSubmitInfo2 submitInfo, r
       {
         VkCommandBufferSubmitInfo info = submitInfo.pCommandBufferInfos[c];
         ResourceId cmdId = GetResID(info.commandBuffer);
+        RDCASSERTNOTEQUAL(cmdId, ResourceId());
 
         // account for the virtual vkBeginCommandBuffer label at the start of the events here
         // so it matches up to baseEvent
@@ -636,6 +625,13 @@ bool WrappedVulkan::PatchIndirectDraw(size_t drawIndex, uint32_t paramStride,
 
 void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 {
+  SDObject *localAnnotations = NULL;
+  if(m_RootAnnotation)
+    localAnnotations = m_RootAnnotation->Duplicate();
+
+  size_t curAnnot = 0;
+  int32_t totalEIDShift = 0;
+
   rdcarray<VulkanActionTreeNode> &cmdBufNodes = cmdBufInfo.action->children;
 
   // assign new action IDs
@@ -714,6 +710,7 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
         // this can be negative if indirectCount is 0
         int32_t eidShift = indirectCount - 1;
+        totalEIDShift += eidShift;
 
         // we reserved one event and action for the indirect count based action.
         // if we ended up with a different number eidShift will be non-zero, so we need to adjust
@@ -754,6 +751,14 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
           // everything afterwards is adjusted. Now see if we need to remove the subdraw or clone it
           if(indirectCount == 0)
           {
+            // Copy the flags and resource usage from the subdraw to the indirect action (push marker)
+            n.action.flags |= cmdBufNodes[i + 1].action.flags;
+            n.resourceUsage.swap(cmdBufNodes[i + 1].resourceUsage);
+            for(rdcpair<ResourceId, EventUsage> &use : n.resourceUsage)
+              use.second.eventId += eidShift;
+            for(const rdcpair<ResourceId, EventUsage> &use : cmdBufNodes[i + 1].resourceUsage)
+              n.resourceUsage.push_back(use);
+
             // i is the pushmarker, which we leave. i+1 is the subdraw
             cmdBufNodes.erase(i + 1);
           }
@@ -887,6 +892,29 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
 
     for(APIEvent &ev : n.action.events)
     {
+      if(localAnnotations)
+      {
+        for(; curAnnot < cmdBufInfo.annotations.size(); curAnnot++)
+        {
+          const PendingAnnotation &annot = cmdBufInfo.annotations[curAnnot];
+          if(annot.eventId == ev.eventId)
+          {
+            if(annot.valueType == eRENDERDOC_Empty)
+              localAnnotations->EraseChildByKeyPath(annot.key);
+            else
+              WriteAnnotation(localAnnotations->CreateChildByKeyPath(annot.key), annot.valueType,
+                              annot.valueVectorWidth, annot.value);
+          }
+          else if(annot.eventId > ev.eventId)
+          {
+            break;
+          }
+        }
+
+        ev.annotations = localAnnotations->Duplicate();
+        m_EventAnnotations.push_back(ev.annotations);
+      }
+
       ev.eventId += m_RootEventID;
       m_Events.resize(ev.eventId + 1);
       m_Events[ev.eventId] = ev;
@@ -921,6 +949,17 @@ void WrappedVulkan::InsertActionsAndRefreshIDs(BakedCmdBufferInfo &cmdBufInfo)
     if((cmdBufNodes[i].action.flags & ActionFlags::PopMarker) && GetActionStack().size() > 1)
       GetActionStack().pop_back();
   }
+
+  if(totalEIDShift != 0)
+  {
+    // Move the loose events and resource usage by the total EID shift
+    for(auto it = cmdBufInfo.curEvents.begin(); it != cmdBufInfo.curEvents.end(); ++it)
+      it->eventId += totalEIDShift;
+    for(auto it = cmdBufInfo.resourceUsage.begin(); it != cmdBufInfo.resourceUsage.end(); ++it)
+      it->second.eventId += totalEIDShift;
+  }
+
+  delete localAnnotations;
 }
 
 void WrappedVulkan::AddReferencesForSecondaries(VkResourceRecord *record,
@@ -1453,6 +1492,31 @@ bool WrappedVulkan::Serialise_vkQueueSubmit(SerialiserType &ser, VkQueue queue, 
 
       ReplayQueueSubmit(queue, submitInfo, basename);
     }
+    if(submitCount == 0)
+    {
+      AddEvent();
+
+      // we're adding multiple events, need to increment ourselves
+      m_RootEventID++;
+
+      ObjDisp(queue)->QueueSubmit(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
+
+      ActionDescription action;
+      action.customName = "=> vkQueueSubmit(): No Submit";
+      action.flags |= ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary;
+      AddEvent();
+
+      m_RootEvents.back().chunkIndex = APIEvent::NoChunk;
+      m_Events.back().chunkIndex = APIEvent::NoChunk;
+
+      AddAction(action);
+    }
+    else
+    {
+      // account for the outer loop thinking we've added one event and incrementing,
+      // since we've done all the handling ourselves this will be off by one.
+      m_RootEventID--;
+    }
   }
 
   return true;
@@ -1620,6 +1684,31 @@ bool WrappedVulkan::Serialise_vkQueueSubmit2(SerialiserType &ser, VkQueue queue,
       rdcstr basename = StringFormat::Fmt("vkQueueSubmit2(%u)", pSubmits[sub].commandBufferInfoCount);
 
       ReplayQueueSubmit(queue, pSubmits[sub], basename);
+    }
+    if(submitCount == 0)
+    {
+      AddEvent();
+
+      // we're adding multiple events, need to increment ourselves
+      m_RootEventID++;
+
+      ObjDisp(queue)->QueueSubmit2(Unwrap(queue), 0, NULL, VK_NULL_HANDLE);
+
+      ActionDescription action;
+      action.customName = "=> vkQueueSubmit2(): No Submit";
+      action.flags |= ActionFlags::CommandBufferBoundary | ActionFlags::PassBoundary;
+      AddEvent();
+
+      m_RootEvents.back().chunkIndex = APIEvent::NoChunk;
+      m_Events.back().chunkIndex = APIEvent::NoChunk;
+
+      AddAction(action);
+    }
+    else
+    {
+      // account for the outer loop thinking we've added one event and incrementing,
+      // since we've done all the handling ourselves this will be off by one.
+      m_RootEventID--;
     }
   }
 

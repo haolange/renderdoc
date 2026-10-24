@@ -2,20 +2,21 @@ Window reference
 ================
 
 .. toctree::
-	texture_viewer
+	annotation_viewer
 	api_inspector
-	mesh_viewer
 	buffer_viewer
 	capture_attach
-	event_browser
-	settings_window
-	pipeline_state
-	shader_viewer
-	shader_messages
-	timeline_bar
+	capture_comments
 	capture_connection
 	debug_messages
+	event_browser
+	mesh_viewer
+	performance_counter_viewer
+	pipeline_state
 	python_shell
 	resource_inspector
-	performance_counter_viewer
-	capture_comments
+	settings_window
+	shader_messages
+	shader_viewer
+	texture_viewer
+	timeline_bar

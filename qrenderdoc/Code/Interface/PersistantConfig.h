@@ -82,7 +82,7 @@ struct ShaderProcessingTool
   }
   DOCUMENT(R"(The :class:`KnownShaderTool` identifying which known tool this program is.
 
-:type: KnownShaderTool
+:type: renderdoc.KnownShaderTool
 )");
   KnownShaderTool tool = KnownShaderTool::Unknown;
   DOCUMENT(R"(The human-readable name of the program.
@@ -102,12 +102,12 @@ struct ShaderProcessingTool
   rdcstr args;
   DOCUMENT(R"(The input that this program expects.
 
-:type: ShaderEncoding
+:type: renderdoc.ShaderEncoding
 )");
   ShaderEncoding input = ShaderEncoding::Unknown;
   DOCUMENT(R"(The output that this program provides.
 
-:type: ShaderEncoding
+:type: renderdoc.ShaderEncoding
 )");
   ShaderEncoding output = ShaderEncoding::Unknown;
 
@@ -591,6 +591,16 @@ DECLARE_REFLECTION_STRUCT(BugReport);
       ""                                                                                           \
       ":type: str");                                                                               \
   CONFIG_SETTING_VAL(public, QString, rdcstr, ExternalTool_RadeonGPUProfiler, "")                  \
+                                                                                                   \
+  DOCUMENT(                                                                                        \
+      "``True`` if the user has had the annotation viewer displayed when hidden upon loading a"    \
+      "capture that contains annotations. After this is set to true, we won't auto-show the \n"    \
+      "annotation viewer automatically.\n"                                                         \
+      "\n"                                                                                         \
+      "Defaults to ``False``."                                                                     \
+      ""                                                                                           \
+      ":type: bool");                                                                              \
+  CONFIG_SETTING_VAL(public, bool, bool, Annotations_HasAutoShown, false)                          \
                                                                                                    \
   DOCUMENT(                                                                                        \
       "``True`` if the user has seen the first tip, which should always be shown first before "    \

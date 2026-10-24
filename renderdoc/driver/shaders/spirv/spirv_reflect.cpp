@@ -491,13 +491,14 @@ StructSizes CalculateStructProps(uint32_t emptyStructSize, const ShaderConstant 
   return ret;
 }
 
-void CalculateScalarLayout(uint32_t offset, rdcarray<ShaderConstant> &consts)
+void CalculateScalarLayout(rdcarray<ShaderConstant> &consts)
 {
+  uint32_t offset = 0;
   for(size_t i = 0; i < consts.size(); i++)
   {
     consts[i].byteOffset = offset;
 
-    CalculateScalarLayout(offset, consts[i].type.members);
+    CalculateScalarLayout(consts[i].type.members);
 
     StructSizes sizes = CalculateStructProps(1, consts[i]);
     if(consts[i].type.elements > 1)
@@ -1283,9 +1284,13 @@ void Reflector::MakeReflection(const GraphicsAPI sourceAPI, const ShaderStage st
 
       // move to the inner struct if this is an array of structs - e.g. for arrayed shader outputs
       const DataType *structType = &baseType;
+      bool arrayOfStructsBase = false;
       if(structType->type == DataType::ArrayType &&
          dataTypes[structType->InnerType()].type == DataType::StructType)
+      {
         structType = &dataTypes[structType->InnerType()];
+        arrayOfStructsBase = true;
+      }
 
       // if this is a struct variable then either all members must be builtins, or none of them, as
       // per the SPIR-V Decoration rules:
@@ -1338,6 +1343,8 @@ void Reflector::MakeReflection(const GraphicsAPI sourceAPI, const ShaderStage st
 
             SPIRVInterfaceAccess patch;
             patch.accessChain = {i};
+            if(arrayOfStructsBase)
+              patch.accessChain.insert(0, 0);
 
             uint32_t dummy = 0;
             AddSignatureParameter(isInput, stage, global.id, structType->id, dummy, patch,
@@ -1614,7 +1621,7 @@ void Reflector::MakeReflection(const GraphicsAPI sourceAPI, const ShaderStage st
           MakeConstantBlockVariables(effectiveStorage, *varType, 0, 0, taskPayloadBlock.variables,
                                      pointerTypes, false, specInfo);
 
-          CalculateScalarLayout(0, taskPayloadBlock.variables);
+          CalculateScalarLayout(taskPayloadBlock.variables);
         }
         else
         {

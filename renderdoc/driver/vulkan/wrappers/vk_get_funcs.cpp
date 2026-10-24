@@ -255,6 +255,28 @@ void WrappedVulkan::vkGetPhysicalDeviceFormatProperties2(VkPhysicalDevice physic
   // don't report support for DISJOINT_BIT_KHR binding
   pFormatProperties->formatProperties.linearTilingFeatures &= ~VK_FORMAT_FEATURE_DISJOINT_BIT;
   pFormatProperties->formatProperties.optimalTilingFeatures &= ~VK_FORMAT_FEATURE_DISJOINT_BIT;
+
+  VkDrmFormatModifierPropertiesListEXT *drm = (VkDrmFormatModifierPropertiesListEXT *)FindNextStruct(
+      pFormatProperties, VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT);
+  if(drm && drm->pDrmFormatModifierProperties)
+  {
+    for(uint32_t i = 0; i < drm->drmFormatModifierCount; i++)
+    {
+      drm->pDrmFormatModifierProperties[i].drmFormatModifierTilingFeatures &=
+          ~VK_FORMAT_FEATURE_DISJOINT_BIT;
+    }
+  }
+  VkDrmFormatModifierPropertiesList2EXT *drm2 =
+      (VkDrmFormatModifierPropertiesList2EXT *)FindNextStruct(
+          pFormatProperties, VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT);
+  if(drm2 && drm2->pDrmFormatModifierProperties)
+  {
+    for(uint32_t i = 0; i < drm2->drmFormatModifierCount; i++)
+    {
+      drm2->pDrmFormatModifierProperties[i].drmFormatModifierTilingFeatures &=
+          ~VK_FORMAT_FEATURE_DISJOINT_BIT;
+    }
+  }
 }
 
 VkResult WrappedVulkan::vkGetPhysicalDeviceImageFormatProperties(
@@ -1478,4 +1500,11 @@ VkResult WrappedVulkan::vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT
 
   return ObjDisp(device)->GetAccelerationStructureOpaqueCaptureDescriptorDataEXT(
       Unwrap(device), &unwrappedInfo, pData);
+}
+
+VkResult WrappedVulkan::vkGetImageDrmFormatModifierPropertiesEXT(
+    VkDevice device, VkImage image, VkImageDrmFormatModifierPropertiesEXT *pProperties)
+{
+  return ObjDisp(device)->GetImageDrmFormatModifierPropertiesEXT(Unwrap(device), Unwrap(image),
+                                                                 pProperties);
 }

@@ -82,7 +82,7 @@ struct D3D11InitParams
   uint32_t VendorUAV = ~0U;
 
   // check if a frame capture section version is supported
-  static const uint64_t CurrentVersion = 0x13;
+  static const uint64_t CurrentVersion = 0x14;
   static bool IsSupportedVersion(uint64_t ver);
 };
 
@@ -721,6 +721,11 @@ public:
   void StartFrameCapture(DeviceOwnedWindow devWnd);
   bool EndFrameCapture(DeviceOwnedWindow devWnd);
   bool DiscardFrameCapture(DeviceOwnedWindow devWnd);
+  uint32_t SetObjectAnnotation(void *object, const char *key, RENDERDOC_AnnotationType valueType,
+                               uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
+  uint32_t SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                const RENDERDOC_AnnotationValue *value);
 
   ID3DUserDefinedAnnotation *GetAnnotations() { return m_RealAnnotations; }
   ID3D11InfoQueue *GetInfoQueue() { return m_pInfoQueue; }

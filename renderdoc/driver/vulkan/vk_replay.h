@@ -422,6 +422,7 @@ public:
   void ReplaceResource(ResourceId from, ResourceId to);
   void RemoveReplacement(ResourceId id);
   void ClearReplayCache();
+  void ReloadShaderDebugInformation();
 
   void RenderMesh(uint32_t eventId, const rdcarray<MeshFormat> &secondaryDraws,
                   const MeshDisplay &cfg);
@@ -713,6 +714,7 @@ private:
     void Init(WrappedVulkan *driver, VkDescriptorPool descriptorPool);
     void Destroy(WrappedVulkan *driver);
 
+    VkPipeline CreateTempViewportPipe(WrappedVulkan *driver, uint32_t viewCount);
     VkPipeline CreateTempMultiviewQuadResolvePipe(WrappedVulkan *driver);
 
     VkDeviceMemory ImageMem = VK_NULL_HANDLE;
@@ -734,7 +736,6 @@ private:
     VkDescriptorSet m_CheckerDescSet = VK_NULL_HANDLE;
     VkPipeline m_CheckerPipeline = VK_NULL_HANDLE;
     VkPipeline m_CheckerMSAAPipeline = VK_NULL_HANDLE;
-    VkPipeline m_CheckerF16Pipeline[8] = {VK_NULL_HANDLE};
     GPUBuffer m_CheckerUBO;
 
     VkDescriptorSetLayout m_QuadDescSetLayout = VK_NULL_HANDLE;

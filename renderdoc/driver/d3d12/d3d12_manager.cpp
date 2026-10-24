@@ -804,7 +804,7 @@ void D3D12RTManager::Verify(PatchedRayDispatch &r)
         (WrappedID3D12DescriptorHeap *)m_wrappedDevice->GetResourceManager()
             ->GetResAs<ID3D12DescriptorHeap>(heapId);
 
-    if(heap->GetDescriptors()->GetType() == D3D12DescriptorType::Sampler)
+    if(heap->GetDesc().Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
       sampHeap = heap;
     else
       resHeap = heap;
@@ -1230,20 +1230,20 @@ void D3D12RTManager::AddBuildTimer(uint32_t q, uint64_t size)
   }
 }
 
-void D3D12RTManager::AddPendingASBuilds(ID3D12Fence *fence, UINT64 waitValue,
-                                        const rdcarray<std::function<bool()>> &callbacks)
+void D3D12RTManager::AddPendingCallbacks(ID3D12Fence *fence, UINT64 waitValue,
+                                         const rdcarray<std::function<bool()>> &callbacks)
 {
-  SCOPED_LOCK(m_PendingASBuildsLock);
+  SCOPED_LOCK(m_PendingCallbacksLock);
   for(const std::function<bool()> &cb : callbacks)
   {
     fence->AddRef();
-    m_PendingASBuilds.push_back({fence, waitValue, cb});
+    m_PendingCallbacks.push_back({fence, waitValue, cb});
   }
 }
 
 void D3D12RTManager::TickASManagement()
 {
-  CheckPendingASBuilds();
+  CheckPendingCallbacks();
   CheckASCaching();
 }
 
@@ -1533,17 +1533,17 @@ void D3D12RTManager::CheckASCaching()
   m_InMemASBuildDatas.erase(first, last - first + 1);
 }
 
-void D3D12RTManager::CheckPendingASBuilds()
+void D3D12RTManager::CheckPendingCallbacks()
 {
   std::map<ID3D12Fence *, UINT64> fenceValues;
-  SCOPED_LOCK(m_PendingASBuildsLock);
+  SCOPED_LOCK(m_PendingCallbacksLock);
 
-  if(m_PendingASBuilds.empty())
+  if(m_PendingCallbacks.empty())
     return;
 
-  for(size_t i = 0; i < m_PendingASBuilds.size(); i++)
+  for(size_t i = 0; i < m_PendingCallbacks.size(); i++)
   {
-    PendingASBuild &build = m_PendingASBuilds[i];
+    PendingCallbacks &build = m_PendingCallbacks[i];
 
     // first time we see each fence, get the completed value
     if(fenceValues[build.fence] == 0)
@@ -1556,9 +1556,9 @@ void D3D12RTManager::CheckPendingASBuilds()
       build.callback();
 
       // swap with last if this isn't already last - we don't need to keep order
-      if(i < m_PendingASBuilds.size() - 1)
-        std::swap(build, m_PendingASBuilds.back());
-      m_PendingASBuilds.pop_back();
+      if(i < m_PendingCallbacks.size() - 1)
+        std::swap(build, m_PendingCallbacks.back());
+      m_PendingCallbacks.pop_back();
     }
   }
 }
@@ -1690,7 +1690,7 @@ PatchedRayDispatch D3D12RTManager::PatchRayDispatch(ID3D12GraphicsCommandList4 *
         (WrappedID3D12DescriptorHeap *)m_wrappedDevice->GetResourceManager()
             ->GetResAs<ID3D12DescriptorHeap>(heapId);
 
-    if(heap->GetDescriptors()->GetType() == D3D12DescriptorType::Sampler)
+    if(heap->GetDesc().Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
     {
       cbufferData.wrapped_sampHeapBase = heap->GetOriginalGPUBase();
       cbufferData.unwrapped_sampHeapBase = heap->GetGPU(0).ptr;
@@ -1959,7 +1959,7 @@ PatchedRayDispatch D3D12RTManager::PatchIndirectRayDispatch(
         (WrappedID3D12DescriptorHeap *)m_wrappedDevice->GetResourceManager()
             ->GetResAs<ID3D12DescriptorHeap>(heapId);
 
-    if(heap->GetDescriptors()->GetType() == D3D12DescriptorType::Sampler)
+    if(heap->GetDesc().Type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
     {
       cbufferData.wrapped_sampHeapBase = heap->GetOriginalGPUBase();
       cbufferData.unwrapped_sampHeapBase = heap->GetGPU(0).ptr;

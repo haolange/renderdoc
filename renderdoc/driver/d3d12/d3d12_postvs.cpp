@@ -2165,6 +2165,12 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
     }
   }
 
+  if(dispatchSize[0] > 65535 || dispatchSize[1] > 65535 || dispatchSize[2] > 65535)
+  {
+    ret.ampout.status = ret.meshout.status = "Invalid dispatch size";
+    return;
+  }
+
   uint32_t totalNumMeshlets = dispatchSize[0] * dispatchSize[1] * dispatchSize[2];
 
   // set defaults so that we don't try to fetch this output again if something goes wrong and the
@@ -2472,6 +2478,15 @@ void D3D12Replay::InitPostMSBuffers(uint32_t eventId)
       desc.SampleDesc.Count = 1;
       desc.SampleDesc.Quality = 0;
       desc.Width = layout.meshletByteSize * totalNumMeshlets;
+
+      if(desc.Width > INT32_MAX)
+      {
+        SAFE_RELEASE(annotatedSig);
+        SAFE_RELEASE(ampBuffer);
+        ret.meshout.status = "Mesh output buffer is too large, try reducing dispatch dimensions";
+        RDCERR("%s", ret.meshout.status.c_str());
+        return;
+      }
 
       D3D12_HEAP_PROPERTIES heapProps;
       heapProps.Type = D3D12_HEAP_TYPE_DEFAULT;

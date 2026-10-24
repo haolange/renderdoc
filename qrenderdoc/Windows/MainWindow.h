@@ -129,6 +129,7 @@ public:
 
   void showEventBrowser() { on_action_Event_Browser_triggered(); }
   void showAPIInspector() { on_action_API_Inspector_triggered(); }
+  void showAnnotationViewer() { on_action_Annotation_Viewer_triggered(); }
   void showMeshPreview() { on_action_Mesh_Output_triggered(); }
   void showTextureViewer() { on_action_Texture_Viewer_triggered(); }
   void showPipelineViewer() { on_action_Pipeline_State_triggered(); }
@@ -156,6 +157,7 @@ private slots:
   void on_action_Close_Capture_triggered();
   void on_action_Mesh_Output_triggered();
   void on_action_API_Inspector_triggered();
+  void on_action_Annotation_Viewer_triggered();
   void on_action_Event_Browser_triggered();
   void on_action_Texture_Viewer_triggered();
   void on_action_Pipeline_State_triggered();

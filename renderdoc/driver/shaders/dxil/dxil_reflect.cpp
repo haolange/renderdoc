@@ -320,7 +320,7 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     srv.shape = getival<ResourceKind>(md->children[(size_t)ResField::SRVShape]);
     srv.sampleCount = getival<uint32_t>(md->children[(size_t)ResField::SRVSampleCount]);
     srv.compType = ComponentType::Invalid;
-    srv.elementStride = ~0U;
+    srv.elementStride = (srv.shape == DXIL::ResourceKind::RawBuffer) ? 1 : ~0U;
     const Metadata *tags = md->children[(size_t)ResField::SRVTags];
     for(size_t t = 0; tags && t < tags->children.size(); t += 2)
     {
@@ -348,7 +348,7 @@ EntryPointInterface::ResourceBase::ResourceBase(ResourceClass resourceClass, con
     uav.rasterizerOrderedView =
         (getival<uint32_t>(md->children[(size_t)ResField::UAVRasterOrder]) == 1);
     uav.compType = ComponentType::Invalid;
-    uav.elementStride = ~0U;
+    uav.elementStride = (uav.shape == DXIL::ResourceKind::RawBuffer) ? 1 : ~0U;
     uav.samplerFeedback = SamplerFeedbackType::LastEntry;
     uav.atomic64Use = false;
 
@@ -2052,6 +2052,34 @@ rdcstr Program::GetDebugStatus()
     }
   }
 
+  // Check the reflection for unbounded CBV resources
+  DXMeta dx(m_NamedMeta);
+  if(dx.resources)
+  {
+    RDCASSERTEQUAL(dx.resources->children.size(), 1);
+
+    const Metadata *resList = dx.resources->children[0];
+    RDCASSERTEQUAL(resList->children.size(), 4);
+
+    const Metadata *CBVs = resList->children[2];
+    if(CBVs)
+    {
+      for(const Metadata *r : CBVs->children)
+      {
+        uint32_t bindCount = getival<uint32_t>(r->children[(size_t)ResField::RegCount]);
+        if(bindCount == UINT32_MAX)
+        {
+          const rdcstr &name = r->children[(size_t)ResField::Name]->str;
+          uint32_t space = getival<uint32_t>(r->children[(size_t)ResField::Space]);
+          uint32_t regBase = getival<uint32_t>(r->children[(size_t)ResField::RegBase]);
+          return StringFormat::Fmt(
+              "Unsupported unbounded ConstantBuffer array '%s' Space:%d Register:%d", name.c_str(),
+              space, regBase);
+        }
+      }
+    }
+  }
+
   // no unsupported instructions used
   return rdcstr();
 }
@@ -2091,7 +2119,8 @@ void Program::GetLineInfo(size_t instruction, uintptr_t offset, LineColumnInfo &
         RDCASSERT(!shaderFilePath.empty());
         for(int32_t iFile = 0; iFile < Files.count(); iFile++)
         {
-          rdcstr filePath = Files[iFile].filename;
+          // Files[] might come from DXIL or DXBC data : ensure the path separator is standardised in all cases
+          rdcstr filePath = standardise_directory_separator(Files[iFile].filename);
           if(filePath == shaderFilePath)
           {
             fileIndex = iFile;

@@ -242,6 +242,7 @@ struct Analytics
     bool MultiGPU = false;
     bool D3D12Bundle = false;
     bool DXILShaders = false;
+    bool CustomAnnotations = false;
   } CaptureFeatures;
 };
 

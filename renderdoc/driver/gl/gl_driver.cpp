@@ -947,6 +947,17 @@ WrappedOpenGL::~WrappedOpenGL()
   if(m_IndirectBuffer)
     GL.glDeleteBuffers(1, &m_IndirectBuffer);
 
+  // Clean up annotation data
+  for(auto it = m_Annotations.begin(); it != m_Annotations.end(); ++it)
+    delete it->second;
+  m_Annotations.clear();
+
+  SAFE_DELETE(m_RootAnnotation);
+
+  for(SDObject *obj : m_EventAnnotations)
+    delete obj;
+  m_EventAnnotations.clear();
+
   m_ArrayMS.Destroy();
 
   SAFE_DELETE(m_FrameReader);
@@ -3120,6 +3131,40 @@ bool WrappedOpenGL::Serialise_BeginCaptureFrame(SerialiserType &ser)
 
   SERIALISE_ELEMENT(state).Unimportant();
 
+  // Serialize object annotations
+  if(ser.VersionAtLeast(0x24))
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+
+    SERIALISE_ELEMENT_LOCAL(numAnnotations, uint32_t(m_Annotations.size()));
+
+    auto it = m_Annotations.begin();
+    for(uint32_t i = 0; i < numAnnotations; i++)
+    {
+      SERIALISE_ELEMENT_LOCAL(id, it->first);
+      SDObject *annotation = NULL;
+      if(ser.IsReading())
+      {
+        annotation = new SDObject(""_lit, ""_lit);    // will be overwritten below
+      }
+      else
+      {
+        annotation = it->second;
+        it++;
+      }
+      ser.Serialise("annotation"_lit, *annotation);
+
+      if(ser.IsReading() && IsLoading(m_State))
+      {
+        m_Annotations[id] = annotation;
+        m_Replay->GetResourceDesc(id).annotations = annotation;
+      }
+    }
+
+    if(numAnnotations > 0)
+      GetReplay()->WriteFrameRecord().frameInfo.containsAnnotations = true;
+  }
+
   SERIALISE_CHECK_READ_ERRORS();
 
   if(IsReplayingAndReading())
@@ -4747,6 +4792,10 @@ bool WrappedOpenGL::ProcessChunk(ReadSerialiser &ser, GLChunk chunk)
       return Serialise_BeginCaptureFrame(ser);
     }
 
+    case GLChunk::SetCommandAnnotation:
+      return Serialise_SetCommandAnnotation(ser, rdcstr(), eRENDERDOC_AnnotationMax, 0,
+                                            RENDERDOC_AnnotationValue());
+
     case GLChunk::ContextConfiguration: return Serialise_ContextConfiguration(ser, NULL);
 
     case GLChunk::glIndirectSubCommand:
@@ -5294,7 +5343,10 @@ RDResult WrappedOpenGL::ContextReplayLog(CaptureState readType, uint32_t startEv
       break;
 
     m_LastChunk = chunktype;
-    m_CurEventID++;
+
+    // annotations do not produce events
+    if(chunktype != GLChunk::SetCommandAnnotation)
+      m_CurEventID++;
   }
 
   // swap the structure back now that we've accumulated the frame as well.
@@ -5400,7 +5452,8 @@ bool WrappedOpenGL::ContextProcessChunk(ReadSerialiser &ser, GLChunk chunk)
       default: break;
     }
 
-    if(!m_AddedAction)
+    // annotations don't add events
+    if(!m_AddedAction && chunk != GLChunk::SetCommandAnnotation)
       AddEvent();
   }
 
@@ -5756,6 +5809,13 @@ void WrappedOpenGL::AddEvent()
   apievent.eventId = m_CurEventID;
 
   apievent.chunkIndex = uint32_t(m_StructuredFile->chunks.size() - 1);
+
+  // Apply current annotation state to this event
+  if(m_RootAnnotation)
+  {
+    apievent.annotations = m_RootAnnotation->Duplicate();
+    m_EventAnnotations.push_back(apievent.annotations);
+  }
 
   m_CurEvents.push_back(apievent);
 

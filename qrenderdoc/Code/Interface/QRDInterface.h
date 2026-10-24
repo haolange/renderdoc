@@ -440,6 +440,32 @@ the most significant parameters are shown.
 )");
   virtual void SetEmptyRegionsVisible(bool show) = 0;
 
+  DOCUMENT(R"(Sets the current annotation key path. This will not display the annotation column if
+it is not already visible.
+
+:param str annotationPath: The new annotation path.
+)");
+  virtual void SetHighlightedAnnotation(const rdcstr &annotationPath) = 0;
+
+  DOCUMENT(R"(Returns the current annotation key path as being highlighted in the annotation column.
+
+:return: The current annotation path.
+:rtype: str
+)");
+  virtual rdcstr GetHighlightedAnnotation() = 0;
+
+  DOCUMENT(R"(Sets whether or not the duration column is visible.
+
+:param bool show: If the duration column should be shown.
+)");
+  virtual void SetDurationColumnVisible(bool show) = 0;
+
+  DOCUMENT(R"(Sets whether or not the annotation column is visible.
+
+:param bool show: If the duration column should be shown.
+)");
+  virtual void SetAnnotationColumnVisible(bool show) = 0;
+
 protected:
   IEventBrowser() = default;
   ~IEventBrowser() = default;
@@ -477,6 +503,36 @@ protected:
 };
 
 DECLARE_REFLECTION_STRUCT(IAPIInspector);
+
+DOCUMENT(R"(The annotation viewer window.
+
+This window is retrieved by calling :meth:`CaptureContext.GetAnnotationViewer`.
+)");
+struct IAnnotationViewer
+{
+  DOCUMENT(R"(Retrieves the PySide2 QWidget for this :class:`AnnotationViewer` if PySide2 is available, or otherwise
+returns a unique opaque pointer that can be passed back to any RenderDoc functions expecting a
+QWidget.
+
+:return: Return the widget handle, either a PySide2 handle or an opaque handle.
+:rtype: QWidget
+)");
+  virtual QWidget *Widget() = 0;
+
+  DOCUMENT(R"(Expand the annotation view to reveal a given path and select it.
+
+If the path does not exist, this will do nothing.
+
+:param str keyPath: The key path to the annotation.
+)");
+  virtual void RevealAnnotation(const rdcstr &keyPath) = 0;
+
+protected:
+  IAnnotationViewer() = default;
+  ~IAnnotationViewer() = default;
+};
+
+DECLARE_REFLECTION_STRUCT(IAnnotationViewer);
 
 DOCUMENT(R"(Specifies a pipeline stage for the :class:`PipelineStateViewer`.
 
@@ -2479,6 +2535,13 @@ on the UI thread.
 )");
   virtual IAPIInspector *GetAPIInspector() = 0;
 
+  DOCUMENT(R"(Retrieve the current singleton :class:`AnnotationViewer`.
+
+:return: The current window, which is created (but not shown) it there wasn't one open.
+:rtype: AnnotationViewer
+)");
+  virtual IAnnotationViewer *GetAnnotationViewer() = 0;
+
   DOCUMENT(R"(Retrieve the current singleton :class:`TextureViewer`.
 
 :return: The current window, which is created (but not shown) it there wasn't one open.
@@ -2577,6 +2640,13 @@ on the UI thread.
 )");
   virtual bool HasAPIInspector() = 0;
 
+  DOCUMENT(R"(Check if there is a current :class:`AnnotationViewer` open.
+
+:return: ``True`` if there is a window open.
+:rtype: bool
+)");
+  virtual bool HasAnnotationViewer() = 0;
+
   DOCUMENT(R"(Check if there is a current :class:`TextureViewer` open.
 
 :return: ``True`` if there is a window open.
@@ -2665,6 +2735,9 @@ on the UI thread.
   virtual void ShowEventBrowser() = 0;
   DOCUMENT("Raise the current :class:`APIInspector`, showing it in the default place if needed.");
   virtual void ShowAPIInspector() = 0;
+  DOCUMENT(
+      "Raise the current :class:`AnnotationViewer`, showing it in the default place if needed.");
+  virtual void ShowAnnotationViewer() = 0;
   DOCUMENT("Raise the current :class:`TextureViewer`, showing it in the default place if needed.");
   virtual void ShowTextureViewer() = 0;
   DOCUMENT(R"(Raise the current mesh previewing :class:`BufferViewer`, showing it in the default

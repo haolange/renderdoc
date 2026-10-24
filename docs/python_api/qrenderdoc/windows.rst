@@ -42,6 +42,12 @@ Descriptor Viewer
 .. autoclass:: qrenderdoc.DescriptorViewer
   :members:
 
+Annotation Viewer
+-----------------
+
+.. autoclass:: qrenderdoc.AnnotationViewer
+  :members:
+
 Texture Viewer
 --------------
 

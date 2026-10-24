@@ -988,6 +988,11 @@ enum class BufferDescriptorFormat
   //    top_19 = byteSize256>>4
   Packed_4519_Aligned256_8,
 
+  // 8 bytes:
+  //    bottom 51 = pointer>>4
+  //    top_13 = byteSize16>>4
+  Packed_5113_Aligned16_8,
+
   // 16 bytes:
   //    uint64[0] = pointer
   //    uint64[1] = elemSize
@@ -1402,6 +1407,9 @@ enum class VulkanChunk : uint32_t
   vkCmdPushDescriptorSet2,
   vkCmdPushDescriptorSetWithTemplate2,
   vkCmdEndRendering2EXT,
+  SetQueueAnnotation,
+  SetCommandAnnotation,
+  vkCmdBeginCustomResolveEXT,
   Max,
 };
 
@@ -1470,6 +1478,7 @@ DECLARE_REFLECTION_STRUCT(VkAttachmentFeedbackLoopInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkAttachmentReference2);
 DECLARE_REFLECTION_STRUCT(VkAttachmentReferenceStencilLayout);
 DECLARE_REFLECTION_STRUCT(VkAttachmentSampleLocationsEXT);
+DECLARE_REFLECTION_STRUCT(VkBeginCustomResolveInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkBindBufferMemoryDeviceGroupInfo);
 DECLARE_REFLECTION_STRUCT(VkBindBufferMemoryInfo);
 DECLARE_REFLECTION_STRUCT(VkBindDescriptorBufferEmbeddedSamplersInfoEXT)
@@ -1514,6 +1523,7 @@ DECLARE_REFLECTION_STRUCT(VkCopyImageToImageInfo);
 DECLARE_REFLECTION_STRUCT(VkCopyImageToMemoryInfo);
 DECLARE_REFLECTION_STRUCT(VkCopyMemoryToAccelerationStructureInfoKHR);
 DECLARE_REFLECTION_STRUCT(VkCopyMemoryToImageInfo);
+DECLARE_REFLECTION_STRUCT(VkCustomResolveCreateInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkDebugMarkerMarkerInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkDebugMarkerObjectNameInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkDebugMarkerObjectTagInfoEXT);
@@ -1568,6 +1578,8 @@ DECLARE_REFLECTION_STRUCT(VkDisplayPlaneProperties2KHR);
 DECLARE_REFLECTION_STRUCT(VkDisplayPowerInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkDisplayPresentInfoKHR);
 DECLARE_REFLECTION_STRUCT(VkDisplayProperties2KHR);
+DECLARE_REFLECTION_STRUCT(VkDrmFormatModifierPropertiesListEXT);
+DECLARE_REFLECTION_STRUCT(VkDrmFormatModifierPropertiesList2EXT);
 DECLARE_REFLECTION_STRUCT(VkEventCreateInfo);
 DECLARE_REFLECTION_STRUCT(VkExportFenceCreateInfo);
 DECLARE_REFLECTION_STRUCT(VkExportMemoryAllocateInfo);
@@ -1601,6 +1613,9 @@ DECLARE_REFLECTION_STRUCT(VkImageCompressionPropertiesEXT);
 DECLARE_REFLECTION_STRUCT(VkImageCopy2);
 DECLARE_REFLECTION_STRUCT(VkImageCreateInfo);
 DECLARE_REFLECTION_STRUCT(VkImageFormatListCreateInfo);
+DECLARE_REFLECTION_STRUCT(VkImageDrmFormatModifierExplicitCreateInfoEXT);
+DECLARE_REFLECTION_STRUCT(VkImageDrmFormatModifierListCreateInfoEXT);
+DECLARE_REFLECTION_STRUCT(VkImageDrmFormatModifierPropertiesEXT);
 DECLARE_REFLECTION_STRUCT(VkImageFormatProperties2);
 DECLARE_REFLECTION_STRUCT(VkImageMemoryBarrier);
 DECLARE_REFLECTION_STRUCT(VkImageMemoryBarrier2);
@@ -1666,6 +1681,7 @@ DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceConditionalRenderingFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceConservativeRasterizationPropertiesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceCustomBorderColorFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceCustomBorderColorPropertiesEXT);
+DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceCustomResolveFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceDepthClampZeroOneFeaturesKHR);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceDepthClipControlFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceDepthClipEnableFeaturesEXT);
@@ -1715,6 +1731,7 @@ DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceIDProperties);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImage2DViewOf3DFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImageCompressionControlFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT);
+DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImageDrmFormatModifierInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImageFormatInfo2);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImagelessFramebufferFeatures);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceImageRobustnessFeatures);
@@ -1747,6 +1764,7 @@ DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMeshShaderFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMeshShaderPropertiesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMultiviewFeatures);
+DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMultiviewPerViewViewportsFeaturesQCOM);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMultiviewProperties);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT);
 DECLARE_REFLECTION_STRUCT(VkPhysicalDeviceNestedCommandBufferFeaturesEXT);
@@ -1914,7 +1932,7 @@ DECLARE_REFLECTION_STRUCT(VkRenderingAttachmentLocationInfo);
 DECLARE_REFLECTION_STRUCT(VkRenderingFragmentDensityMapAttachmentInfoEXT);
 DECLARE_REFLECTION_STRUCT(VkRenderingFragmentShadingRateAttachmentInfoKHR);
 DECLARE_REFLECTION_STRUCT(VkRenderingInfo);
-DECLARE_REFLECTION_STRUCT(VkRenderingEndInfoEXT);
+DECLARE_REFLECTION_STRUCT(VkRenderingEndInfoKHR);
 DECLARE_REFLECTION_STRUCT(VkRenderingInputAttachmentIndexInfo);
 DECLARE_REFLECTION_STRUCT(VkRenderPassAttachmentBeginInfo);
 DECLARE_REFLECTION_STRUCT(VkRenderPassBeginInfo);
@@ -2047,6 +2065,7 @@ DECLARE_DESERIALISE_TYPE(VkCopyImageToImageInfo);
 DECLARE_DESERIALISE_TYPE(VkCopyImageToMemoryInfo);
 DECLARE_DESERIALISE_TYPE(VkCopyMemoryToAccelerationStructureInfoKHR);
 DECLARE_DESERIALISE_TYPE(VkCopyMemoryToImageInfo);
+DECLARE_DESERIALISE_TYPE(VkBeginCustomResolveInfoEXT);
 DECLARE_DESERIALISE_TYPE(VkDebugMarkerMarkerInfoEXT);
 DECLARE_DESERIALISE_TYPE(VkDebugMarkerObjectNameInfoEXT);
 DECLARE_DESERIALISE_TYPE(VkDebugMarkerObjectTagInfoEXT);
@@ -2101,6 +2120,8 @@ DECLARE_DESERIALISE_TYPE(VkDisplayPlaneProperties2KHR);
 DECLARE_DESERIALISE_TYPE(VkDisplayPowerInfoEXT);
 DECLARE_DESERIALISE_TYPE(VkDisplayPresentInfoKHR);
 DECLARE_DESERIALISE_TYPE(VkDisplayProperties2KHR);
+DECLARE_DESERIALISE_TYPE(VkDrmFormatModifierProperties2EXT);
+DECLARE_DESERIALISE_TYPE(VkDrmFormatModifierPropertiesList2EXT);
 DECLARE_DESERIALISE_TYPE(VkEventCreateInfo);
 DECLARE_DESERIALISE_TYPE(VkExportFenceCreateInfo);
 DECLARE_DESERIALISE_TYPE(VkExportMemoryAllocateInfo);
@@ -2133,6 +2154,9 @@ DECLARE_DESERIALISE_TYPE(VkImageCompressionPropertiesEXT);
 DECLARE_DESERIALISE_TYPE(VkImageCopy2);
 DECLARE_DESERIALISE_TYPE(VkImageCreateInfo);
 DECLARE_DESERIALISE_TYPE(VkImageFormatListCreateInfo);
+DECLARE_DESERIALISE_TYPE(VkImageDrmFormatModifierExplicitCreateInfoEXT);
+DECLARE_DESERIALISE_TYPE(VkImageDrmFormatModifierListCreateInfoEXT);
+DECLARE_DESERIALISE_TYPE(VkImageDrmFormatModifierPropertiesEXT);
 DECLARE_DESERIALISE_TYPE(VkImageFormatProperties2);
 DECLARE_DESERIALISE_TYPE(VkImageMemoryBarrier);
 DECLARE_DESERIALISE_TYPE(VkImageMemoryBarrier2);
@@ -2244,6 +2268,7 @@ DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceIDProperties);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImage2DViewOf3DFeaturesEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImageCompressionControlFeaturesEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT);
+DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImageDrmFormatModifierInfoEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImageFormatInfo2);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImagelessFramebufferFeatures);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceImageRobustnessFeatures);
@@ -2276,6 +2301,7 @@ DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMeshShaderFeaturesEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMeshShaderPropertiesEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMultiviewFeatures);
+DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMultiviewPerViewViewportsFeaturesQCOM);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMultiviewProperties);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT);
 DECLARE_DESERIALISE_TYPE(VkPhysicalDeviceNestedCommandBufferFeaturesEXT);
@@ -2441,7 +2467,7 @@ DECLARE_DESERIALISE_TYPE(VkRenderingAttachmentLocationInfo);
 DECLARE_DESERIALISE_TYPE(VkRenderingFragmentDensityMapAttachmentInfoEXT);
 DECLARE_DESERIALISE_TYPE(VkRenderingFragmentShadingRateAttachmentInfoKHR);
 DECLARE_DESERIALISE_TYPE(VkRenderingInfo);
-DECLARE_DESERIALISE_TYPE(VkRenderingEndInfoEXT);
+DECLARE_DESERIALISE_TYPE(VkRenderingEndInfoKHR);
 DECLARE_DESERIALISE_TYPE(VkRenderingInputAttachmentIndexInfo);
 DECLARE_DESERIALISE_TYPE(VkRenderPassAttachmentBeginInfo);
 DECLARE_DESERIALISE_TYPE(VkRenderPassBeginInfo);
@@ -2546,6 +2572,8 @@ DECLARE_REFLECTION_STRUCT(VkDisplayPropertiesKHR);
 DECLARE_REFLECTION_STRUCT(VkDrawIndexedIndirectCommand);
 DECLARE_REFLECTION_STRUCT(VkDrawIndirectCommand);
 DECLARE_REFLECTION_STRUCT(VkDrawMeshTasksIndirectCommandEXT);
+DECLARE_REFLECTION_STRUCT(VkDrmFormatModifierPropertiesEXT);
+DECLARE_REFLECTION_STRUCT(VkDrmFormatModifierProperties2EXT);
 DECLARE_REFLECTION_STRUCT(VkExtent2D);
 DECLARE_REFLECTION_STRUCT(VkExtent3D);
 DECLARE_REFLECTION_STRUCT(VkExternalMemoryProperties);
@@ -2729,6 +2757,7 @@ DECLARE_REFLECTION_ENUM(VkColorComponentFlagBits);
 DECLARE_REFLECTION_ENUM(VkColorSpaceKHR);
 DECLARE_REFLECTION_ENUM(VkCommandBufferLevel);
 DECLARE_REFLECTION_ENUM(VkCommandBufferUsageFlagBits);
+DECLARE_REFLECTION_ENUM(VkCommandBufferResetFlagBits);
 DECLARE_REFLECTION_ENUM(VkCommandPoolCreateFlagBits);
 DECLARE_REFLECTION_ENUM(VkCommandPoolResetFlagBits);
 DECLARE_REFLECTION_ENUM(VkCompareOp);

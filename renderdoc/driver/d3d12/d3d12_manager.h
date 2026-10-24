@@ -1271,8 +1271,8 @@ public:
                                               UINT64 ArgumentBufferOffset,
                                               ID3D12Resource *pCountBuffer, UINT64 CountBufferOffset);
 
-  void AddPendingASBuilds(ID3D12Fence *fence, UINT64 waitValue,
-                          const rdcarray<std::function<bool()>> &callbacks);
+  void AddPendingCallbacks(ID3D12Fence *fence, UINT64 waitValue,
+                           const rdcarray<std::function<bool()>> &callbacks);
   void TickASManagement();
 
   // this disk cache is primarily single threaded - either the disk cache thread owns
@@ -1354,7 +1354,7 @@ private:
   void InitReplayBlasPatchingResources();
 
   void CheckASCaching();
-  void CheckPendingASBuilds();
+  void CheckPendingCallbacks();
 
   void CopyFromVA(ID3D12GraphicsCommandList4 *unwrappedCmd, ID3D12Resource *dstRes,
                   uint64_t dstOffset, D3D12_GPU_VIRTUAL_ADDRESS sourceVA, uint64_t byteSize);
@@ -1426,14 +1426,14 @@ private:
 
   uint32_t GetFreeQuery();
 
-  struct PendingASBuild
+  struct PendingCallbacks
   {
     ID3D12Fence *fence;
     UINT64 fenceValue;
     std::function<bool()> callback;
   };
-  Threading::CriticalSection m_PendingASBuildsLock;
-  rdcarray<PendingASBuild> m_PendingASBuilds;
+  Threading::CriticalSection m_PendingCallbacksLock;
+  rdcarray<PendingCallbacks> m_PendingCallbacks;
 };
 
 struct D3D12ResourceManagerConfiguration

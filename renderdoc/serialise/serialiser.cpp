@@ -776,6 +776,7 @@ void DoSerialise(SerialiserType &ser, SDChunk &el)
 }
 
 INSTANTIATE_SERIALISE_TYPE(SDChunk);
+INSTANTIATE_SERIALISE_TYPE(SDObject);
 
 // serialise the pointer version - special case for writing a structured file, so can assume writing
 template <class SerialiserType>

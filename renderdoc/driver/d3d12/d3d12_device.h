@@ -64,7 +64,7 @@ struct D3D12InitParams
   UINT SDKVersion = 0;
 
   // check if a frame capture section version is supported
-  static const uint64_t CurrentVersion = 0x16;
+  static const uint64_t CurrentVersion = 0x20;
 
   static bool IsSupportedVersion(uint64_t ver);
 };
@@ -751,6 +751,10 @@ private:
   int m_OOMHandler = 0;
   RDResult m_FatalError = ResultCode::Succeeded;
 
+  bool m_CaptureFailure = false;
+  uint64_t m_LastCaptureFailed = 0;
+  RDResult m_LastCaptureError = ResultCode::Succeeded;
+
   uint64_t m_TimeBase = 0;
   double m_TimeFrequency = 1.0f;
   SDFile *m_StructuredFile = NULL;
@@ -770,6 +774,9 @@ private:
   bool m_AppControlledCapture = false;
   bool m_FirstFrameCapture = false;
   void *m_FirstFrameCaptureWindow = NULL;
+
+  Threading::CriticalSection m_AnnotationsLock;
+  std::unordered_map<ResourceId, SDObject *> m_Annotations;
 
   Threading::RWLock m_CapTransitionLock;
   CaptureState m_State;
@@ -982,7 +989,18 @@ public:
   void CheckDeferredResult(const RDResult &res);
   void AddDeferredTime(double ms);
 
-  void ReportFatalError(RDResult error) { m_FatalError = error; }
+  void ReportFatalError(RDResult error)
+  {
+    if(IsCaptureMode(m_State))
+    {
+      m_CaptureFailure = true;
+      m_LastCaptureError = error;
+    }
+    else
+    {
+      m_FatalError = error;
+    }
+  }
   RDResult FatalErrorCheck() { return m_FatalError; }
   bool HasFatalError() { return m_FatalError != ResultCode::Succeeded; }
   ResourceDescription &GetResourceDesc(ResourceId id);
@@ -1116,6 +1134,11 @@ public:
   void StartFrameCapture(DeviceOwnedWindow devWnd);
   bool EndFrameCapture(DeviceOwnedWindow devWnd);
   bool DiscardFrameCapture(DeviceOwnedWindow devWnd);
+  uint32_t SetObjectAnnotation(void *object, const char *key, RENDERDOC_AnnotationType valueType,
+                               uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
+  uint32_t SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                const RENDERDOC_AnnotationValue *value);
 
   template <typename SerialiserType>
   bool Serialise_Present(SerialiserType &ser, ID3D12Resource *PresentedImage, UINT SyncInterval,

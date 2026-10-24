@@ -134,6 +134,8 @@ public:
     else
       m_editable &= ~mask;
   }
+  inline bool selectable() const { return m_selectable; }
+  inline void setSelectable(bool sel) { m_selectable = sel; }
 
   inline Qt::CheckState checkState(int column) const
   {
@@ -180,6 +182,7 @@ private:
   uint32_t m_editable = 0;
 
   // per-item properties
+  bool m_selectable = true;
   QString m_tooltip;
   bool m_bold = false;
   bool m_italic = false;
@@ -233,7 +236,9 @@ public:
     m_activeHoverIcon = hover;
     m_hoverHandCursor = true;
     m_activateOnClick = true;
+    m_hoverRole = -1;
   }
+  void setHoverRole(int role) { m_hoverRole = role; }
   void setHoverHandCursor(bool hand) { m_hoverHandCursor = hand; }
   void setHoverClickActivate(bool click) { m_activateOnClick = click; }
   void setClearSelectionOnFocusLoss(bool clear) { m_clearSelectionOnFocusLoss = clear; }
@@ -267,6 +272,7 @@ public:
 
   RDTreeWidgetItem *itemAt(const QPoint &p) const;
   RDTreeWidgetItem *itemAt(int x, int y) const { return itemAt(QPoint(x, y)); }
+  bool isItemExpanded(RDTreeWidgetItem *item);
   void expandItem(RDTreeWidgetItem *item);
   void expandAllItems(RDTreeWidgetItem *item);
   void collapseItem(RDTreeWidgetItem *item);
@@ -327,6 +333,7 @@ private:
   QVector<Qt::Alignment> m_alignments;
 
   int m_hoverColumn = -1;
+  int m_hoverRole = -1;
   QIcon m_normalHoverIcon;
   QIcon m_activeHoverIcon;
   bool m_hoverHandCursor = false;

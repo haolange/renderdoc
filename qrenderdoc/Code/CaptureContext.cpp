@@ -38,6 +38,7 @@
 #include <QTimer>
 #include "Code/Resources.h"
 #include "Code/pyrenderdoc/PythonContext.h"
+#include "Widgets/AnnotationDisplay.h"
 #include "Windows/APIInspector.h"
 #include "Windows/BufferViewer.h"
 #include "Windows/CommentView.h"
@@ -67,28 +68,6 @@
 
 #include "pipestate.inl"
 
-namespace
-{
-template <typename Fn>
-auto InvokeCaptureAccessResult(ReplayManager &replay, Fn &&fn)
-    -> decltype(fn((ICaptureAccess *)nullptr))
-{
-  using Ret = decltype(fn((ICaptureAccess *)nullptr));
-
-  ICaptureAccess *access = replay.GetCaptureAccess();
-  if(!access)
-    return Ret();
-
-  if(replay.CurrentRemote().IsValid())
-  {
-    Ret ret = Ret();
-    replay.BlockInvoke([&](IReplayController *) { ret = fn(replay.GetCaptureAccess()); });
-    return ret;
-  }
-
-  return fn(access);
-}
-}    // namespace
 
 CaptureContext::CaptureContext(PersistantConfig &cfg) : m_Config(cfg)
 {
@@ -1116,6 +1095,9 @@ void CaptureContext::LoadCaptureThreaded(const QString &captureFile, const Repla
 
     m_PostloadProgress = 1.0f;
   });
+
+  if(m_FrameInfo.containsAnnotations)
+    ANALYTIC_SET(CaptureFeatures.CustomAnnotations, true);
 
   QThread::msleep(20);
 
@@ -2284,6 +2266,18 @@ IAPIInspector *CaptureContext::GetAPIInspector()
   return m_APIInspector;
 }
 
+IAnnotationViewer *CaptureContext::GetAnnotationViewer()
+{
+  if(m_AnnotationViewer)
+    return m_AnnotationViewer;
+
+  m_AnnotationViewer = new AnnotationDisplay(*this, true, m_MainWindow);
+  m_AnnotationViewer->setObjectName(lit("annotationViewer"));
+  setupDockWindow(m_AnnotationViewer, true);
+
+  return m_AnnotationViewer;
+}
+
 ITextureViewer *CaptureContext::GetTextureViewer()
 {
   if(m_TextureViewer)
@@ -2447,6 +2441,11 @@ void CaptureContext::ShowEventBrowser()
 void CaptureContext::ShowAPIInspector()
 {
   m_MainWindow->showAPIInspector();
+}
+
+void CaptureContext::ShowAnnotationViewer()
+{
+  m_MainWindow->showAnnotationViewer();
 }
 
 void CaptureContext::ShowTextureViewer()
@@ -2715,6 +2714,10 @@ QWidget *CaptureContext::CreateBuiltinWindow(const rdcstr &objectName)
   {
     return GetAPIInspector()->Widget();
   }
+  else if(objectName == "annotationViewer")
+  {
+    return GetAnnotationViewer()->Widget();
+  }
   else if(objectName == "capDialog")
   {
     return GetCaptureDialog()->Widget();
@@ -2891,9 +2894,22 @@ void CaptureContext::EmbedDependentFiles()
     return;
 
   // Always operate on the capture access (local or remote)
-  InvokeCaptureAccessResult(m_Replay, [](ICaptureAccess *access) {
-    return access->EmbedDependenciesIntoCapture();
+  QString tag = lit("replayEmbedDependenciesIntoCapture");
+  bool done = false;
+
+  Replay().AsyncInvoke(tag, [this, &done](IReplayController *) {
+    m_Replay.GetCaptureAccess()->EmbedDependenciesIntoCapture();
+    done = true;
   });
+
+  // wait a short while before displaying the progress dialog
+  for(int i = 0; !done && (i < 100 || m_Replay.GetCurrentProcessingTag().isEmpty() ||
+                           m_Replay.GetCurrentProcessingTag() == tag);
+      i++)
+    QThread::msleep(5);
+
+  ShowProgressDialog(m_MainWindow->Widget(), tr("Please wait, working..."),
+                     [&done]() { return done; });
 
   // Local replay
   if(m_Replay.GetCaptureFile())
@@ -2923,9 +2939,22 @@ void CaptureContext::RemoveDependentFiles()
     return;
 
   // Always operate on the capture access (local or remote)
-  InvokeCaptureAccessResult(m_Replay, [](ICaptureAccess *access) {
-    return access->RemoveDependenciesFromCapture();
+  QString tag = lit("replayRemoveDependenciesFromCapture");
+  bool done = false;
+
+  Replay().AsyncInvoke(tag, [this, &done](IReplayController *) {
+    m_Replay.GetCaptureAccess()->RemoveDependenciesFromCapture();
+    done = true;
   });
+
+  // wait a short while before displaying the progress dialog
+  for(int i = 0; !done && (i < 100 || m_Replay.GetCurrentProcessingTag().isEmpty() ||
+                           m_Replay.GetCurrentProcessingTag() == tag);
+      i++)
+    QThread::msleep(5);
+
+  ShowProgressDialog(m_MainWindow->Widget(), tr("Please wait, working..."),
+                     [&done]() { return done; });
 
   // Local replay
   if(m_Replay.GetCaptureFile())

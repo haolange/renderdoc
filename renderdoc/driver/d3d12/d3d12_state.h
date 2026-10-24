@@ -183,6 +183,13 @@ struct D3D12RenderState
   };
   rdcarray<StreamOut> streamouts;
 
+  struct Predication
+  {
+    ResourceId buffer;
+    UINT64 offset;
+    D3D12_PREDICATION_OP op;
+  } predication;
+
   struct RootSignature
   {
     ResourceId rootsig;

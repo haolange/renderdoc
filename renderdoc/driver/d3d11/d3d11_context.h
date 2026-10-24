@@ -227,6 +227,12 @@ private:
   rdcarray<Annotation> m_AnnotationQueue;
   Threading::CriticalSection m_AnnotLock;
 
+  // Object and command annotation support
+  Threading::CriticalSection m_AnnotationsLock;
+  std::unordered_map<ResourceId, SDObject *> m_Annotations;    // Object annotations by ResourceId
+  SDObject *m_RootAnnotation = NULL;                           // Root for event annotation state
+  rdcarray<SDObject *> m_EventAnnotations;                     // Track allocations for cleanup
+
   uint64_t m_TimeBase = 0;
   double m_TimeFrequency = 1.0f;
   SDFile *m_StructuredFile = NULL;
@@ -290,11 +296,24 @@ private:
 
   SERIALISED_ID3D11CONTEXT_MARKER_FUNCTIONS();
 
+#define SERIALISED_ID3D11CONTEXT_ANNOTATION_FUNCTIONS()                                        \
+  IMPLEMENT_FUNCTION_SERIALISED(bool, SetCommandAnnotation, rdcstr key,                        \
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth, \
+                                RENDERDOC_AnnotationValue value);
+
+  SERIALISED_ID3D11CONTEXT_ANNOTATION_FUNCTIONS();
+
 public:
   ALLOCATE_WITH_WRAPPED_POOL(WrappedID3D11DeviceContext);
 
   WrappedID3D11DeviceContext(WrappedID3D11Device *realDevice, ID3D11DeviceContext *context);
   virtual ~WrappedID3D11DeviceContext();
+
+  void RemoveAnnotations(ResourceId id)
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+    m_Annotations.erase(id);
+  }
 
   void SetReplayResourceID(ResourceId id) { m_ResourceID = id; }
 
@@ -357,6 +376,12 @@ public:
   // internal addref/release
   void IntAddRef();
   void IntRelease();
+
+  // annotations functions in DeviceContext (immediate only)
+  uint32_t SetCommandAnnotation(const char *key, RENDERDOC_AnnotationType valueType,
+                                uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
+  uint32_t SetObjectAnnotation(void *object, const char *key, RENDERDOC_AnnotationType valueType,
+                               uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
 
   //////////////////////////////
   // implement IUnknown

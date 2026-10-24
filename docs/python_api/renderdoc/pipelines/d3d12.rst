@@ -77,6 +77,12 @@ Output Merger
 .. autoclass:: D3D12BlendState
   :members:
 
+Predication
+-----------
+
+.. autoclass:: D3D12Predication
+  :members:
+
 Resource States
 ---------------
 

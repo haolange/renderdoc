@@ -79,6 +79,7 @@ BINDING(0) uniform CheckerboardUBOData
 
   float CheckerSquareDimension;
   float BorderWidth;
+  int TargetView;
 }
 INST_NAME(checker);
 

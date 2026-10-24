@@ -32,6 +32,28 @@ GLResourceManager::GLResourceManager(CaptureState &state, WrappedOpenGL *driver)
 {
 }
 
+void GLResourceManager::UnregisterResource(GLResource res)
+{
+  auto it = m_Resources.find(res);
+  if(it != m_Resources.end())
+  {
+    ResourceId id = it->second.first;
+    m_Names.erase(id);
+
+    ReleaseResource(id);
+    m_Resources.erase(res);
+
+    auto fboit = m_FBOAttachmentsCache.find(id);
+    if(fboit != m_FBOAttachmentsCache.end())
+    {
+      delete fboit->second;
+      m_FBOAttachmentsCache.erase(fboit);
+    }
+
+    m_Driver->RemoveAnnotations(id);
+  }
+}
+
 bool GLResourceManager::IsResourceTrackedForPersistency(const GLResource &res)
 {
   return res.Namespace == eResTexture || res.Namespace == eResBuffer;

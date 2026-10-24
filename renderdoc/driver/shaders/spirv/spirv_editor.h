@@ -111,6 +111,7 @@ public:
   void AddEntryGlobals(Id entry, const rdcarray<Id> &newGlobals);
   void ChangeEntry(Id from, Id to);
 
+  Id GetBuiltInVariable(BuiltIn builtin) { return builtinInputs[builtin].variable; }
   rdcpair<Id, Id> AddBuiltinInputLoad(OperationList &ops, ShaderStage stage, BuiltIn builtin,
                                       Id type);
   Id AddBuiltinInputLoad(OperationList &ops, rdcarray<Id> &addedGlobals, ShaderStage stage,
@@ -138,6 +139,8 @@ public:
   Id AddVariable(const Operation &op);
   Id AddConstant(const Operation &op);
   void AddFunction(const OperationList &ops);
+
+  void FlattenSpecConstants(const rdcarray<SpecConstant> &userSpec);
 
   Iter GetID(Id id);
   // the entry point has 'two' opcodes, the entrypoint declaration and the function.

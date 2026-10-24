@@ -28,7 +28,7 @@
 template <>
 rdcstr DoStringise(const D3D12Chunk &el)
 {
-  RDCCOMPILE_ASSERT((uint32_t)D3D12Chunk::Max == 1137, "Chunks changed without updating names");
+  RDCCOMPILE_ASSERT((uint32_t)D3D12Chunk::Max == 1139, "Chunks changed without updating names");
 
   BEGIN_ENUM_STRINGISE(D3D12Chunk)
   {
@@ -242,6 +242,8 @@ rdcstr DoStringise(const D3D12Chunk &el)
                                "ID3D12Device14::CreateRootSignatureFromSubobjectInLibrary");
     STRINGISE_ENUM_CLASS_NAMED(List_SetProgram, "ID3D12GraphicsCommandList10::SetProgram");
     STRINGISE_ENUM_CLASS_NAMED(List_DispatchGraph, "ID3D12GraphicsCommandList10::DispatchGraph");
+    STRINGISE_ENUM_CLASS_NAMED(SetCommandAnnotation, "Internal::SetCommandAnnotation");
+    STRINGISE_ENUM_CLASS_NAMED(SetQueueAnnotation, "Internal::SetQueueAnnotation");
     STRINGISE_ENUM_CLASS_NAMED(Max, "Max Chunk");
   }
   END_ENUM_STRINGISE()

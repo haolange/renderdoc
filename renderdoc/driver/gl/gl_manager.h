@@ -165,25 +165,7 @@ public:
     return false;
   }
 
-  void UnregisterResource(GLResource res)
-  {
-    auto it = m_Resources.find(res);
-    if(it != m_Resources.end())
-    {
-      ResourceId id = it->second.first;
-      m_Names.erase(id);
-
-      ReleaseResource(id);
-      m_Resources.erase(res);
-
-      auto fboit = m_FBOAttachmentsCache.find(id);
-      if(fboit != m_FBOAttachmentsCache.end())
-      {
-        delete fboit->second;
-        m_FBOAttachmentsCache.erase(fboit);
-      }
-    }
-  }
+  void UnregisterResource(GLResource res);
 
   ResourceId GetResID(GLResource res)
   {

@@ -29,6 +29,7 @@
 #include "tinyfiledialogs/tinyfiledialogs.h"
 #include "d3d11_debug.h"
 #include "d3d11_renderstate.h"
+#include "d3d11_replay.h"
 #include "d3d11_resources.h"
 
 #ifndef DXGI_ERROR_INVALID_CALL
@@ -186,6 +187,118 @@ int WrappedID3D11DeviceContext::PopMarker()
   }
 
   return --m_MarkerIndentLevel;
+}
+
+template <typename SerialiserType>
+bool WrappedID3D11DeviceContext::Serialise_SetCommandAnnotation(SerialiserType &ser, rdcstr key,
+                                                                RENDERDOC_AnnotationType valueType,
+                                                                uint32_t valueVectorWidth,
+                                                                RENDERDOC_AnnotationValue value)
+{
+  SERIALISE_ELEMENT(key);
+  SERIALISE_ELEMENT(valueType);
+  ser.SetStructArg(valueType);
+  SERIALISE_ELEMENT(valueVectorWidth);
+  SERIALISE_ELEMENT(value);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    if(IsLoading(m_State))
+    {
+      if(!m_RootAnnotation)
+        m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
+
+      SDObject *root = m_RootAnnotation;
+
+      if(valueType == eRENDERDOC_Empty)
+      {
+        root->EraseChildByKeyPath(key);
+      }
+      else
+      {
+        WriteAnnotation(root->CreateChildByKeyPath(key), valueType, valueVectorWidth, value);
+      }
+
+      m_pDevice->GetReplay()->WriteFrameRecord().frameInfo.containsAnnotations = true;
+    }
+  }
+
+  return true;
+}
+
+uint32_t WrappedID3D11DeviceContext::SetCommandAnnotation(const char *key,
+                                                          RENDERDOC_AnnotationType valueType,
+                                                          uint32_t valueVectorWidth,
+                                                          const RENDERDOC_AnnotationValue *value)
+{
+  SERIALISE_TIME_CALL();
+
+  if(IsActiveCapturing(m_State))
+  {
+    USE_SCRATCH_SERIALISER();
+    GET_SERIALISER.SetActionChunk();
+    SCOPED_SERIALISE_CHUNK(D3D11Chunk::SetCommandAnnotation);
+    SERIALISE_ELEMENT(m_ResourceID).Named("Context"_lit).TypedAs("ID3D11DeviceContext *"_lit);
+
+    RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+    if(valueType == eRENDERDOC_APIObject && val.apiObject)
+    {
+      ResourceId id = GetIDForDeviceChild((ID3D11DeviceChild *)val.apiObject);
+      RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(id), "ResourceId isn't 64-bit!");
+      memcpy(&val.uint64, &id, sizeof(id));
+    }
+
+    Serialise_SetCommandAnnotation(GET_SERIALISER, key, valueType, valueVectorWidth, val);
+
+    m_ContextRecord->AddChunk(scope.Get());
+  }
+
+  return 0;
+}
+
+uint32_t WrappedID3D11DeviceContext::SetObjectAnnotation(void *object, const char *key,
+                                                         RENDERDOC_AnnotationType valueType,
+                                                         uint32_t valueVectorWidth,
+                                                         const RENDERDOC_AnnotationValue *value)
+{
+  ResourceId id = GetIDForDeviceChild((ID3D11DeviceChild *)object);
+
+  if(id != ResourceId())
+  {
+    RENDERDOC_AnnotationValue val = value ? *value : RENDERDOC_AnnotationValue();
+
+    // Convert API object references to ResourceId
+    if(valueType == eRENDERDOC_APIObject && val.apiObject)
+    {
+      ResourceId valId = GetIDForDeviceChild((ID3D11DeviceChild *)val.apiObject);
+      RDCCOMPILE_ASSERT(sizeof(val.uint64) == sizeof(valId), "ResourceId isn't 64-bit!");
+      memcpy(&val.uint64, &valId, sizeof(valId));
+    }
+
+    SDObject *root = NULL;
+    {
+      SCOPED_LOCK(m_AnnotationsLock);
+      root = m_Annotations[id];
+      if(!root)
+        root = m_Annotations[id] = new SDObject("Object Annotations"_lit, "Object Annotations"_lit);
+    }
+
+    if(valueType == eRENDERDOC_Empty)
+    {
+      root->EraseChildByKeyPath(key);
+    }
+    else
+    {
+      WriteAnnotation(root->CreateChildByKeyPath(key), valueType, valueVectorWidth, val);
+    }
+
+    return 0;
+  }
+
+  return 2;
 }
 
 void WrappedID3D11DeviceContext::ThreadSafe_SetMarker(uint32_t col, const wchar_t *name)
@@ -6482,7 +6595,7 @@ bool WrappedID3D11DeviceContext::Serialise_GenerateMips(SerialiserType &ser,
       if(view)
       {
         m_ResourceUses[view->GetResourceResID()].push_back(
-            EventUsage(m_CurEventID, ResourceUsage::GenMips, view->GetResourceID()));
+            EventUsage(m_CurEventID, ResourceUsage::GenMips));
       }
 
       AddEvent();
@@ -6642,7 +6755,7 @@ bool WrappedID3D11DeviceContext::Serialise_ClearRenderTargetView(
       if(view)
       {
         m_ResourceUses[view->GetResourceResID()].push_back(
-            EventUsage(m_CurEventID, ResourceUsage::Clear, view->GetResourceID()));
+            EventUsage(m_CurEventID, ResourceUsage::Clear));
         action.copyDestination = view->GetResourceResID();
         D3D11_RENDER_TARGET_VIEW_DESC viewDesc;
         view->GetDesc(&viewDesc);
@@ -6724,7 +6837,7 @@ bool WrappedID3D11DeviceContext::Serialise_ClearUnorderedAccessViewUint(
       if(view)
       {
         m_ResourceUses[view->GetResourceResID()].push_back(
-            EventUsage(m_CurEventID, ResourceUsage::Clear, view->GetResourceID()));
+            EventUsage(m_CurEventID, ResourceUsage::Clear));
         action.copyDestination = view->GetResourceResID();
         action.copyDestinationSubresource = Subresource();
       }
@@ -6802,7 +6915,7 @@ bool WrappedID3D11DeviceContext::Serialise_ClearUnorderedAccessViewFloat(
       if(view)
       {
         m_ResourceUses[view->GetResourceResID()].push_back(
-            EventUsage(m_CurEventID, ResourceUsage::Clear, view->GetResourceID()));
+            EventUsage(m_CurEventID, ResourceUsage::Clear));
         action.copyDestination = view->GetResourceResID();
         action.copyDestinationSubresource = Subresource();
       }
@@ -6886,7 +6999,7 @@ bool WrappedID3D11DeviceContext::Serialise_ClearDepthStencilView(
       if(view)
       {
         m_ResourceUses[view->GetResourceResID()].push_back(
-            EventUsage(m_CurEventID, ResourceUsage::Clear, view->GetResourceID()));
+            EventUsage(m_CurEventID, ResourceUsage::Clear));
         action.copyDestination = view->GetResourceResID();
         D3D11_DEPTH_STENCIL_VIEW_DESC viewDesc;
         view->GetDesc(&viewDesc);
@@ -8153,3 +8266,4 @@ void WrappedID3D11DeviceContext::Unmap(ID3D11Resource *pResource, UINT Subresour
 
 SERIALISED_ID3D11CONTEXT_FUNCTIONS();
 SERIALISED_ID3D11CONTEXT_MARKER_FUNCTIONS();
+SERIALISED_ID3D11CONTEXT_ANNOTATION_FUNCTIONS();

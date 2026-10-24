@@ -771,6 +771,12 @@
     <ClCompile Include="Widgets\ComputeDebugSelector.cpp">
       <Filter>Widgets</Filter>
     </ClCompile>
+    <ClCompile Include="Widgets\AnnotationDisplay.cpp">
+      <Filter>Widgets</Filter>
+    </ClCompile>
+    <ClCompile Include="$(IntDir)generated\moc_AnnotationDisplay.cpp">
+      <Filter>Generated Files</Filter>
+    </ClCompile>
     <ClCompile Include="$(IntDir)generated\moc_ProjectionGuessDialog.cpp">
       <Filter>Generated Files</Filter>
     </ClCompile>
@@ -1590,6 +1596,9 @@
       <Filter>Widgets</Filter>
     </CustomBuild>
     <CustomBuild Include="Widgets\ComputeDebugSelector.ui">
+      <Filter>Widgets</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Widgets\AnnotationDisplay.h">
       <Filter>Widgets</Filter>
     </CustomBuild>
     <CustomBuild Include="Windows\Dialogs\CameraControlsDialog.h">

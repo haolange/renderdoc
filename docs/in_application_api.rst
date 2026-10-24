@@ -13,14 +13,14 @@ The recommended way to access the RenderDoc API is to passively check if the mod
 
 To do this you'll use your platforms dynamic library functions to see if the library is open already - e.g. ``GetModuleHandle`` on Windows, or ``dlopen`` with the ``RTLD_NOW | RTLD_NOLOAD`` flags if available on \*nix systems. On most platforms you can just search for the module name - ``renderdoc.dll`` on Windows, or ``librenderdoc.so`` on Linux, or ``libVkLayer_GLES_RenderDoc.so`` on Android should be sufficient here, so you don't need to know the path to where RenderDoc is running from. This will vary by platform however so consult your platform's OS documentation. Then you can use ``GetProcAddress`` or ``dlsym`` to fetch the ``RENDERDOC_GetAPI`` function using the typedef above.
 
+.. _renderdoc-api-example:
+
 .. cpp:function:: int RENDERDOC_GetAPI(RENDERDOC_Version version, void **outAPIPointers)
 
 
     This function is the only entry point actually exported from the RenderDoc module. You call this function with the desired API version, and pass it the address of a pointer to the appropriate struct type. If successful, RenderDoc will set the pointer to point to a struct containing the function pointers for the API functions (detailed below) and return 1.
 
     Note that version numbers follow `semantic versioning <http://semver.org>`_ which means the implementation returned may have a higher minor and/or patch version than requested.
-
-.. _renderdoc-api-example:
 
     Example code:
 
@@ -138,7 +138,7 @@ To do this you'll use your platforms dynamic library functions to see if the lib
 
 .. cpp:enumerator:: RENDERDOC_CaptureOption::eRENDERDOC_Option_DebugOutputMute
 
-    specifies whether to mute any API debug output messages when `APIValidation` is enabled, and not pass them along to the application. Default is on.
+    specifies whether to mute any API debug output messages when ``APIValidation`` is enabled, and not pass them along to the application. Default is on.
 
 
 .. cpp:function:: uint32_t GetCaptureOptionU32(RENDERDOC_CaptureOption opt)
@@ -331,8 +331,8 @@ To do this you'll use your platforms dynamic library functions to see if the lib
 
     :param uint32_t idx: specifies which capture to return the details of. Must be less than the return value of :cpp:func:`GetNumCaptures`.
     :param char* filename: is an optional parameter filled with the UTF-8 null-terminated path to the file. There must be enough space in the array to contain all characters including the null terminator. If set to NULL, nothing is written.
-    :param uint32_t* pathlength: is an optional parameter filled with the byte length of the above `filename` including the null terminator. If set to NULL, nothing is written.
-    :param uint64_t* timestamp: is an optional parameter filled with the 64-bit timestamp of the file - equivalent to the `time()` system call. If set to NULL, nothing is written.
+    :param uint32_t* pathlength: is an optional parameter filled with the byte length of the above ``filename`` including the null terminator. If set to NULL, nothing is written.
+    :param uint64_t* timestamp: is an optional parameter filled with the 64-bit timestamp of the file - equivalent to the ``time()`` system call. If set to NULL, nothing is written.
     :return: Returns ``1`` if the capture index was valid, or ``0`` if it was out of range.
 
 .. note::
@@ -391,7 +391,7 @@ The path follows the template set in :cpp:func:`SetCaptureFilePathTemplate` so i
     * For D3D12 it must be the ``ID3D12Device`` device object.
     * For OpenGL it must be the ``HGLRC``, ``GLXContext``, or ``EGLContext`` context object.
     * For OpenGLES it must be the ``EGLContext`` context object.
-    * For Vulkan it must be the dispatch table pointer within the ``VkInstance``. This is a pointer-sized value at the location pointed to by the ``VkInstance``. NOTE - this is not the actual ``VkInstance`` pointer itself. You can use the RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE helper macro defined in the renderdoc header to obtain this pointer from any VkInstance.
+    * For Vulkan it must be the dispatch table pointer within the ``VkInstance``. This is a pointer-sized value at the location pointed to by the ``VkInstance``. NOTE - this is not the actual ``VkInstance`` pointer itself. You can use the ``RENDERDOC_DEVICEPOINTER_FROM_VKINSTANCE()`` helper macro defined in the renderdoc header to obtain this pointer from any VkInstance.
 
     ``RENDERDOC_WindowHandle`` is a typedef to ``void *``. It is the platform specific Windows ``HWND``, Xcb ``xcb_window_t``, Xlib ``Window`` / ``Drawable``, Wayland ``wl_surface*``, or Android ``ANativeWindow*``.
 
@@ -433,7 +433,7 @@ The path follows the template set in :cpp:func:`SetCaptureFilePathTemplate` so i
     ``RENDERDOC_DevicePointer`` and ``RENDERDOC_WindowHandle`` are described above in :cpp:func:`SetActiveWindow`.
     ``device`` and ``wndHandle`` can either or both be set to ``NULL`` to wildcard match against active device/window combinations. This wildcard matching can be used if the handle is difficult to obtain where frame captures are triggered.
 
-    Wildcard matching of `device` and `wndHandle` is described above in :cpp:func:`StartFrameCapture`.
+    Wildcard matching of ``device`` and ``wndHandle`` is described above in :cpp:func:`StartFrameCapture`.
 
     There will be undefined results if there is not an active frame capture for the device/window combination.
 
@@ -451,7 +451,7 @@ The path follows the template set in :cpp:func:`SetCaptureFilePathTemplate` so i
     ``RENDERDOC_DevicePointer`` and ``RENDERDOC_WindowHandle`` are described above in :cpp:func:`SetActiveWindow`.
     ``device`` and ``wndHandle`` can either or both be set to ``NULL`` to wildcard match against active device/window combinations. This wildcard matching can be used if the handle is difficult to obtain where frame captures are triggered.
 
-    Wildcard matching of `device` and `wndHandle` is described above in :cpp:func:`StartFrameCapture`.
+    Wildcard matching of ``device`` and ``wndHandle`` is described above in :cpp:func:`StartFrameCapture`.
 
     There will be undefined results if there is not an active frame capture for the device/window combination.
 
@@ -495,3 +495,142 @@ The path follows the template set in :cpp:func:`SetCaptureFilePathTemplate` so i
 
     Added in API version 1.2.0
 
+.. cpp:function:: uint32_t SetObjectAnnotation(RENDERDOC_DevicePointer device, void* object, const char *key, RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue* value)
+
+    This function allows associating custom rich annotations with API objects. These annotations can be examined in the :doc:`window/resource_inspector`.
+    
+    See the :doc:`window/annotation_viewer` documentation for more detailed information on the annotation system.
+
+    :param RENDERDOC_DevicePointer device: is a handle to the API 'device' object that will be set active. May be ``NULL`` to wildcard match.
+    :param void* object: is a handle to the API object that will be annotated. Must not be ``NULL``.
+    :param const char* key: is a dot separated path for the annotation to update. Must not be ``NULL`` or empty.
+    :param RENDERDOC_AnnotationType valueType: is the type of value to set, including basic scalar types as well as strings and API objects.
+    :param uint32_t valueVectorWidth: is the vector width of the value to set, or 0 for scalars. Must be no greater than 4.
+    :param const RENDERDOC_AnnotationValue* value: is a pointer to the value itself.
+
+    :return: Returns ``0`` if the annotation was successfully set.
+
+       Returns ``1`` if the device is unknown or invalid.
+
+       Returns ``2`` if the device is valid but the annotation is not recognised or not supported for API-specific reasons, such as an unrecognised or invalid object or queue/commandbuffer.
+
+       Returns ``3`` if the call is ill-formed or invalid e.g. empty is specified with a value pointer, or non-empty is specified with a NULL value pointer.
+
+    Deleting an annotation can be done by setting a value with ``valueType`` equal to ``eRENDERDOC_Empty`` and ``value`` equal to ``NULL``. This deletes the annotation at the specific key, as well as any children of that key.
+
+    You can set ``valueVectorWidth`` to 0 for single values, which is equivalent to setting 1. This is required for strings and API objects, which can't be vectors.
+
+    There are C++ helper structs ``RDGLObjectHelper`` and ``RDAnnotationHelper`` that can simplify code for specifying single scalar values.
+
+.. note::
+
+    For Vulkan, annotating ``VkInstance``, ``VkPhysicalDevice``, or ``VkDevice`` objects may encounter problems due to loader wrapping. To address this, you can use ``vkSetDebugUtilsObjectTagEXT`` to set a tag with the ``tagName`` set to ``RENDERDOC_APIObjectAnnotationHelper`` and the ``pTag`` set to the handle of the object itself. After doing that once RenderDoc will be able to recognise those handles.
+
+    For OpenGL as it lacks proper object handles, the ``object`` parameter and any ``apiObject`` value must be a pointer to an instance of ``RENDERDOC_GLResourceReference`` which contains both a ``GLenum`` identifier with the same meaning as the parameter in ``glObjectLabel`` as well as the integer handle itself.
+
+.. note::
+
+    ``RENDERDOC_DevicePointer`` is described above in :cpp:func:`SetActiveWindow`.
+    ``device`` can be set to ``NULL`` to wildcard match against active devices. This wildcard matching can be used if the handle is difficult to obtain where annotations are set.
+
+    Wildcard matching of ``device`` is described above in :cpp:func:`StartFrameCapture`.
+
+.. note::
+
+    Added in API version 1.7.0
+
+.. cpp:enum:: RENDERDOC_AnnotationType
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_Empty
+
+    ``eRENDERDOC_Empty`` is used to delete an annotation. All children are also deleted.
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_Bool
+
+    ``eRENDERDOC_Bool`` indicates that the ``boolean`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_Int32
+
+    ``eRENDERDOC_Int32`` indicates that the ``int32`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_UInt32
+
+    ``eRENDERDOC_UInt32`` indicates that the ``uint32`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_Int64
+
+    ``eRENDERDOC_Int64`` indicates that the ``int64`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_UInt64
+
+    ``eRENDERDOC_UInt64`` indicates that the ``uint64`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_Float
+
+    ``eRENDERDOC_Float`` indicates that the ``float32`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+ 
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_Double
+
+    ``eRENDERDOC_Double`` indicates that the ``float64`` member of ``RENDERDOC_AnnotationValue`` (or ``RENDERDOC_AnnotationVectorValue``) is valid.
+ 
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_String
+
+    ``eRENDERDOC_String`` indicates that the ``string`` member of ``RENDERDOC_AnnotationValue`` is valid.
+ 
+.. cpp:enumerator:: RENDERDOC_AnnotationType::eRENDERDOC_APIObject
+
+    ``eRENDERDOC_APIObject`` indicates that the ``apiObject`` member of ``RENDERDOC_AnnotationValue`` is valid.
+ 
+.. cpp:function:: uint32_t SetCommandAnnotation(RENDERDOC_DevicePointer device, void* queueOrCommandBuffer, const char* key, RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue* value)
+
+    This function allows adding custom rich annotations to command streams. These annotations can be examined in the :doc:`window/annotation_viewer` which has more information on the annotation system.
+
+    For more information see the page on the :doc:`../window/annotation_viewer`.
+
+    :param RENDERDOC_DevicePointer device: is a handle to the API 'device' object that will be set active. May be ``NULL`` to wildcard match.
+    :param void* queueOrCommandBuffer: is a handle to the API-specific command buffer or queue.
+    :param const char* key: is a dot separated path for the annotation to update. Must not be ``NULL`` or empty.
+    :param RENDERDOC_AnnotationType valueType: is the type of value to set, including basic scalar types as well as strings and API objects.
+    :param uint32_t valueVectorWidth: is the vector width of the value to set, or 0 for scalars. Must be no greater than 4.
+    :param const RENDERDOC_AnnotationValue* value: is a pointer to the value itself.
+
+    :return: Returns ``0`` if the annotation was successfully set.
+
+       Returns ``1`` if the device is unknown or invalid.
+
+       Returns ``2`` if the device is valid but the annotation is not recognised or not supported for API-specific reasons, such as an unrecognised or invalid object or queue/commandbuffer.
+
+       Returns ``3`` if the call is ill-formed or invalid e.g. empty is specified with a value pointer, or non-empty is specified with a NULL value pointer.
+
+    Deleting an annotation can be done by setting a value with ``valueType`` equal to ``eRENDERDOC_Empty`` and ``value`` equal to ``NULL``. This deletes the annotation at the specific key, as well as any children of that key.
+
+    You can set ``valueVectorWidth`` to 0 for single values, which is equivalent to setting 1. This is required for strings and API objects, which can't be vectors.
+
+    There are C++ helper structs ``RDGLObjectHelper`` and ``RDAnnotationHelper`` that can simplify code for specifying single scalar values.
+
+    The ``queueOrCommandBuffer`` parameter refers to a different object depending on the API:
+
+    * On Vulkan, it can either be a ``VkCommandBuffer`` in the recording state, or a ``VkQueue``.
+    * On OpenGL, it must be ``NULL``.
+    * On D3D11 it must either be ``NULL`` or the immediate context ``ID3D11DeviceContext*``.
+    * On D3D12 it must either be an ``ID3D12GraphicsCommandList*`` or a ``ID3D12CommandQueue*``.
+
+.. note::
+
+    For Vulkan, annotating ``VkInstance``, ``VkPhysicalDevice``, or ``VkDevice`` objects may encounter problems due to loader wrapping. To address this, you can use ``vkSetDebugUtilsObjectTagEXT`` to set a tag with the ``tagName`` set to ``RENDERDOC_APIObjectAnnotationHelper`` and the ``pTag`` set to the handle of the object itself. After doing that once RenderDoc will be able to recognise those handles.
+
+    For OpenGL as it lacks proper object handles, any ``apiObject`` values must be a pointer to an instance of ``RENDERDOC_GLResourceReference`` which contains both a ``GLenum`` identifier with the same meaning as the parameter in ``glObjectLabel`` as well as the integer handle itself.
+    The ``queueOrCommandBuffer`` parameter must be ``NULL``.
+
+    For D3D11 the ``queueOrCommandBuffer`` parameter must be either the immediate context or ``NULL``.
+
+.. note::
+
+    ``RENDERDOC_DevicePointer`` is described above in :cpp:func:`SetActiveWindow`.
+    ``device`` can be set to ``NULL`` to wildcard match against active devices. This wildcard matching can be used if the handle is difficult to obtain where annotations are set.
+
+    Wildcard matching of ``device`` is described above in :cpp:func:`StartFrameCapture`.
+
+.. note::
+
+    Added in API version 1.7.0

@@ -1024,9 +1024,8 @@ public:
     }
 
   private:
-    void TryReplaceOriginalByteCode();
-
     void BuildReflection();
+    void Reload();
 
     ResourceId m_ID;
 
@@ -1097,6 +1096,8 @@ public:
     SCOPED_LOCK(m_ShaderListLock);
     return m_ShaderList[m_ID]->GetDescriptorAccess();
   }
+
+  static void ReloadShaderDebugInformation();
 
   static void GetReflections(rdcarray<const ShaderReflection *> &refls)
   {

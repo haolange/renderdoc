@@ -39,6 +39,7 @@ class RDTreeWidgetItem;
 class ResourceListItemModel;
 class StructuredDataItemModel;
 class RichTextViewDelegate;
+class AnnotationDisplay;
 
 class ResourceSorterModel : public QCollatorSortFilterProxyModel
 {
@@ -130,4 +131,6 @@ private:
   StructuredDataItemModel *m_ChunksModel;
   RichTextViewDelegate *m_delegate;
   bool m_SplitByMarker = false;
+
+  AnnotationDisplay *m_AnnotationView = NULL;
 };

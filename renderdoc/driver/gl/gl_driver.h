@@ -59,7 +59,7 @@ struct GLInitParams
   rdcstr renderer, version;
 
   // check if a frame capture section version is supported
-  static const uint64_t CurrentVersion = 0x23;
+  static const uint64_t CurrentVersion = 0x24;
   static bool IsSupportedVersion(uint64_t ver);
 };
 
@@ -185,6 +185,12 @@ private:
 
   void *m_LastCtx;
   int m_ImplicitThreadSwitches = 0;
+
+  // Object and command annotation support
+  Threading::CriticalSection m_AnnotationsLock;
+  std::unordered_map<ResourceId, SDObject *> m_Annotations;    // Object annotations by ResourceId
+  SDObject *m_RootAnnotation = NULL;                           // Root for event annotation state
+  rdcarray<SDObject *> m_EventAnnotations;                     // Track allocations for cleanup
 
   GLContextTLSData m_EmptyTLSData;
   uint64_t m_CurCtxDataTLS;
@@ -574,6 +580,12 @@ private:
   rdcarray<QueuedResource> m_QueuedInitialFetches;
   rdcarray<QueuedResource> m_QueuedReleases;
 
+  void RemoveAnnotations(ResourceId id)
+  {
+    SCOPED_LOCK(m_AnnotationsLock);
+    m_Annotations.erase(id);
+  }
+
   void QueuePrepareInitialState(GLResource res);
   void QueueResourceRelease(GLResource res);
   void CheckQueuedInitialFetches(void *ctx);
@@ -705,6 +717,17 @@ public:
   void StartFrameCapture(DeviceOwnedWindow devWnd);
   bool EndFrameCapture(DeviceOwnedWindow devWnd);
   bool DiscardFrameCapture(DeviceOwnedWindow devWnd);
+
+  template <typename SerialiserType>
+  bool Serialise_SetCommandAnnotation(SerialiserType &ser, rdcstr key,
+                                      RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                      RENDERDOC_AnnotationValue value);
+
+  uint32_t SetObjectAnnotation(void *object, const char *key, RENDERDOC_AnnotationType valueType,
+                               uint32_t valueVectorWidth, const RENDERDOC_AnnotationValue *value);
+  uint32_t SetCommandAnnotation(void *queueOrCommandBuffer, const char *key,
+                                RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                                const RENDERDOC_AnnotationValue *value);
 
   // map with key being mip level, value being stored data
   typedef std::map<int, bytebuf> CompressedDataStore;

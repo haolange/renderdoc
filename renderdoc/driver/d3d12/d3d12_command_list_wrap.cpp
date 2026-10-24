@@ -29,6 +29,7 @@
 #include "driver/ihv/amd/official/DXExt/AmdExtD3DCommandListMarkerApi.h"
 #include "d3d12_command_queue.h"
 #include "d3d12_debug.h"
+#include "d3d12_replay.h"
 
 RDOC_EXTERN_CONFIG(bool, D3D12_Debug_RT_Auditing);
 
@@ -66,10 +67,15 @@ bool WrappedID3D12GraphicsCommandList::Serialise_Close(SerialiserType &ser)
                  ToStr(BakedCommandList).c_str());
 #endif
 
-        int &markerCount = m_Cmd->m_BakedCmdListInfo[BakedCommandList].markerCount;
+        BakedCmdListInfo &bakedInfo = m_Cmd->m_BakedCmdListInfo[BakedCommandList];
 
-        for(int i = 0; i < markerCount; i++)
+        for(int i = 0; i < bakedInfo.markerCount; i++)
           D3D12MarkerRegion::End(list);
+
+        for(BakedCmdListInfo::OutstandingQuery &q : bakedInfo.m_OutstandingQueries)
+          Unwrap(list)->EndQuery(Unwrap(q.heap), q.Type, q.Index);
+
+        bakedInfo.m_OutstandingQueries.clear();
 
         if(m_Cmd->m_ActionCallback)
           m_Cmd->m_ActionCallback->PreCloseCommandList(list);
@@ -408,8 +414,8 @@ HRESULT WrappedID3D12GraphicsCommandList::ResetInternal(ID3D12CommandAllocator *
     }
     m_RayDispatches.clear();
 
-    m_ImmediateASCallbacks.clear();
-    m_PendingASCallbacks.clear();
+    m_ImmediateCallbacks.clear();
+    m_PendingCallbacks.clear();
 
     for(std::function<void()> &func : m_UnusedCleanupCallbacks)
       func();
@@ -2839,10 +2845,20 @@ bool WrappedID3D12GraphicsCommandList::Serialise_BeginQuery(SerialiserType &ser,
     {
       if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
       {
+        // don't replay query calls if we're just doing one event, it doesn't do anything
+        if(m_Cmd->m_FirstEventID == 1)
+        {
+          Unwrap(m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID))
+              ->BeginQuery(Unwrap(pQueryHeap), Type, Index);
+
+          m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].m_OutstandingQueries.push_back(
+              {pQueryHeap, Type, Index});
+        }
       }
     }
     else
     {
+      Unwrap(pCommandList)->BeginQuery(Unwrap(pQueryHeap), Type, Index);
     }
   }
 
@@ -2883,14 +2899,34 @@ bool WrappedID3D12GraphicsCommandList::Serialise_EndQuery(SerialiserType &ser,
   {
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
+    WrappedID3D12QueryHeap *queryHeap = (WrappedID3D12QueryHeap *)pQueryHeap;
+
+    // D3D12 requires queries to remain within a command buffer so we don't have to worry about not
+    // having seen the corresponding begin
     if(IsActiveReplaying(m_State))
     {
       if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
       {
+        // don't replay query calls if we're doing partial replays, it doesn't do anything
+        if(m_Cmd->m_FirstEventID == 1)
+        {
+          Unwrap(m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID))
+              ->EndQuery(Unwrap(pQueryHeap), Type, Index);
+
+          m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].m_OutstandingQueries.removeOne(
+              {pQueryHeap, Type, Index});
+        }
       }
     }
     else
     {
+      Unwrap(pCommandList)->EndQuery(Unwrap(pQueryHeap), Type, Index);
+
+      // during replay store which queries are issued in the capture itself, so we know which ones
+      // we can do a 'real' resolve of and which ones must be faked from initial contents if they
+      // refer to queries from previous frames.
+      // see the comment in ResolveQueryData for more information
+      queryHeap->SetQueryValid(Index, Type);
     }
   }
 
@@ -2912,6 +2948,16 @@ void WrappedID3D12GraphicsCommandList::EndQuery(ID3D12QueryHeap *pQueryHeap, D3D
     m_ListRecord->AddChunk(scope.Get(m_ListRecord->cmdInfo->alloc));
 
     m_ListRecord->MarkResourceFrameReferenced(GetResID(pQueryHeap), eFrameRef_Read);
+
+    // during capture store which queries have been issued so we know which ones we can resolve for initial contents
+    WrappedID3D12QueryHeap *queryHeap = (WrappedID3D12QueryHeap *)pQueryHeap;
+    AddSubmissionASBuildCallback(
+        false,
+        [queryHeap, Index, Type]() {
+          queryHeap->SetQueryValid(Index, Type);
+          return true;
+        },
+        NULL);
   }
 }
 
@@ -2935,14 +2981,63 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ResolveQueryData(
   {
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
+    WrappedID3D12QueryHeap *queryHeap = (WrappedID3D12QueryHeap *)pQueryHeap;
+
     if(IsActiveReplaying(m_State))
     {
       if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
       {
+        // let the query heap decide which indices to resolve normally and which to fake from the
+        // stored buffer
+        queryHeap->ResolveValidQueryData(m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID), Type,
+                                         StartIndex, NumQueries, pDestinationBuffer,
+                                         AlignedDestinationBufferOffset);
       }
     }
     else
     {
+      // don't resolve queries during load, since we can't know for certain at record time whether
+      // or not a query will be valid (it could have been queried in a previous frame so not valid
+      // to resolve right now, and without knowing the submission order ahead of time we can't
+      // always know if a re-record in this capture will happen before this resolve).
+      //
+      // there are cases we can know this is safe, but we can't detect all cases where it's unsafe, e.g:
+      //
+      // [previous frame during capture]:
+      //   EndEvent(Index)
+      //
+      // [on replay during captured frame]:
+      //   listA->EndEvent(Index)
+      //   listB->ResolveQueryData(Index)
+      //
+      // if listA is submitted first we can resolve normally on listB, but if listB were submitted first
+      // we'd need to fake or skip the resolve.
+      //
+      // What we do is skip resolving during load, then all queries that are ever resolved will have
+      // some kind of data. This case above would still return the 'wrong' data as we'd do a normal
+      // resolve, when in fact we should fake the resolve to get last frame's data, but at least we
+      // won't hit a device lost. In future we could detect this after load once we know the submission order.
+      // queryHeap->ResolveQueryData(pCommandList, Type, StartIndex, NumQueries, pDestinationBuffer,
+      //                             AlignedDestinationBufferOffset);
+
+      {
+        m_Cmd->AddEvent();
+
+        ActionDescription action;
+
+        action.copyDestination = GetResID(pDestinationBuffer);
+        action.copyDestinationSubresource = 0;
+
+        action.flags |= ActionFlags::Resolve;
+
+        m_Cmd->AddAction(action);
+
+        D3D12ActionTreeNode &actionNode = m_Cmd->GetActionStack().back()->children.back();
+
+        actionNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(pDestinationBuffer),
+                         EventUsage(actionNode.action.eventId, ResourceUsage::ResolveDst)));
+      }
     }
   }
 
@@ -2991,7 +3086,37 @@ bool WrappedID3D12GraphicsCommandList::Serialise_SetPredication(SerialiserType &
   {
     m_Cmd->m_LastCmdListID = GetResID(pCommandList);
 
-    // don't replay predication at all
+    bool stateUpdate = false;
+
+    if(IsActiveReplaying(m_State))
+    {
+      if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
+      {
+        Unwrap(m_Cmd->RerecordCmdList(m_Cmd->m_LastCmdListID))
+            ->SetPredication(Unwrap(pBuffer), AlignedBufferOffset, Operation);
+
+        stateUpdate = true;
+      }
+      else if(!m_Cmd->IsPartialCmdList(m_Cmd->m_LastCmdListID))
+      {
+        stateUpdate = true;
+      }
+    }
+    else
+    {
+      Unwrap(pCommandList)->SetPredication(Unwrap(pBuffer), AlignedBufferOffset, Operation);
+
+      stateUpdate = true;
+    }
+
+    if(stateUpdate)
+    {
+      D3D12RenderState &state = m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].state;
+
+      state.predication.buffer = GetResID(pBuffer);
+      state.predication.offset = AlignedBufferOffset;
+      state.predication.op = Operation;
+    }
   }
 
   return true;
@@ -3215,6 +3340,44 @@ void WrappedID3D12GraphicsCommandList::EndEvent()
 
     m_ListRecord->AddChunk(scope.Get(m_ListRecord->cmdInfo->alloc));
   }
+}
+
+template <typename SerialiserType>
+bool WrappedID3D12GraphicsCommandList::Serialise_SetCommandAnnotation(
+    SerialiserType &ser, rdcstr key, RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+    RENDERDOC_AnnotationValue value)
+{
+  ID3D12GraphicsCommandList *pCommandList = this;
+  SERIALISE_ELEMENT(pCommandList).Unimportant();
+  SERIALISE_ELEMENT(key);
+  SERIALISE_ELEMENT(valueType);
+  ser.SetStructArg(valueType);
+  SERIALISE_ELEMENT(valueVectorWidth);
+  SERIALISE_ELEMENT(value);
+
+  SERIALISE_CHECK_READ_ERRORS();
+
+  if(IsReplayingAndReading())
+  {
+    m_Cmd->m_LastCmdListID = GetResID(pCommandList);
+
+    if(IsLoading(m_State))
+    {
+      if(!m_Cmd->m_RootAnnotation)
+        m_Cmd->m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
+
+      ResourceId cmdId = GetResID(pCommandList);
+
+      PendingAnnotation annot = {m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].curEventID, key,
+                                 valueType, valueVectorWidth, value};
+
+      m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].annotations.push_back(annot);
+
+      m_pDevice->GetReplay()->WriteFrameRecord().frameInfo.containsAnnotations = true;
+    }
+  }
+
+  return true;
 }
 
 #pragma endregion Queries / Events
@@ -4148,6 +4311,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
     if(IsActiveReplaying(m_State))
     {
       uint32_t actualCount = MaxCommandCount;
+      uint32_t countEventsReplayed = actualCount * comSig->sig.arguments.count();
 
       if(m_Cmd->InRerecordRange(m_Cmd->m_LastCmdListID))
       {
@@ -4169,6 +4333,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
         D3D12CommandData::ActionUse use(m_Cmd->m_CurChunkOffset, 0);
         auto it = std::lower_bound(m_Cmd->m_ActionUses.begin(), m_Cmd->m_ActionUses.end(), use);
 
+        // baseEventID is the EI action EID
         uint32_t baseEventID = it->eventId;
 
         {
@@ -4184,6 +4349,10 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
         uint32_t argumentsReplayed =
             RDCMIN(m_Cmd->m_LastEventID - baseEventID, actualCount * comSig->sig.arguments.count());
         uint32_t executesReplayed = argumentsReplayed / comSig->sig.arguments.count();
+
+        // executesReplayed is relative to baseEventID
+        // compute the number of events to skip relative to the curEID
+        countEventsReplayed = (baseEventID + argumentsReplayed) - curEID;
 
         BarrierSet barriers;
 
@@ -4207,12 +4376,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
         // when we have a callback, submit every action individually to the callback
         if(m_Cmd->m_ActionCallback)
         {
-          uint32_t countToReplay = actualCount;
-
-          if(m_Cmd->m_FirstEventID <= 1)
-            countToReplay = RDCMIN(countToReplay, executesReplayed);
-          else
-            countToReplay = 1;
+          uint32_t countToReplay = RDCMIN(actualCount, executesReplayed);
 
           D3D12MarkerRegion::Begin(
               list,
@@ -4255,15 +4419,21 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
 
           countToReplay = RDCMIN(countToReplay, maxCommands);
 
+          uint32_t firstDraw = 0;
           if(m_Cmd->m_FirstEventID > 1)
           {
-            const uint32_t argidx = (curEID - baseEventID - 1);
+            const uint32_t argidx = (curEID > baseEventID) ? (curEID - baseEventID - 1) : 0;
             const uint32_t execidx = argidx / comSig->sig.arguments.count();
+            firstDraw = execidx;
 
             argOffset += comSig->sig.ByteStride * execidx;
+
+            // Don't replay anything when selecting the pop marker
+            if(execidx == maxCommands)
+              countToReplay = 0;
           }
 
-          for(uint32_t i = 0; i < countToReplay; i++)
+          for(uint32_t i = firstDraw; i < countToReplay; i++)
           {
             ActionFlags drawType =
                 comSig->sig.graphics ? ActionFlags::Drawcall : ActionFlags::Dispatch;
@@ -4274,7 +4444,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
             // Allow the callback to recreate the command signature i.e. to match the root signature
             pCommandSignature = m_Cmd->m_IndirectData.commandSig;
 
-            // action up to and including i. The previous draws will be nop'd out
+            // single action starting at specific arg offset
             Unwrap(list)->ExecuteIndirect(Unwrap(pCommandSignature), 1, argBuffer, argOffset, NULL,
                                           0);
 
@@ -4282,6 +4452,9 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
             {
               if(eventId && m_Cmd->m_ActionCallback->PostDraw(eventId, list))
               {
+                // Allow the callback to recreate the command signature i.e. to match the root signature
+                pCommandSignature = m_Cmd->m_IndirectData.commandSig;
+
                 Unwrap(list)->ExecuteIndirect(Unwrap(pCommandSignature), 1, argBuffer, argOffset,
                                               NULL, 0);
                 m_Cmd->m_ActionCallback->PostRedraw(eventId, list);
@@ -4339,6 +4512,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
             m_Cmd->m_RayDispatches.push_back(patchedDispatch);
           }
 
+          const ActionDescription *action = m_pDevice->GetAction(curEID);
           uint32_t countToReplay = RDCMIN(actualCount, maxCommands);
 
           if(m_Cmd->m_FirstEventID <= 1)
@@ -4351,20 +4525,19 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
             // there's no need to replay anything more than the first execute.
             countToReplay = RDCMIN(countToReplay, executesReplayed);
           }
-          else
+          else if(action && action->flags & ActionFlags::PopMarker)
           {
-            const uint32_t argidx = (curEID - baseEventID - 1);
-            const uint32_t execidx = argidx / comSig->sig.arguments.count();
-
             // don't do anything when selecting the final popmarker as well - everything will have
             // been done in previous replays so this is a no-op.
-            if(argidx >= countToReplay * comSig->sig.arguments.count())
-            {
-              countToReplay = 0;
-            }
+            countToReplay = 0;
+          }
+          else
+          {
+            const uint32_t argidx = (curEID > baseEventID) ? (curEID - baseEventID - 1) : 0;
+
             // we also know that only the last argument actually does anything - previous are just
             // state setting. So if argIdx isn't the last one, we can skip this
-            else if((argidx + 1) % comSig->sig.arguments.count() != 0)
+            if((argidx + 1) % comSig->sig.arguments.count() != 0)
             {
               countToReplay = 0;
             }
@@ -4373,6 +4546,7 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
               // slightly more complex, we're replaying only one execute later on as a single draw
               // fortunately ExecuteIndirect has no 'draw' builtin, so we can just offset the
               // argument buffer and set count to 1
+              const uint32_t execidx = argidx / comSig->sig.arguments.count();
               countToReplay = 1;
               argOffset += comSig->sig.ByteStride * execidx;
             }
@@ -4385,11 +4559,11 @@ bool WrappedID3D12GraphicsCommandList::Serialise_ExecuteIndirect(
       }
 
       // executes skip the event ID past the whole thing
-      uint32_t numEvents = actualCount * (uint32_t)comSig->sig.arguments.size() + 1;
+      ++countEventsReplayed;
       if(m_Cmd->m_FirstEventID > 1)
-        m_Cmd->m_RootEventID += numEvents;
+        m_Cmd->m_RootEventID += countEventsReplayed;
       else
-        m_Cmd->m_BakedCmdListInfo[m_Cmd->m_LastCmdListID].curEventID += numEvents;
+        cmdInfo.curEventID += countEventsReplayed;
     }
     else
     {
@@ -5708,6 +5882,9 @@ INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12GraphicsCommandList, SetMarke
 INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12GraphicsCommandList, BeginEvent, UINT Metadata,
                                 const void *pData, UINT Size);
 INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12GraphicsCommandList, EndEvent);
+INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12GraphicsCommandList, SetCommandAnnotation,
+                                rdcstr key, RENDERDOC_AnnotationType valueType,
+                                uint32_t valueVectorWidth, RENDERDOC_AnnotationValue value);
 INSTANTIATE_FUNCTION_SERIALISED(void, WrappedID3D12GraphicsCommandList, DrawInstanced,
                                 UINT VertexCountPerInstance, UINT InstanceCount,
                                 UINT StartVertexLocation, UINT StartInstanceLocation);

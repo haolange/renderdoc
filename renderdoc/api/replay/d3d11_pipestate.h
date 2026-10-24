@@ -580,7 +580,7 @@ struct OutputMerger
   bool stencilReadOnly = false;
 };
 
-DOCUMENT("Describes the current state of predicated rendering.");
+DOCUMENT("Describes the current state of D3D11 predicated rendering.");
 struct Predication
 {
   DOCUMENT("");

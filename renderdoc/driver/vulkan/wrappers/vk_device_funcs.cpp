@@ -206,6 +206,10 @@ static void StripUnwantedExtensions(rdcarray<rdcstr> &Extensions)
     if(ext == "VK_EXT_full_screen_exclusive")
       return true;
 
+    // we do not replay any drm features
+    if(ext == "VK_EXT_image_drm_format_modifier")
+      return true;
+
     // this is debug only, nothing to capture, so nothing to replay
     if(ext == "VK_EXT_tooling_info" || ext == "VK_EXT_private_data" ||
        ext == "VK_EXT_validation_features" || ext == "VK_EXT_validation_cache" ||
@@ -1053,6 +1057,7 @@ void WrappedVulkan::Shutdown()
   m_Replay->DestroyResources();
 
   m_IndirectBuffer.Destroy();
+  m_IndirectBufferCB.Destroy();
 
   // destroy debug manager and any objects it created
   SAFE_DELETE(m_DebugManager);
@@ -2387,6 +2392,18 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
         CHECK_PHYS_EXT_FEATURE(shaderDrawParameters);
 
         m_MultiView |= ext->multiview != VK_FALSE;
+
+        if(m_MultiView)
+        {
+          if(avail.multiviewGeometryShader)
+            ext->multiviewGeometryShader = true;
+          else
+            RDCWARN(
+                "multiviewGeometryShader = false, triangle size overlay with multiview "
+                "unavailable");
+
+          m_MultiViewGeometryShaders |= ext->multiviewGeometryShader != VK_FALSE;
+        }
       }
       END_PHYS_EXT_CHECK();
 
@@ -3639,6 +3656,15 @@ bool WrappedVulkan::Serialise_vkCreateDevice(SerialiserType &ser, VkPhysicalDevi
                            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES);
       {
         CHECK_PHYS_EXT_FEATURE(hostImageCopy);
+      }
+      END_PHYS_EXT_CHECK();
+
+      BEGIN_PHYS_EXT_CHECK(
+          VkPhysicalDeviceMultiviewPerViewViewportsFeaturesQCOM,
+          VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_VIEWPORTS_FEATURES_QCOM);
+      {
+        CHECK_PHYS_EXT_FEATURE(multiviewPerViewViewports);
+        m_MultiviewPerViewViewports |= ext->multiviewPerViewViewports != VK_FALSE;
       }
       END_PHYS_EXT_CHECK();
     }

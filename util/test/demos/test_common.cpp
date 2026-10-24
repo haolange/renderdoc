@@ -624,11 +624,6 @@ void GraphicsTest::Prepare(int argc, char **argv)
       dataRoot += "/";
     }
   }
-}
-
-bool GraphicsTest::Init()
-{
-  srand(0U);
 
   pRENDERDOC_GetAPI RENDERDOC_GetAPI = NULL;
 
@@ -654,11 +649,16 @@ bool GraphicsTest::Init()
 
   if(RENDERDOC_GetAPI)
   {
-    int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_0_0, (void **)&rdoc);
+    int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_7_0, (void **)&rdoc);
 
     if(ret != 1)
       rdoc = NULL;
   }
+}
+
+bool GraphicsTest::Init()
+{
+  srand(0U);
 
   return true;
 }

@@ -42,7 +42,7 @@ const GUID RENDERDOC_ID3D12ShaderGUID_ShaderDebugMagicValue = RENDERDOC_ShaderDe
 
 ALL_D3D12_TYPES;
 
-D3D12ResourceType IdentifyTypeByPtr(ID3D12Object *ptr)
+D3D12ResourceType TryIdentifyTypeByPtr(ID3D12Object *ptr)
 {
   if(ptr == NULL)
     return Resource_Unknown;
@@ -64,6 +64,16 @@ D3D12ResourceType IdentifyTypeByPtr(ID3D12Object *ptr)
   RDCERR("Unknown type for ptr 0x%p", ptr);
 
   return Resource_Unknown;
+}
+
+D3D12ResourceType IdentifyTypeByPtr(ID3D12Object *ptr)
+{
+  D3D12ResourceType ret = TryIdentifyTypeByPtr(ptr);
+
+  if(ret == Resource_Unknown)
+    RDCERR("Unknown type for ptr 0x%p", ptr);
+
+  return ret;
 }
 
 TrackedResource12 *GetTracked(ID3D12Object *ptr)
@@ -625,6 +635,24 @@ void WrappedID3D12PipelineState::ShaderEntry::BuildReflection()
 
   MakeShaderReflection(m_DXBCFile, {}, m_Details);
   m_Details->resourceId = GetResourceID();
+}
+
+void WrappedID3D12PipelineState::ShaderEntry::ReloadShaderDebugInformation()
+{
+  for(auto it = m_Shaders.begin(); it != m_Shaders.end(); ++it)
+  {
+    ShaderEntry *shad = it->second;
+    if(ResourceIDGen::IsReplayOnlyID(shad->GetResourceID()))
+      continue;
+    shad->Reload();
+  }
+}
+
+void WrappedID3D12PipelineState::ShaderEntry::Reload()
+{
+  m_Built = false;
+  *m_Details = ShaderReflection();
+  SAFE_DELETE(m_DXBCFile);
 }
 
 rdcpair<uint32_t, uint32_t> FindMatchingRootParameter(const D3D12RootSignature &sig,
@@ -1672,4 +1700,92 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC MakeUAVDesc(const D3D12_RESOURCE_DESC &desc)
   }
 
   return ret;
+}
+
+UINT64 WrappedID3D12QueryHeap::GetResolveDataSize() const
+{
+  switch(m_Type)
+  {
+    case D3D12_QUERY_HEAP_TYPE_OCCLUSION: return sizeof(UINT64); break;
+    case D3D12_QUERY_HEAP_TYPE_TIMESTAMP: return sizeof(UINT64); break;
+    case D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS:
+      return sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS);
+      break;
+    case D3D12_QUERY_HEAP_TYPE_SO_STATISTICS: return sizeof(D3D12_QUERY_DATA_SO_STATISTICS); break;
+    case D3D12_QUERY_HEAP_TYPE_VIDEO_DECODE_STATISTICS:
+      // return sizeof(D3D12_QUERY_DATA_VIDEO_DECODE_STATISTICS);
+      return sizeof(UINT64) * 3;
+      break;
+    case D3D12_QUERY_HEAP_TYPE_COPY_QUEUE_TIMESTAMP: return sizeof(UINT64); break;
+    case D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS1:
+      return sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS1);
+      break;
+  }
+
+  return sizeof(UINT64);
+}
+
+UINT64 WrappedID3D12QueryHeap::GetResolveBufferSize() const
+{
+  return m_Valid.size() * GetResolveDataSize();
+}
+
+void WrappedID3D12QueryHeap::SaveValidQueries(ID3D12GraphicsCommandList *unwrappedList,
+                                              ID3D12Resource *unwrappedDestBuf)
+{
+  UINT64 stride = GetResolveDataSize();
+
+  // find contiguous ranges, for sensible applications there should only be a few ranges rather than scattered queries.
+  for(UINT i = 0; i < m_Valid.size();)
+  {
+    // if we found a valid query, get the size of the range
+    if(m_Valid[i] != InvalidQueryType)
+    {
+      UINT start = i;
+
+      // find the range of queries of the same type - even in an 'occlusion' query heap there could
+      // be a mix of binary and non-binary occlusion
+      for(; i < m_Valid.size(); i++)
+        if(m_Valid[i] != m_Valid[start])
+          break;
+
+      UINT num = i - start;
+
+      unwrappedList->ResolveQueryData(GetReal(), m_Valid[start], start, num, unwrappedDestBuf,
+                                      stride * start);
+    }
+    else
+    {
+      i++;
+    }
+  }
+}
+
+void WrappedID3D12QueryHeap::ResolveValidQueryData(ID3D12GraphicsCommandList *list,
+                                                   D3D12_QUERY_TYPE Type, UINT StartIndex,
+                                                   UINT NumQueries, ID3D12Resource *destBuf,
+                                                   UINT64 destOffs)
+{
+  UINT64 stride = GetResolveDataSize();
+
+  // find contiguous ranges, for sensible applications there should only be a few ranges rather than scattered queries.
+  for(UINT i = StartIndex, end = StartIndex + NumQueries; i < end;)
+  {
+    // doesn't matter if the query is valid or not we will still need to resolve it
+    UINT start = i;
+
+    for(; i < m_Valid.size(); i++)
+      if(m_Valid[i] != m_Valid[start])
+        break;
+
+    UINT num = i - start;
+
+    // if the query range is valid, resolve it normally
+    if(m_Valid[start] != InvalidQueryType)
+      Unwrap(list)->ResolveQueryData(GetReal(), m_Valid[start], start, num, Unwrap(destBuf),
+                                     destOffs + stride * (start - StartIndex));
+    else if(m_SavedResults)
+      Unwrap(list)->CopyBufferRegion(Unwrap(destBuf), destOffs + stride * (start - StartIndex),
+                                     Unwrap(m_SavedResults), stride * start, stride * num);
+  }
 }

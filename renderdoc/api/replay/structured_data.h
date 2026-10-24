@@ -451,7 +451,7 @@ struct SDObjectData
 
   DOCUMENT(R"(The plain-old data contents of the object, in a :class:`SDObjectPODData`.
 
-:type: basic
+:type: SDObjectPODData
 )");
   SDObjectPODData basic;
 
@@ -619,16 +619,16 @@ struct SDObject
       PopulateAllChildren();
     }
 
-    ret->data.children.resize(data.children.size());
+    ret->data.children.reserve(data.children.size());
     for(size_t i = 0; i < data.children.size(); i++)
-      ret->data.children[i] = data.children[i]->Duplicate();
+      ret->AddAndOwnChild(data.children[i]->Duplicate());
 
     return ret;
   }
 
   DOCUMENT(R"(The name of this object.
 
-:type: name
+:type: str
 )");
   rdcinflexiblestr name;
 
@@ -691,8 +691,7 @@ recursively through children.
     // fully owned children. This shouldn't happen, but just in case we'll evaluate the lazy array
     // here.
     PopulateAllChildren();
-    data.children.push_back(child->Duplicate());
-    data.children.back()->m_Parent = this;
+    AddAndOwnChild(child->Duplicate());
   }
   DOCUMENT(R"(Find a child object by a given name. If no matching child is found, ``None`` is
 returned.
@@ -732,6 +731,127 @@ The order of the search is not guaranteed, so care should be taken when the name
     }
 
     return NULL;
+  }
+
+  DOCUMENT(R"(Create a child object by a key path. Children will be created as necessary to ensure
+that the key path exists, but if they already exist then the existing object will be returned.
+
+Key paths are dotted recursive references, e.g. ``foo.bar`` is the member ``bar`` in parent ``foo``.
+
+Arrays are represented by simple numeric entries e.g. ``foo.0.bar``, ``foo.1.bar``.
+
+Empty entries are ignored so ``foo..bar`` and ``foo.bar`` refer to the same object.
+
+Key paths must not be empty and must not begin with a dot.
+
+If any path element is not unique in any child the behaviour is undefined, so objects should only be
+manipulated by key path exclusively or not at all.
+
+:param str keyPath: The key path to search for and return.
+:return: A reference to the object at the relative key path
+:rtype: SDObject
+)");
+  inline SDObject *CreateChildByKeyPath(const rdcstr &keyPath)
+  {
+    if(keyPath.empty() || keyPath[0] == '.')
+      return this;
+
+    int dotIdx = keyPath.indexOf('.');
+    rdcstr element = keyPath.substr(0, dotIdx);
+
+    SDObject *child = NULL;
+    for(size_t i = 0; i < data.children.size(); i++)
+      if(GetChild(i)->name == element)
+        child = GetChild(i);
+
+    if(!child)
+      child = AddAndOwnChild(new SDObject(element, ""_lit));
+
+    while(dotIdx >= 0 && keyPath[dotIdx] == '.')
+      dotIdx++;
+
+    if(dotIdx >= 0 && dotIdx < keyPath.count())
+      return child->CreateChildByKeyPath(keyPath.substr(dotIdx));
+
+    return child;
+  }
+
+  DOCUMENT(R"(Find if a child object if it exists by a key path. Children will not be created
+if any element of the path doesn't exist and instead ``None`` will be returned.
+
+Key paths are dotted recursive references, e.g. ``foo.bar`` is the member ``bar`` in parent ``foo``.
+
+Arrays are represented by simple numeric entries e.g. ``foo.0.bar``, ``foo.1.bar``.
+
+Empty entries are ignored so ``foo..bar`` and ``foo.bar`` refer to the same object.
+
+Key paths must not be empty and must not begin with a dot.
+
+If any path element is not unique in any child the behaviour is undefined, so objects should only be
+manipulated by key path exclusively or not at all.
+
+:param str keyPath: The key path to search for and return.
+:return: Whether or not a child exists at the given key path
+:rtype: SDObject
+)");
+  inline const SDObject *FindChildByKeyPath(const rdcstr &keyPath) const
+  {
+    if(keyPath.empty() || keyPath[0] == '.')
+      return this;
+
+    int dotIdx = keyPath.indexOf('.');
+    rdcstr element = keyPath.substr(0, dotIdx);
+
+    const SDObject *child = NULL;
+    for(size_t i = 0; i < data.children.size(); i++)
+      if(GetChild(i)->name == element)
+        child = GetChild(i);
+
+    if(!child)
+      return NULL;
+
+    while(dotIdx >= 0 && keyPath[dotIdx] == '.')
+      dotIdx++;
+
+    if(dotIdx >= 0 && dotIdx < keyPath.count())
+      return child->FindChildByKeyPath(keyPath.substr(dotIdx));
+
+    return child;
+  }
+
+  DOCUMENT(R"(Delete a child object by a key path. All children of the resulting path will be deleted
+as well. If no such path exists, nothing will be changed.
+
+If any path element is not unique in any child the behaviour is undefined, so objects should only be
+manipulated by key path exclusively or not at all.
+
+:param str keyPath: The key path to search for and delete.
+)");
+  inline void EraseChildByKeyPath(const rdcstr &keyPath)
+  {
+    // shouldn't happen since we delete the found child (if it exists) from the parent, but return to be fault-tolerant
+    if(keyPath.empty() || keyPath[0] == '.')
+      return;
+
+    int dotIdx = keyPath.indexOf('.');
+    rdcstr element = keyPath.substr(0, dotIdx);
+
+    int childIdx = -1;
+    for(int i = 0; i < data.children.count(); i++)
+      if(GetChild(i)->name == element)
+        childIdx = i;
+
+    // if the child doesn't exist we can stop now
+    if(childIdx < 0)
+      return;
+
+    while(dotIdx >= 0 && keyPath[dotIdx] == '.')
+      dotIdx++;
+
+    if(dotIdx >= 0 && dotIdx < keyPath.count())
+      return GetChild(childIdx)->EraseChildByKeyPath(keyPath.substr(dotIdx));
+
+    RemoveChild(childIdx);
   }
 
   DOCUMENT(R"(Find a child object by a given index. If the index is out of bounds, ``None`` is
@@ -1500,12 +1620,11 @@ struct SDChunk : public SDObject
     ret->data.basic = data.basic;
     ret->data.str = data.str;
 
-    ret->data.children.resize(data.children.size());
-
     PopulateAllChildren();
 
+    ret->data.children.reserve(data.children.size());
     for(size_t i = 0; i < data.children.size(); i++)
-      ret->data.children[i] = data.children[i]->Duplicate();
+      ret->AddAndOwnChild(data.children[i]->Duplicate());
 
     return ret;
   }

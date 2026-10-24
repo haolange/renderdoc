@@ -68,6 +68,179 @@ RDOC_CONFIG(rdcarray<rdcstr>, Replay_Shader_LimitedSearchDirPaths, {},
             "Companion array to DXBC.Debug.SearchDirPaths - listing paths which should not be "
             "searched exhaustively but only used for simple lookups.");
 
+void WriteAnnotation(SDObject *obj, RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
+                     RENDERDOC_AnnotationValue value)
+{
+  if(valueType == eRENDERDOC_Empty)
+  {
+    RDCERR("Invalid type of annotation to write");
+    return;
+  }
+
+  const rdcinflexiblestr types[eRENDERDOC_APIObject + 1][4] = {
+      // eRENDERDOC_Empty,
+      {""_lit, ""_lit, ""_lit, ""_lit},
+      // eRENDERDOC_Bool,
+      {"bool"_lit, "bool2"_lit, "bool3"_lit, "bool4"_lit},
+      // eRENDERDOC_Int32,
+      {"int"_lit, "int2"_lit, "int3"_lit, "int4"_lit},
+      // eRENDERDOC_UInt32,
+      {"uint"_lit, "uint2"_lit, "uint3"_lit, "uint4"_lit},
+      // eRENDERDOC_Int64,
+      {"long"_lit, "long2"_lit, "long3"_lit, "long4"_lit},
+      // eRENDERDOC_UInt64,
+      {"ulong"_lit, "ulong2"_lit, "ulong3"_lit, "ulong4"_lit},
+      // eRENDERDOC_Float,
+      {"float"_lit, "float2"_lit, "float3"_lit, "float4"_lit},
+      // eRENDERDOC_Double,
+      {"double"_lit, "double2"_lit, "double3"_lit, "double4"_lit},
+      // eRENDERDOC_String,
+      {"string"_lit, ""_lit, ""_lit, ""_lit},
+      // eRENDERDOC_APIObject,
+      {"ResourceId"_lit, ""_lit, ""_lit, ""_lit},
+  };
+
+  const uint32_t byteSize[eRENDERDOC_APIObject + 1] = {
+      // eRENDERDOC_Empty,
+      0,
+      // eRENDERDOC_Bool,
+      1,
+      // eRENDERDOC_Int32,
+      4,
+      // eRENDERDOC_UInt32,
+      4,
+      // eRENDERDOC_Int64,
+      8,
+      // eRENDERDOC_UInt64,
+      8,
+      // eRENDERDOC_Float,
+      4,
+      // eRENDERDOC_Double,
+      8,
+      // eRENDERDOC_String,
+      0,
+      // eRENDERDOC_APIObject,
+      8,
+  };
+
+  const SDBasic basetype[eRENDERDOC_APIObject + 1] = {
+      // eRENDERDOC_Empty,
+      SDBasic::Null,
+      // eRENDERDOC_Bool,
+      SDBasic::Boolean,
+      // eRENDERDOC_Int32,
+      SDBasic::SignedInteger,
+      // eRENDERDOC_UInt32,
+      SDBasic::UnsignedInteger,
+      // eRENDERDOC_Int64,
+      SDBasic::SignedInteger,
+      // eRENDERDOC_UInt64,
+      SDBasic::UnsignedInteger,
+      // eRENDERDOC_Float,
+      SDBasic::Float,
+      // eRENDERDOC_Double,
+      SDBasic::Float,
+      // eRENDERDOC_String,
+      SDBasic::String,
+      // eRENDERDOC_APIObject,
+      SDBasic::Resource,
+  };
+
+  if(valueVectorWidth > 1)
+  {
+    if(valueType == eRENDERDOC_APIObject)
+    {
+      RDCERR("Invalid vector width for API object");
+      return;
+    }
+    else if(valueType == eRENDERDOC_String)
+    {
+      RDCERR("Invalid vector width for string");
+      return;
+    }
+
+    const rdcinflexiblestr comps[] = {"1"_lit, "2"_lit, "3"_lit, "4"_lit};
+
+    obj->type.basetype = SDBasic::Struct;
+    obj->type.name = types[valueType][valueVectorWidth - 1];
+
+    RENDERDOC_AnnotationValue tmp = {};
+    for(uint32_t i = 0; i < valueVectorWidth; i++)
+    {
+      SDObject *child = obj->CreateChildByKeyPath(comps[i]);
+
+      if(byteSize[valueType] == 1)
+        memcpy(&tmp.boolean, &value.vector.boolean[i], sizeof(tmp.boolean));
+      if(byteSize[valueType] == 4)
+        memcpy(&tmp.uint32, &value.vector.uint32[i], sizeof(tmp.uint32));
+      if(byteSize[valueType] == 8)
+        memcpy(&tmp.uint64, &value.vector.uint64[i], sizeof(tmp.uint64));
+
+      WriteAnnotation(child, valueType, 0, tmp);
+      if(i == 0)
+        obj->type.byteSize = child->type.byteSize * valueVectorWidth;
+    }
+
+    return;
+  }
+
+  obj->type.name = types[valueType][0];
+  obj->type.basetype = basetype[valueType];
+  obj->type.byteSize = byteSize[valueType];
+
+  switch(valueType)
+  {
+    case eRENDERDOC_Empty:
+    case eRENDERDOC_AnnotationMax: RDCERR("Invalid annotation type"); return;
+    case eRENDERDOC_Bool:
+    {
+      obj->data.basic.b = value.boolean;
+      break;
+    }
+    case eRENDERDOC_Int32:
+    {
+      obj->data.basic.i = value.int32;
+      break;
+    }
+    case eRENDERDOC_UInt32:
+    {
+      obj->data.basic.u = value.uint32;
+      break;
+    }
+    case eRENDERDOC_Int64:
+    {
+      obj->data.basic.u = value.int64;
+      break;
+    }
+    case eRENDERDOC_UInt64:
+    {
+      obj->data.basic.u = value.uint64;
+      break;
+    }
+    case eRENDERDOC_Float:
+    {
+      obj->data.basic.d = value.float32;
+      break;
+    }
+    case eRENDERDOC_Double:
+    {
+      obj->data.basic.d = value.float64;
+      break;
+    }
+    case eRENDERDOC_String:
+    {
+      obj->type.byteSize = strlen(value.string);
+      obj->data.str = value.string;
+      break;
+    }
+    case eRENDERDOC_APIObject:
+    {
+      memcpy(&obj->data.basic.id, &value.uint64, sizeof(ResourceId));
+      break;
+    }
+  }
+}
+
 void LogReplayOptions(const ReplayOptions &opts)
 {
   RDCLOG("%s API validation during replay", (opts.apiValidation ? "Enabling" : "Not enabling"));
@@ -300,6 +473,39 @@ rdcstr DoStringise(const SystemChunk &el)
   }
   END_ENUM_STRINGISE();
 }
+
+template <>
+rdcstr DoStringise(const RENDERDOC_AnnotationType &el)
+{
+  BEGIN_ENUM_STRINGISE(RENDERDOC_AnnotationType);
+  {
+    STRINGISE_ENUM_NAMED(eRENDERDOC_Bool, "bool");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_Int32, "int32");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_UInt32, "uint32");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_Int64, "int64");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_UInt64, "uint64");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_Float, "float");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_Double, "double");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_String, "string");
+    STRINGISE_ENUM_NAMED(eRENDERDOC_APIObject, "object");
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <class SerialiserType>
+void DoSerialise(SerialiserType &ser, RENDERDOC_AnnotationValue &el)
+{
+  if(ser.GetStructArg() == eRENDERDOC_String)
+  {
+    SERIALISE_MEMBER(string).Hidden();
+  }
+  else
+  {
+    SERIALISE_MEMBER(vector.uint64).Hidden();
+  }
+}
+
+INSTANTIATE_SERIALISE_TYPE(RENDERDOC_AnnotationValue);
 
 RenderDoc &RenderDoc::Inst()
 {
@@ -675,36 +881,14 @@ void RenderDoc::InitialiseReplay(GlobalEnvironment env, const rdcarray<rdcstr> &
 
 #if ENABLED(RDOC_WIN32)
           for(const char *driverDLL : {
-                  "amdvlk32.dll",
-                  "amdvlk64.dll",
-                  "atiadlxx.dll",
-                  "atig6pxx.dll",
-                  "atig6txx.dll",
-                  "atigktxx.dll",
-                  "atiglpxx.dll",
-                  "atimuixx.dll",
-                  "atio6axx.dll",
-                  "atioglxx.dll",
-                  "ControlLib.dll",
-                  "ControlLib32.dll",
-                  "igd10iumd32.dll",
-                  "igd10iumd64.dll",
-                  "igd12umd32.dll",
-                  "igd12umd64.dll",
-                  "igc32.dll",
-                  "igc64.dll",
-                  "igvk32.dll",
-                  "igvk64.dll"
-                  "igxelpgicd32.dll",
-                  "igxelpgicd64.dll",
-                  "igxelpicd32.dll",
-                  "igxelpicd32.dll",
-                  "igxelpicd64.dll",
-                  "igxelpicd64.dll",
-                  "nvoglv32.dll",
-                  "nvoglv64.dll",
-                  "nvwgf2um.dll",
-                  "nvwgf2umx.dll",
+                  "amdvlk32.dll",     "amdvlk64.dll",     "atiadlxx.dll",    "atig6pxx.dll",
+                  "atig6txx.dll",     "atigktxx.dll",     "atiglpxx.dll",    "atimuixx.dll",
+                  "atio6axx.dll",     "atioglxx.dll",     "ControlLib.dll",  "ControlLib32.dll",
+                  "igd10iumd32.dll",  "igd10iumd64.dll",  "igd12umd32.dll",  "igd12umd64.dll",
+                  "igc32.dll",        "igc64.dll",        "igvk32.dll",      "igvk64.dll",
+                  "igxelpgicd32.dll", "igxelpgicd64.dll", "igxelpicd32.dll", "igxelpicd32.dll",
+                  "igxelpicd64.dll",  "igxelpicd64.dll",  "nvoglv32.dll",    "nvoglv64.dll",
+                  "nvwgf2um.dll",     "nvwgf2umx.dll",
               })
           {
             HMODULE mod = GetModuleHandleA(driverDLL);
@@ -2249,8 +2433,9 @@ bool RenderDoc::GetTrackedFileData(const rdcstr &nickname, bytebuf &data) const
   {
     if(f.nickname == nickname)
     {
-      data = f.data;
-      return true;
+      if(f.hasData)
+        data = f.data;
+      return f.hasData;
     }
   }
   return false;
@@ -2389,6 +2574,7 @@ RDResult RenderDoc::ReadExternalFiles(RDCFile *rdc)
       {
         file.data = f.data;
         file.filepath.clear();
+        file.hasData = true;
         break;
       }
     }
