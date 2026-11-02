@@ -125,6 +125,8 @@ rdcarray<GPUCounter> VulkanReplay::EnumerateCounters()
   VkPhysicalDeviceFeatures availableFeatures = m_pDriver->GetDeviceEnabledFeatures();
 
   ret.push_back(GPUCounter::EventGPUDuration);
+  if(CanMeasureFrameGPU())
+    ret.push_back(GPUCounter::FrameGPUDuration);
   if(availableFeatures.pipelineStatisticsQuery)
   {
     ret.push_back(GPUCounter::InputVerticesRead);
@@ -260,6 +262,14 @@ CounterDescription VulkanReplay::DescribeCounter(GPUCounter counterID)
 
   switch(counterID)
   {
+    case GPUCounter::FrameGPUDuration:
+      desc.name = "Whole Replay GPU Duration";
+      desc.description = "Single-queue full replay GPU timestamp span, excluding initial contents. "
+                         "Includes replay scheduling gaps; not original application frame time.";
+      desc.resultByteWidth = 8;
+      desc.resultType = CompType::Float;
+      desc.unit = CounterUnit::Seconds;
+      break;
     case GPUCounter::EventGPUDuration:
       desc.name = "GPU Duration";
       desc.description =
@@ -965,8 +975,71 @@ struct VulkanGPUTimerCallback : public VulkanActionCallback
   rdcarray<rdcpair<uint32_t, uint32_t>> m_AliasEvents;
 };
 
+bool VulkanReplay::CanMeasureFrameGPU()
+{
+  // Reject incomparable queues rather than adding their durations or measuring a subset.
+  SDFile *file = m_pDriver->GetStructuredFile();
+  if(file == NULL)
+    return false;
+  ResourceId queueID = GetResID(m_pDriver->GetQ());
+  bool submitted = false;
+  for(const SDChunk *chunk : file->chunks)
+  {
+    VulkanChunk type = VulkanChunk(chunk->metadata.chunkID);
+    if(type != VulkanChunk::vkQueueSubmit && type != VulkanChunk::vkQueueSubmit2 &&
+       type != VulkanChunk::vkQueueBindSparse)
+      continue;
+    const SDObject *queue = chunk->FindChild("queue");
+    if(queue == NULL || queue->AsResourceId() != queueID)
+      return false;
+    submitted = true;
+  }
+  uint32_t count = 0;
+  VkPhysicalDevice physical = m_pDriver->GetPhysDev();
+  ObjDisp(physical)->GetPhysicalDeviceQueueFamilyProperties(Unwrap(physical), &count, NULL);
+  rdcarray<VkQueueFamilyProperties> properties;
+  properties.resize(count);
+  ObjDisp(physical)->GetPhysicalDeviceQueueFamilyProperties(Unwrap(physical), &count, properties.data());
+  uint32_t family = m_pDriver->GetQFamilyIdx();
+  return submitted && family < count && properties[family].timestampValidBits == 64;
+}
+
+rdcarray<CounterResult> VulkanReplay::FetchFrameGPU()
+{
+  if(!CanMeasureFrameGPU())
+    return {};
+  VkDevice device = m_pDriver->GetDev();
+  VkQueryPoolCreateInfo info = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, NULL, 0,
+                                VK_QUERY_TYPE_TIMESTAMP, 2, 0};
+  VkQueryPool pool = VK_NULL_HANDLE;
+  if(ObjDisp(device)->CreateQueryPool(Unwrap(device), &info, NULL, &pool) != VK_SUCCESS)
+    return {};
+  m_pDriver->ReplayLog(0, m_pDriver->GetMaxEID(), eReplay_Full, pool);
+  m_pDriver->SubmitCmds();
+  m_pDriver->FlushQ();
+  uint64_t timestamps[2] = {};
+  // Flush completed the submitted work. NOT_READY is an invalid sample, never a wait loop.
+  VkResult status = ObjDisp(device)->GetQueryPoolResults(Unwrap(device), pool, 0, 2,
+      sizeof(timestamps), timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+  ObjDisp(device)->DestroyQueryPool(Unwrap(device), pool, NULL);
+  if(status != VK_SUCCESS || timestamps[1] <= timestamps[0])
+    return {};
+  double seconds = double(timestamps[1] - timestamps[0]) *
+                   double(m_pDriver->GetDeviceProps().limits.timestampPeriod) / 1.0e9;
+  return {CounterResult(0, GPUCounter::FrameGPUDuration, seconds)};
+}
+
 rdcarray<CounterResult> VulkanReplay::FetchCounters(const rdcarray<GPUCounter> &counters)
 {
+  if(counters.contains(GPUCounter::FrameGPUDuration))
+  {
+    rdcarray<GPUCounter> remaining = counters;
+    remaining.removeIf([](GPUCounter counter) { return counter == GPUCounter::FrameGPUDuration; });
+    rdcarray<CounterResult> result = FetchFrameGPU();
+    if(!remaining.empty())
+      result.append(FetchCounters(remaining));
+    return result;
+  }
   uint32_t maxEID = m_pDriver->GetMaxEID();
 
   rdcarray<GPUCounter> vkCounters;

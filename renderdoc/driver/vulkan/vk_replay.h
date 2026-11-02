@@ -388,10 +388,13 @@ public:
   void BindOutputWindow(uint64_t id, bool depth);
   bool IsOutputWindowVisible(uint64_t id);
   void FlipOutputWindow(uint64_t id);
+  bool OutputWindowPresented(uint64_t id);
 
   rdcarray<GPUCounter> EnumerateCounters();
   CounterDescription DescribeCounter(GPUCounter counterID);
   rdcarray<CounterResult> FetchCounters(const rdcarray<GPUCounter> &counters);
+  bool CanMeasureFrameGPU();
+  rdcarray<CounterResult> FetchFrameGPU();
 
   void PickPixel(ResourceId texture, uint32_t x, uint32_t y, const Subresource &sub,
                  CompType typeCast, float pixel[4]);
@@ -551,7 +554,7 @@ private:
   AddedDescriptorData PrepareExtraBufferDescriptor(
       VulkanRenderState &state, bool compute,
       const rdcarray<VkDescriptorSetLayoutBinding> &newBindings, bool vertexPatchedToCompute);
-  void PrepareStateForPatchedShader(
+  bool PrepareStateForPatchedShader(
       const AddedDescriptorData &patchedBufferdata, VulkanRenderState &modifiedstate, bool compute,
       std::function<bool(const AddedDescriptorData &patchedBufferdata, VkShaderStageFlagBits stage,
                          const char *entryName, const rdcarray<uint32_t> &origSpirv,
@@ -582,6 +585,7 @@ private:
 
     WINDOW_HANDLE_DECL;
 
+    bool presented = false;
     bool fresh = true;
     bool outofdate = false;
 

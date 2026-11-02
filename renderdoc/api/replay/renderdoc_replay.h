@@ -1433,6 +1433,18 @@ struct IRemoteServer : public ICaptureAccess
 )");
   virtual ResultDetails Ping() = 0;
 
+  DOCUMENT(R"(Present the current replay event and selected texture on the remote native window.
+
+The event must already be applied. A null texture clears the output. Success confirms native
+presentation completion; the returned monotonic sequence belongs to this open replay.
+
+:param int eventId: The already applied event.
+:param ResourceId textureId: The output texture, or null to clear.
+:return: Operation result and completed presentation sequence (zero on failure).
+:rtype: Tuple[ResultDetails, int]
+)");
+  virtual rdcpair<ResultDetails, uint64_t> PresentReplay(uint32_t eventId, ResourceId textureId) = 0;
+
   DOCUMENT(R"(Retrieve a list of renderers available for local proxying.
 
 These will be strings like "D3D11" or "OpenGL".

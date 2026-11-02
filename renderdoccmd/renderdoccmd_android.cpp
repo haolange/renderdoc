@@ -363,7 +363,8 @@ WindowingData DisplayRemoteServerPreview(bool active, const rdcarray<WindowingSy
 
   WindowingData ret = {WindowingSystem::Unknown};
 
-  if(android_state && android_state->window)
+  if(android_state && android_state->window &&
+     (!active || android_state->activityState == APP_CMD_RESUME))
     ret = CreateAndroidWindowingData(android_state->window);
 
   return ret;

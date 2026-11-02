@@ -50,6 +50,7 @@ public:
 
   virtual bool Connected();
   virtual ResultDetails Ping();
+  virtual rdcpair<ResultDetails, uint64_t> PresentReplay(uint32_t eventId, ResourceId textureId);
 
   virtual rdcarray<rdcstr> LocalProxies();
 

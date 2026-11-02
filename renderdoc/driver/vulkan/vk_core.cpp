@@ -5082,8 +5082,24 @@ VkResourceRecord *WrappedVulkan::RegisterSurface(WindowingSystem system, void *h
   return (VkResourceRecord *)new PackedWindowHandle(system, handle);
 }
 
-void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType)
+void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType,
+                              VkQueryPool frameTimestampPool)
 {
+  auto frameTimestamp = [this, frameTimestampPool](uint32_t index) {
+    VkCommandBuffer cmd = GetNextCmd();
+    if(cmd == VK_NULL_HANDLE)
+      return;
+    VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, NULL,
+                                      VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    if(ObjDisp(cmd)->BeginCommandBuffer(Unwrap(cmd), &begin) != VK_SUCCESS)
+      return;
+    if(index == 0)
+      ObjDisp(cmd)->CmdResetQueryPool(Unwrap(cmd), frameTimestampPool, 0, 2);
+    ObjDisp(cmd)->CmdWriteTimestamp(Unwrap(cmd), VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                                   frameTimestampPool, index);
+    if(ObjDisp(cmd)->EndCommandBuffer(Unwrap(cmd)) == VK_SUCCESS)
+      SubmitCmds();
+  };
   bool partial = true;
 
   if(startEventID == 0 && (replayType == eReplay_WithoutDraw || replayType == eReplay_Full))
@@ -5108,6 +5124,9 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
     ApplyInitialContents();
     VkMarkerRegion::End();
   }
+
+  if(frameTimestampPool != VK_NULL_HANDLE && !partial && replayType == eReplay_Full)
+    frameTimestamp(0);
 
   m_State = CaptureState::ActiveReplaying;
 
@@ -5237,6 +5256,9 @@ void WrappedVulkan::ReplayLog(uint32_t startEventID, uint32_t endEventID, Replay
       RDCFATAL("Unexpected replay type");
 
     RDCASSERTEQUAL(status.code, ResultCode::Succeeded);
+    if(frameTimestampPool != VK_NULL_HANDLE && !partial && replayType == eReplay_Full &&
+       status.code == ResultCode::Succeeded)
+      frameTimestamp(1);
 
     if(m_OutsideCmdBuffer != VK_NULL_HANDLE)
     {

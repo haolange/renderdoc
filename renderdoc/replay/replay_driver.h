@@ -273,6 +273,8 @@ public:
   virtual void BindOutputWindow(uint64_t id, bool depth) = 0;
   virtual bool IsOutputWindowVisible(uint64_t id) = 0;
   virtual void FlipOutputWindow(uint64_t id) = 0;
+  // Drivers opt in only when the most recent native present has completed successfully.
+  virtual bool OutputWindowPresented(uint64_t id) { return false; }
 
   virtual bool GetMinMax(ResourceId texid, const Subresource &sub, CompType typeCast, float *minval,
                          float *maxval) = 0;

@@ -2773,9 +2773,9 @@ void ReplayProxy::InitPreviewWindow()
     if(data.system != WindowingSystem::Unknown)
     {
       // if the data has changed, destroy the old window so we'll recreate
-      if(m_PreviewWindow == 0 || memcmp(&m_PreviewWindowingData, &data, sizeof(data)) != 0)
+      if(m_PreviewOutput == 0 || memcmp(&m_PreviewWindowingData, &data, sizeof(data)) != 0)
       {
-        if(m_PreviewWindow)
+        if(m_PreviewOutput)
         {
           RDCDEBUG("Re-creating preview window due to change in data");
           m_Replay->DestroyOutputWindow(m_PreviewOutput);
@@ -2804,8 +2804,63 @@ void ReplayProxy::ShutdownPreviewWindow()
     m_PreviewWindow(false, {});
 }
 
+RDResult ReplayProxy::PresentPreviewWindow(uint32_t eventId, ResourceId textureId, uint64_t &sequence)
+{
+  sequence = 0;
+  if(!m_Replay || eventId != m_EventID)
+    return RDResult(ResultCode::InvalidParameter, "Presentation event does not match the applied replay event");
+  InitPreviewWindow();
+  WindowingData window = m_PreviewWindow ? m_PreviewWindow(true, m_Replay->GetSupportedWindowSystems())
+                                        : WindowingData{WindowingSystem::Unknown};
+  if(!m_PreviewOutput || window.system == WindowingSystem::Unknown ||
+     !m_Replay->IsOutputWindowVisible(m_PreviewOutput))
+    return RDResult(ResultCode::InternalError, "Remote native window is not visible");
+  m_Replay->CheckResizeOutputWindow(m_PreviewOutput);
+  m_Replay->BindOutputWindow(m_PreviewOutput, false);
+  m_Replay->ClearOutputWindowColor(m_PreviewOutput, FloatVector(0, 0, 0, 1));
+  int32_t width = 0, height = 0;
+  m_Replay->GetOutputWindowDimensions(m_PreviewOutput, width, height);
+  if(width <= 0 || height <= 0)
+    return RDResult(ResultCode::InternalError, "Remote native window has no extent");
+  if(textureId != ResourceId())
+  {
+    TextureDescription texture = m_Replay->GetTexture(textureId);
+    if(texture.width == 0 || texture.height == 0)
+      return RDResult(ResultCode::InvalidParameter, "Requested presentation texture is unavailable");
+    TextureDisplay cfg = {};
+    cfg.resourceId = textureId;
+    cfg.red = cfg.green = cfg.blue = true;
+    cfg.alpha = false;
+    cfg.typeCast = CompType::Typeless;
+    cfg.rangeMin = 0.0f;
+    cfg.rangeMax = 1.0f;
+    cfg.hdrMultiplier = -1.0f;
+    cfg.linearDisplayAsGamma = true;
+    cfg.subresource = {0, 0, 0};
+    cfg.scale = RDCMIN(float(width) / float(texture.width), float(height) / float(texture.height)) * 0.9f;
+    cfg.xOffset = (float(width) - float(texture.width) * cfg.scale) / 2.0f;
+    cfg.yOffset = (float(height) - float(texture.height) * cfg.scale) / 2.0f;
+    if(!m_Replay->RenderTexture(cfg))
+      return RDResult(ResultCode::InternalError, "Remote texture rendering failed");
+  }
+  m_Replay->FlipOutputWindow(m_PreviewOutput);
+  window = m_PreviewWindow(true, m_Replay->GetSupportedWindowSystems());
+  if(window.system == WindowingSystem::Unknown || !m_Replay->OutputWindowPresented(m_PreviewOutput))
+    return RDResult(ResultCode::InternalError, "Remote native presentation was not completed");
+  m_ExplicitPreviewEvent = eventId;
+  m_ExplicitPreviewResource = textureId;
+  sequence = ++m_PresentationSequence;
+  return ResultCode::Succeeded;
+}
+
 void ReplayProxy::RefreshPreviewWindow()
 {
+  if(m_ExplicitPreviewEvent == m_EventID)
+  {
+    uint64_t sequence;
+    PresentPreviewWindow(m_EventID, m_ExplicitPreviewResource, sequence);
+    return;
+  }
   InitPreviewWindow();
 
   if(m_Replay && m_PreviewOutput)

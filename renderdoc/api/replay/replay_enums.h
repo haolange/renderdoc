@@ -3906,6 +3906,8 @@ enum class GPUCounter : uint32_t
   ASInvocations,
   TSInvocations = ASInvocations,
   MSInvocations,
+  // Whole single-queue replay GPU span, excluding initial-content restoration.
+  FrameGPUDuration,
   Count,
 
   // IHV specific counters can be set above this point

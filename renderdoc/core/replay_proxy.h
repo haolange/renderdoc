@@ -143,6 +143,7 @@ public:
   void InitPreviewWindow();
   void ShutdownPreviewWindow();
   void RefreshPreviewWindow();
+  RDResult PresentPreviewWindow(uint32_t eventId, ResourceId textureId, uint64_t &sequence);
 
   void InitRemoteExecutionThread();
   void ShutdownRemoteExecutionThread();
@@ -701,6 +702,9 @@ private:
   // the ID of the output window to use for previewing on the remote host. Only valid/useful if
   // m_Replay is set
   uint64_t m_PreviewOutput = 0;
+  uint64_t m_PresentationSequence = 0;
+  uint32_t m_ExplicitPreviewEvent = ~0U;
+  ResourceId m_ExplicitPreviewResource;
   // The previous windowing data, so we can detect changes and recreate the window
   WindowingData m_PreviewWindowingData = {WindowingSystem::Unknown};
 

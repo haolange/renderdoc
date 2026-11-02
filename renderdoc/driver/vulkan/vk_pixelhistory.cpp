@@ -1122,10 +1122,7 @@ protected:
     const VulkanCreationInfo::RenderPass &rpInfo =
         m_pDriver->GetDebugManager()->GetRenderPassInfo(rp);
 
-    // TODO: this should retrieve the correct subpass, once multiple subpasses
-    // are supported.
-    // Currently only single subpass render passes are supported.
-    const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses.front();
+    const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses[pipestate.subpass];
 
     return (sub.depthstencilAttachment != -1);
   }
@@ -1214,10 +1211,7 @@ protected:
 
     const VulkanCreationInfo::RenderPass &rpInfo =
         m_pDriver->GetDebugManager()->GetRenderPassInfo(rp);
-    // TODO: this should retrieve the correct subpass, once multiple subpasses
-    // are supported.
-    // Currently only single subpass render passes are supported.
-    const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses.front();
+    const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses[pipestate.subpass];
 
     // Copy color and input attachments, and ignore resolve attachments.
     // Since we are only using this renderpass to replay a single draw, we don't
@@ -1385,6 +1379,8 @@ protected:
     m_RpsToDestroy.push_back(renderpass);
 
     pipestate.SetRenderPass(GetResID(renderpass));
+    // The patched render pass contains only the selected original subpass.
+    pipestate.subpass = 0;
 
     return renderpass;
   }
@@ -1738,7 +1734,7 @@ protected:
 
     const VulkanCreationInfo::RenderPass &rpInfo =
         m_pDriver->GetDebugManager()->GetRenderPassInfo(renderstate.GetRenderPass());
-    const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses.front();
+    const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses[renderstate.subpass];
     for(uint32_t i = 0; i < sub.colorAttachments.size(); i++)
     {
       if(fbIndex == sub.colorAttachments[i])
@@ -1961,16 +1957,6 @@ struct VulkanColorAndStencilCallback : public VulkanPixelHistoryCallback
       return;
     }
 
-    if(HasMultipleSubpasses())
-    {
-      if(!multipleSubpassWarningPrinted)
-      {
-        RDCWARN("Multiple subpasses in a render pass are not supported for pixel history.");
-        multipleSubpassWarningPrinted = true;
-      }
-      return;
-    }
-
     VulkanRenderState prevState = m_pDriver->GetCmdRenderState();
     VulkanRenderState &pipestate = m_pDriver->GetCmdRenderState();
 
@@ -2082,16 +2068,6 @@ struct VulkanColorAndStencilCallback : public VulkanPixelHistoryCallback
   {
     if(!m_Events.contains(eid) || !m_pDriver->IsCmdPrimary())
       return false;
-
-    if(HasMultipleSubpasses())
-    {
-      if(!multipleSubpassWarningPrinted)
-      {
-        RDCWARN("Multiple subpasses in a render pass are not supported for pixel history.");
-        multipleSubpassWarningPrinted = true;
-      }
-      return false;
-    }
 
     m_pDriver->GetCmdRenderState().EndRenderPass(cmd);
     // if dynamic rendering is in use and the renderpass just suspended, we need to be sure it is
@@ -2469,6 +2445,7 @@ private:
     // No need to change depth stencil state, it is already
     // set to always pass, and increment.
     pipeCreateInfo.renderPass = rp;
+    pipeCreateInfo.subpass = 0;
 
     PipelineReplacements replacements = {};
     VkResult vkr = m_pDriver->vkCreateGraphicsPipelines(m_pDriver->GetDev(), VK_NULL_HANDLE, 1,
@@ -2658,9 +2635,7 @@ private:
       // Depth and Stencil tests.
       const VulkanCreationInfo::RenderPass &rpInfo =
           m_pDriver->GetDebugManager()->GetRenderPassInfo(pipestate.GetRenderPass());
-      // TODO: this should retrieve the correct subpass, once multiple subpasses
-      // are supported.
-      const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses.front();
+      const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses[pipestate.subpass];
 
       hasDepthStencil = (sub.depthstencilAttachment != -1);
     }
@@ -3212,7 +3187,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
       {
         const VulkanCreationInfo::RenderPass &rpInfo =
             m_pDriver->GetDebugManager()->GetRenderPassInfo(prevState.GetRenderPass());
-        const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses.front();
+        const VulkanCreationInfo::RenderPass::Subpass &sub = rpInfo.subpasses[prevState.subpass];
 
         // Going to add another color attachment.
         framebufferIndex = (uint32_t)prevState.GetFramebufferAttachments().size();
@@ -3229,6 +3204,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
     bool multiview = false;
     VkRenderPass origRpWithDepth = PatchRenderPass(state, multiview);
     state.SetRenderPass(prevState.GetRenderPass());
+    state.subpass = prevState.subpass;
     state.dynamicRendering = prevState.dynamicRendering;
     VkRenderPass newRp = PatchRenderPass(state, multiview, VK_FORMAT_R32G32B32A32_SFLOAT,
                                          framebufferIndex, colorOutputIndex);
@@ -3487,6 +3463,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
 
     // use the original renderpass and framebuffer attachment, but ensure we have depth and stencil
     state.SetRenderPass(prevState.GetRenderPass());
+    state.subpass = prevState.subpass;
     state.SetFramebuffer(prevState.GetFramebuffer(), prevState.GetFramebufferAttachments());
     state.dynamicRendering = prevState.dynamicRendering;
 
@@ -3611,6 +3588,7 @@ struct VulkanPixelHistoryPerFragmentCallback : VulkanPixelHistoryCallback
     rdcarray<VkPipelineShaderStageCreateInfo> stages;
     m_pDriver->GetShaderCache()->MakeGraphicsPipelineInfo(pipeCreateInfo, pipe);
     RemoveNextStruct(&pipeCreateInfo, VK_STRUCTURE_TYPE_CUSTOM_RESOLVE_CREATE_INFO_EXT);
+    pipeCreateInfo.subpass = 0;
 
     SetupDynamicStates(pipeCreateInfo);
 

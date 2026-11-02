@@ -200,10 +200,14 @@ if(ANDROID)
     else()
         set(CLASS_PATH "${ANDROID_JAR}:obj")
     endif()
-    set(KEYSTORE ${CMAKE_CURRENT_BINARY_DIR}/debug.keystore)
+    set(RENDERDOC_ANDROID_KEYSTORE "${CMAKE_CURRENT_BINARY_DIR}/debug.keystore" CACHE FILEPATH
+        "Android development signing keystore; retain it across paired runtime rebuilds")
+    set(KEYSTORE ${RENDERDOC_ANDROID_KEYSTORE})
+    if(NOT EXISTS "${KEYSTORE}")
     add_custom_command(OUTPUT ${KEYSTORE}
                        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
                        COMMAND ${JAVA_BIN}/keytool -genkey -keystore ${KEYSTORE} -storepass android -alias rdocandroidkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=, OU=, O=, L=, S=, C=")
+    endif()
 
     # APK_VERSION_CODE corresponds to android:versionCode, an internal integer value that can be queried. Higher numbers indicate more recent versions.
     # APK_VERSION_NAME corresponds to android:versionName, a string value that is displayed to the user.

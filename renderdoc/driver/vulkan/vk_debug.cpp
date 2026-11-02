@@ -3560,7 +3560,7 @@ VulkanReplay::AddedDescriptorData VulkanReplay::PrepareExtraBufferDescriptor(
   return ret;
 }
 
-void VulkanReplay::PrepareStateForPatchedShader(
+bool VulkanReplay::PrepareStateForPatchedShader(
     const AddedDescriptorData &patchedBufferdata, VulkanRenderState &modifiedstate, bool compute,
     std::function<bool(const AddedDescriptorData &patchedBufferdata, VkShaderStageFlagBits stage,
                        const char *entryName, const rdcarray<uint32_t> &origSpirv,
@@ -3593,7 +3593,11 @@ void VulkanReplay::PrepareStateForPatchedShader(
 
     vkr =
         m_pDriver->vkCreatePipelineCache(dev, &createInfo, NULL, &m_PatchedShaderFeedback.PipeCache);
-    CHECK_VKR(m_pDriver, vkr);
+    if(vkr != VK_SUCCESS)
+    {
+      RDCERR("Failed to create shader feedback pipeline cache: %s", ToStr(vkr).c_str());
+      return false;
+    }
   }
 
   VkPipeline pipe = VK_NULL_HANDLE;
@@ -3612,7 +3616,11 @@ void VulkanReplay::PrepareStateForPatchedShader(
     moduleCreateInfo.codeSize = modSpirv.size() * sizeof(uint32_t);
 
     vkr = m_pDriver->vkCreateShaderModule(dev, &moduleCreateInfo, NULL, &computeInfo.stage.module);
-    CHECK_VKR(m_pDriver, vkr);
+    if(vkr != VK_SUCCESS)
+    {
+      RDCERR("Failed to create patched compute shader module: %s", ToStr(vkr).c_str());
+      return false;
+    }
 
     if(patchedBufferdata.pipeLayout != VK_NULL_HANDLE)
       computeInfo.layout = patchedBufferdata.pipeLayout;
@@ -3621,10 +3629,17 @@ void VulkanReplay::PrepareStateForPatchedShader(
     // bloat the cache.
     vkr = m_pDriver->vkCreateComputePipelines(dev, m_PatchedShaderFeedback.PipeCache, 1,
                                               &computeInfo, NULL, &pipe);
-    CHECK_VKR(m_pDriver, vkr);
 
     // delete shader module
     m_pDriver->vkDestroyShaderModule(dev, computeInfo.stage.module, NULL);
+
+    if(vkr != VK_SUCCESS || pipe == VK_NULL_HANDLE)
+    {
+      RDCERR("Failed to create patched compute shader feedback pipeline: %s", ToStr(vkr).c_str());
+      if(pipe != VK_NULL_HANDLE)
+        m_pDriver->vkDestroyPipeline(dev, pipe, NULL);
+      return false;
+    }
 
     modifiedstate.compute.pipeline = GetResID(pipe);
   }
@@ -3660,7 +3675,13 @@ void VulkanReplay::PrepareStateForPatchedShader(
         moduleCreateInfo.codeSize = modSpirv.size() * sizeof(uint32_t);
 
         vkr = m_pDriver->vkCreateShaderModule(dev, &moduleCreateInfo, NULL, &stage.module);
-        CHECK_VKR(m_pDriver, vkr);
+        if(vkr != VK_SUCCESS)
+        {
+          RDCERR("Failed to create patched graphics shader module: %s", ToStr(vkr).c_str());
+          for(VkShaderModule s : modules)
+            m_pDriver->vkDestroyShaderModule(dev, s, NULL);
+          return false;
+        }
 
         modules.push_back(stage.module);
       }
@@ -3682,7 +3703,13 @@ void VulkanReplay::PrepareStateForPatchedShader(
         moduleCreateInfo.codeSize = modSpirv.size() * sizeof(uint32_t);
 
         vkr = m_pDriver->vkCreateShaderModule(dev, &moduleCreateInfo, NULL, &stage.module);
-        CHECK_VKR(m_pDriver, vkr);
+        if(vkr != VK_SUCCESS)
+        {
+          RDCERR("Failed to create patched graphics shader module: %s", ToStr(vkr).c_str());
+          for(VkShaderModule s : modules)
+            m_pDriver->vkDestroyShaderModule(dev, s, NULL);
+          return false;
+        }
 
         modules.push_back(stage.module);
       }
@@ -3690,13 +3717,23 @@ void VulkanReplay::PrepareStateForPatchedShader(
 
     // we don't use a pipeline cache because a hard-coded address will cause failures often and
     // bloat the cache.
+    RDCLOG("Patched graphics feedback storageMode=%u reservedBindings=%u patchedLayout=%d",
+           (uint32_t)m_StorageMode, (uint32_t)patchedBufferdata.numNewBindings,
+           patchedBufferdata.pipeLayout != VK_NULL_HANDLE ? 1 : 0);
     vkr = m_pDriver->vkCreateGraphicsPipelines(dev, m_PatchedShaderFeedback.PipeCache, 1,
                                                &graphicsInfo, NULL, &pipe);
-    CHECK_VKR(m_pDriver, vkr);
 
     // delete shader modules
     for(VkShaderModule s : modules)
       m_pDriver->vkDestroyShaderModule(dev, s, NULL);
+
+    if(vkr != VK_SUCCESS || pipe == VK_NULL_HANDLE)
+    {
+      RDCERR("Failed to create patched graphics shader feedback pipeline: %s", ToStr(vkr).c_str());
+      if(pipe != VK_NULL_HANDLE)
+        m_pDriver->vkDestroyPipeline(dev, pipe, NULL);
+      return false;
+    }
 
     modifiedstate.graphics.pipeline = GetResID(pipe);
   }
@@ -3753,7 +3790,17 @@ void VulkanReplay::PrepareStateForPatchedShader(
     }
 
     vkr = m_pDriver->vkCreateShadersEXT(dev, 1, &shadCreateinfo, NULL, &shad);
-    CHECK_VKR(m_pDriver, vkr);
+    if(vkr != VK_SUCCESS || shad == VK_NULL_HANDLE)
+    {
+      RDCERR("Failed to create patched shader feedback object: %s", ToStr(vkr).c_str());
+      if(shad != VK_NULL_HANDLE)
+        m_pDriver->vkDestroyShaderEXT(dev, shad, NULL);
+      for(VkShaderEXT s : shaderObjs)
+        m_pDriver->vkDestroyShaderEXT(dev, s, NULL);
+      if(pipe != VK_NULL_HANDLE)
+        m_pDriver->vkDestroyPipeline(dev, pipe, NULL);
+      return false;
+    }
 
     shaderObjs.push_back(shad);
 
@@ -3774,6 +3821,8 @@ void VulkanReplay::PrepareStateForPatchedShader(
       if(s != VK_NULL_HANDLE)
         m_pDriver->vkDestroyShaderEXT(dev, s, NULL);
   });
+
+  return true;
 }
 
 bool VulkanReplay::RunFeedbackAction(VkDeviceSize bufferSize, const ActionDescription *action,
@@ -3923,6 +3972,8 @@ void VulkanReplay::CreateResources()
   }
 
   m_PatchedShaderFeedback.m_StorageMode = m_StorageMode;
+  RDCLOG("Shader debug storage mode=%u disableBDA=%d", (uint32_t)m_StorageMode,
+         Vulkan_Debug_DisableBufferDeviceAddress() ? 1 : 0);
 
   GpaVkContextOpenInfo context = {Unwrap(m_pDriver->GetInstance()), Unwrap(m_pDriver->GetPhysDev()),
                                   Unwrap(m_pDriver->GetDev())};

@@ -48,7 +48,7 @@ RDOC_CONFIG(bool, RemoteServer_DebugLogging, false,
 #define MAKE_REMOTE_SERVER_VERSION(maj, min) uint32_t((maj)*1000) + (min)
 
 static const uint32_t RemoteServerProtocolVersion =
-    MAKE_REMOTE_SERVER_VERSION(RENDERDOC_VERSION_MAJOR, RENDERDOC_VERSION_MINOR);
+    MAKE_REMOTE_SERVER_VERSION(RENDERDOC_VERSION_MAJOR, RENDERDOC_VERSION_MINOR) | 0x10000; // native presentation acknowledgement protocol
 
 enum class RemoteServerPacket
 {
@@ -91,6 +91,7 @@ enum class RemoteServerPacket
   HasEmbeddedDependencies,
   HasPendingDependencies,
   GetPendingDependenciesNicknames,
+  PresentReplay,
   // This must be last
   Count,
 };
@@ -112,6 +113,7 @@ rdcstr DoStringise(const RemoteServerPacket &el)
     STRINGISE_ENUM_NAMED(RemoteServerPacket::VersionMismatch2, "VersionMismatch");
 
     STRINGISE_ENUM_NAMED(RemoteServerPacket::Ping, "Ping");
+    STRINGISE_ENUM_NAMED(RemoteServerPacket::PresentReplay, "PresentReplay");
     STRINGISE_ENUM_NAMED(RemoteServerPacket::RemoteDriverList, "RemoteDriverList");
     STRINGISE_ENUM_NAMED(RemoteServerPacket::TakeOwnershipCapture, "TakeOwnershipCapture");
     STRINGISE_ENUM_NAMED(RemoteServerPacket::CopyCaptureToRemote, "CopyCaptureToRemote");
@@ -340,7 +342,16 @@ static void ActiveRemoteClientThread(ClientThread *threadData,
     if(threadData->killThread)
       break;
 
-    // this will block until a packet comes in.
+    // Idle clients may wait for user input indefinitely. Only apply the socket
+    // receive deadline after a packet starts, including bytes already buffered
+    // by the serialiser. Polling also lets server shutdown interrupt idle work.
+    if(reader.GetReader()->AtEnd() && !client->IsRecvDataWaiting())
+    {
+      Threading::Sleep(10);
+      continue;
+    }
+
+    // A partial packet still has the normal bounded receive deadline.
     RemoteServerPacket type = reader.ReadChunk<RemoteServerPacket>();
 
     if(reader.IsErrored() || writer.IsErrored())
@@ -361,6 +372,22 @@ static void ActiveRemoteClientThread(ClientThread *threadData,
 
       WRITE_DATA_SCOPE();
       SCOPED_SERIALISE_CHUNK(RemoteServerPacket::Ping);
+    }
+    else if(type == RemoteServerPacket::PresentReplay)
+    {
+      uint32_t eventId = 0;
+      ResourceId textureId;
+      reader.Serialise("eventId"_lit, eventId);
+      reader.Serialise("textureId"_lit, textureId);
+      reader.EndChunk();
+      RDResult result = ResultCode::InternalError;
+      uint64_t sequence = 0;
+      if(proxy)
+        result = proxy->PresentPreviewWindow(eventId, textureId, sequence);
+      WRITE_DATA_SCOPE();
+      SCOPED_SERIALISE_CHUNK(RemoteServerPacket::PresentReplay);
+      SERIALISE_ELEMENT(result);
+      SERIALISE_ELEMENT(sequence);
     }
     else if(type == RemoteServerPacket::RemoteDriverList)
     {
@@ -1519,6 +1546,39 @@ ResultDetails RemoteServer::Ping()
   }
 
   return ret;
+}
+
+rdcpair<ResultDetails, uint64_t> RemoteServer::PresentReplay(uint32_t eventId, ResourceId textureId)
+{
+  RDResult result = ResultCode::RemoteServerConnectionLost;
+  uint64_t sequence = 0;
+  if(!Connected())
+    return {result, sequence};
+  {
+    WRITE_DATA_SCOPE();
+    SCOPED_SERIALISE_CHUNK(RemoteServerPacket::PresentReplay);
+    SERIALISE_ELEMENT(eventId);
+    SERIALISE_ELEMENT(textureId);
+  }
+  {
+    READ_DATA_SCOPE();
+    RemoteServerPacket type = ser.ReadChunk<RemoteServerPacket>();
+    if(type == RemoteServerPacket::PresentReplay)
+    {
+      SERIALISE_ELEMENT(result);
+      SERIALISE_ELEMENT(sequence);
+    }
+    else
+      MarkConnectionLost(m_Socket);
+    ser.EndChunk();
+    if(ser.IsErrored())
+    {
+      MarkConnectionLost(m_Socket);
+      result = ResultCode::RemoteServerConnectionLost;
+      sequence = 0;
+    }
+  }
+  return {result, sequence};
 }
 
 rdcarray<rdcstr> RemoteServer::LocalProxies()

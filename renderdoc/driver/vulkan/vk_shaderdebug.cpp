@@ -5229,7 +5229,7 @@ rdcpair<uint32_t, uint32_t> GetAlignAndOutputSize(VulkanCreationInfo::ShaderModu
 VkDescriptorSetLayoutBinding MakeNewBinding(VkShaderStageFlagBits stage)
 {
   return {
-      0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, NULL,
+      0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, stage, NULL,
   };
 }
 
@@ -5541,9 +5541,8 @@ ShaderDebugTrace *VulkanReplay::DebugVertex(uint32_t eventId, uint32_t vertid, u
       return true;
     };
 
-    PrepareStateForPatchedShader(patchedBufferdata, modifiedstate, false, patchCallback);
-
-    if(!RunFeedbackAction(feedbackStorageSize, action, modifiedstate))
+    if(!PrepareStateForPatchedShader(patchedBufferdata, modifiedstate, false, patchCallback) ||
+       !RunFeedbackAction(feedbackStorageSize, action, modifiedstate))
     {
       delete apiWrapper;
 
@@ -6107,9 +6106,8 @@ ShaderDebugTrace *VulkanReplay::DebugPixel(uint32_t eventId, uint32_t x, uint32_
     return true;
   };
 
-  PrepareStateForPatchedShader(patchedBufferdata, modifiedstate, false, patchCallback);
-
-  if(!RunFeedbackAction(feedbackStorageSize, action, modifiedstate))
+  if(!PrepareStateForPatchedShader(patchedBufferdata, modifiedstate, false, patchCallback) ||
+     !RunFeedbackAction(feedbackStorageSize, action, modifiedstate))
   {
     delete apiWrapper;
 
@@ -6656,10 +6654,9 @@ ShaderDebugTrace *VulkanReplay::DebugComputeCommon(ShaderStage stage, uint32_t e
       return true;
     };
 
-    PrepareStateForPatchedShader(patchedBufferdata, modifiedstate, stage == ShaderStage::Compute,
-                                 patchCallback);
-
-    if(!RunFeedbackAction(feedbackStorageSize, action, modifiedstate))
+    if(!PrepareStateForPatchedShader(patchedBufferdata, modifiedstate,
+                                     stage == ShaderStage::Compute, patchCallback) ||
+       !RunFeedbackAction(feedbackStorageSize, action, modifiedstate))
     {
       delete apiWrapper;
 

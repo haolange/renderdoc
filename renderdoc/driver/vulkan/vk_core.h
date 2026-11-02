@@ -1429,7 +1429,8 @@ public:
     m_State = CaptureState::StructuredExport;
   }
   void Shutdown();
-  void ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType);
+  void ReplayLog(uint32_t startEventID, uint32_t endEventID, ReplayLogType replayType,
+                 VkQueryPool frameTimestampPool = VK_NULL_HANDLE);
   void ReplayDraw(VkCommandBuffer cmd, const ActionDescription &action);
   RDResult ReadLogInitialisation(RDCFile *rdc, bool storeStructuredBuffers);
 

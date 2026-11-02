@@ -60,6 +60,13 @@ On windows cmake you need to specify the 'generator' type to the cmake invocatio
 cmake -DBUILD_ANDROID=On -DANDROID_ABI=armeabi-v7a -G "MSYS Makefiles" ..
 ```
 
+For a paired remote-presentation runtime, build the Windows client and both Android ABIs
+from the same source. The native `PresentReplay` acknowledgement uses a matching remote
+protocol; older helpers are rejected during handshake. Keep the development signing key
+outside disposable build output and pass `-DRENDERDOC_ANDROID_KEYSTORE=/absolute/path/to/debug.keystore`
+to each Android build. Reusing the key allows APK updates without deleting application data.
+Never replace an active user-owned helper as part of a runtime update.
+
 ### Note:
 
 With GLES programs on Android, the built-in hooking method doesn't always work. If you have trouble with crashes or problems capturing GLES programs, try enabling building with [interceptor-lib](../../renderdoc/3rdparty/interceptor-lib/README.md). **WARNING**: Building this requires a hefty dependency.

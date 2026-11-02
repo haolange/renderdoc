@@ -1169,6 +1169,12 @@ void VulkanReplay::ClearOutputWindowDepth(uint64_t id, float depth, uint8_t sten
     m_pDriver->SubmitCmds();
 }
 
+bool VulkanReplay::OutputWindowPresented(uint64_t id)
+{
+  auto it = m_OutputWindows.find(id);
+  return it != m_OutputWindows.end() && it->second.presented;
+}
+
 void VulkanReplay::FlipOutputWindow(uint64_t id)
 {
   auto it = m_OutputWindows.find(id);
@@ -1176,6 +1182,7 @@ void VulkanReplay::FlipOutputWindow(uint64_t id)
     return;
 
   OutputWindow &outw = it->second;
+  outw.presented = false;
 
   // if the swapchain failed to create, do nothing. We will try to recreate it
   // again in CheckResizeOutputWindow (once per render 'frame')
@@ -1313,6 +1320,9 @@ void VulkanReplay::FlipOutputWindow(uint64_t id)
     CHECK_VKR(m_pDriver, retvkr);
 
   m_pDriver->FlushQ();
+  outw.presented = (retvkr == VK_SUCCESS || retvkr == VK_SUBOPTIMAL_KHR) &&
+                   (vkr == VK_SUCCESS || vkr == VK_SUBOPTIMAL_KHR) &&
+                   vt->QueueWaitIdle(Unwrap(m_pDriver->GetQ())) == VK_SUCCESS;
 
   if(retvkr == VK_ERROR_OUT_OF_DATE_KHR)
   {
