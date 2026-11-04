@@ -96,6 +96,8 @@ struct VulkanStatePipeline
 
 struct VulkanRenderState
 {
+  void BindGraphicsDescriptors(WrappedVulkan *vk, VkCommandBuffer cmd);
+
   enum PipelineBinding
   {
     BindNone = 0x0,
@@ -107,8 +109,16 @@ struct VulkanRenderState
 
   VulkanRenderState();
   bool IsConditionalRenderingEnabled();
+  enum class RenderPassMode
+  {
+    Resume,
+    BeginSubpass,
+    Resolve,
+  };
   void BeginRenderPassAndApplyState(WrappedVulkan *vk, VkCommandBuffer cmd, PipelineBinding binding,
-                                    bool obeySuspending);
+                                    bool obeySuspending,
+                                    RenderPassMode mode = RenderPassMode::Resume);
+  void ResolveSubpass(WrappedVulkan *vk, VkCommandBuffer cmd);
   void BindPipeline(WrappedVulkan *vk, VkCommandBuffer cmd, PipelineBinding binding, bool subpass0);
 
   void BindDescriptorBuffers(WrappedVulkan *vk, VkCommandBuffer cmd);
@@ -138,6 +148,10 @@ struct VulkanRenderState
     float depth = 0.0f;
     float biasclamp = 0.0f;
     float slope = 0.0f;
+
+    VkDepthBiasRepresentationEXT repr =
+        VK_DEPTH_BIAS_REPRESENTATION_LEAST_REPRESENTABLE_VALUE_FORMAT_EXT;
+    bool exact = false;
   } bias;
   float blendConst[4] = {};
   float mindepth = 0.0f;
@@ -179,6 +193,9 @@ struct VulkanRenderState
   ResourceId pushLayout;
 
   uint32_t subpass = 0;
+  // Source topology remains logical; an interruptible replay executes one native subpass at a time.
+  bool splitRenderPass = false;
+  rdcarray<VkClearValue> renderPassClears;
   VkSubpassContents subpassContents;
 
   // helper function - if the pipeline has been changed, this forces all dynamic state to be bound
@@ -204,6 +221,8 @@ struct VulkanRenderState
   void SetRenderPass(ResourceId rp)
   {
     renderPass = rp;
+    splitRenderPass = false;
+    renderPassClears.clear();
     dynamicRendering = DynamicRendering();
   }
   ResourceId GetRenderPass() const { return renderPass; }

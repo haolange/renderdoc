@@ -312,8 +312,6 @@ public:
                                    uint64_t dataOffset) const = 0;
   virtual bool TypedUAVStore(const BindingSlot &slot, const DXILDebug::ViewFmt &fmt,
                              uint64_t dataOffset, const ShaderValue &value) = 0;
-  virtual bool TypedSRVStore(const BindingSlot &slot, const DXILDebug::ViewFmt &fmt,
-                             uint64_t dataOffset, const ShaderValue &value) = 0;
 
   // These will fetch the data on demand.
   virtual void GetCBV(const BindingSlot &slot) = 0;
@@ -343,7 +341,8 @@ public:
   virtual bool IsCBVCached(const DXDebug::BindingSlot &slot) const = 0;
   virtual bool IsSRVCached(const DXDebug::BindingSlot &slot) const = 0;
   virtual bool IsUAVCached(const DXDebug::BindingSlot &slot) const = 0;
-  virtual bool IsResourceInfoCached(const DXDebug::BindingSlot &slot, uint32_t mipLevel) = 0;
+  virtual bool IsResourceInfoCached(DXIL::ResourceClass resClass, const DXDebug::BindingSlot &slot,
+                                    uint32_t mipLevel) = 0;
   virtual bool IsSampleInfoCached(const DXDebug::BindingSlot &slot) = 0;
   virtual bool IsRenderTargetSampleInfoCached() = 0;
   virtual bool IsResourceReferenceInfoCached(const DXDebug::BindingSlot &slot) = 0;
@@ -358,6 +357,9 @@ public:
   virtual const rdcarray<rdcflatmap<ShaderBuiltin, ShaderVariable>> &GetThreadsBuiltins() const = 0;
   virtual const rdcarray<ShaderVariable> &GetThreadsInputs() const = 0;
   virtual const rdcarray<SourceVariableMapping> &GetSourceVars() const = 0;
+
+  virtual void AddDebugMessage(MessageCategory cat, MessageSeverity sev, MessageSource src,
+                               const rdcstr &desc) = 0;
 };
 
 struct MemoryTracking
@@ -912,6 +914,14 @@ enum class StepThreadMode
   QUEUE_MULTIPLE_STEPS
 };
 
+struct DebugMessage
+{
+  MessageCategory cat;
+  MessageSeverity sev;
+  MessageSource src;
+  rdcstr desc;
+};
+
 class Debugger : public DXBCContainerDebugger
 {
 public:
@@ -957,6 +967,7 @@ public:
 
   bool IsDeviceThread() const { return Threading::GetCurrentID() == m_DeviceThreadID; }
   Threading::CriticalSection &GetAtomicMemoryLock() const { return m_AtomicMemoryLock; }
+  void AddDebugMessage(MessageCategory cat, MessageSeverity sev, MessageSource src, rdcstr desc) const;
 private:
   void InitialiseWorkgroup();
   ThreadState &GetActiveLane() { return m_Workgroup[m_ActiveLaneIndex]; }
@@ -976,6 +987,7 @@ private:
   void SimulationJobHelper();
   void QueueDeviceThreadStep(uint32_t lane);
 
+  void ProcessQueuedDebugMessages();
   void ProcessQueuedDeviceThreadSteps();
   void ProcessQueuedOps();
   void ProcessQueuedGpuMathOps();
@@ -1004,6 +1016,8 @@ private:
   rdcarray<ShaderVariable *> m_PendingGpuMathsOpsResults;
   rdcarray<ShaderVariable *> m_PendingGpuSampleGatherOpsResults;
   rdcarray<int> m_PendingGpuSampleGatherOpsSampleRetTypes;
+  mutable Threading::CriticalSection m_QueuedDebugMessagesLock;
+  mutable rdcarray<DebugMessage> m_QueuedDebugMessages;
 
   // the live mutable global variables, to initialise a stack frame's live list
   rdcarray<bool> m_LiveGlobals;

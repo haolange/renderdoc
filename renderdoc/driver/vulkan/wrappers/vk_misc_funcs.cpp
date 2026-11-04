@@ -53,6 +53,236 @@ static void PatchSeparateStencil(VkAttachmentDescription2 &att, const VkAttachme
   }
 }
 
+static void DestroySubpassMirrors(VkDevice device, VulkanCreationInfo::RenderPass &info)
+{
+  for(VkRenderPass pass : info.beginRPs)
+    if(pass != VK_NULL_HANDLE)
+      ObjDisp(device)->DestroyRenderPass(Unwrap(device), pass, NULL);
+  for(VkRenderPass pass : info.resumeRPs)
+    if(pass != VK_NULL_HANDLE)
+      ObjDisp(device)->DestroyRenderPass(Unwrap(device), pass, NULL);
+  for(VkRenderPass pass : info.resolveRPs)
+    if(pass != VK_NULL_HANDLE)
+      ObjDisp(device)->DestroyRenderPass(Unwrap(device), pass, NULL);
+  info.beginRPs.clear();
+  info.resumeRPs.clear();
+  info.resolveRPs.clear();
+}
+
+static void PatchSubpassDepthResolve(VkAttachmentDescription *, const VkSubpassDescription *)
+{
+}
+
+static void PatchSubpassDepthResolve(VkAttachmentDescription2 *attachments,
+                                     const VkSubpassDescription2 *subpass)
+{
+  const VkSubpassDescriptionDepthStencilResolve *resolve =
+      (const VkSubpassDescriptionDepthStencilResolve *)FindNextStruct(
+          subpass, VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE);
+  if(resolve && resolve->pDepthStencilResolveAttachment &&
+     resolve->pDepthStencilResolveAttachment->attachment != VK_ATTACHMENT_UNUSED)
+  {
+    const VkAttachmentReference2 *ref = resolve->pDepthStencilResolveAttachment;
+    attachments[ref->attachment].initialLayout = attachments[ref->attachment].finalLayout =
+        ref->layout;
+    PatchSeparateStencil(attachments[ref->attachment], ref);
+  }
+}
+
+static void RemoveSubpassDepthResolve(VkSubpassDescription &)
+{
+}
+
+static void RemoveSubpassDepthResolve(VkSubpassDescription2 &subpass)
+{
+  RemoveNextStruct(&subpass, VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE);
+}
+
+static size_t ReferenceNextSize(const VkAttachmentReference &)
+{
+  return 0;
+}
+static size_t ReferenceNextSize(const VkAttachmentReference2 &ref)
+{
+  return GetNextPatchSize(ref.pNext);
+}
+static void CopyReferenceNext(VkAttachmentReference &, byte *&)
+{
+}
+static void CopyReferenceNext(VkAttachmentReference2 &ref, byte *&data)
+{
+  CopyNextChainForPatching("VkAttachmentReference2", data, (VkBaseInStructure *)&ref);
+}
+static void SetReferenceStencilLayout(VkAttachmentReference &, VkImageLayout)
+{
+}
+static void SetReferenceStencilLayout(VkAttachmentReference2 &ref, VkImageLayout layout)
+{
+  VkAttachmentReferenceStencilLayout *stencil = (VkAttachmentReferenceStencilLayout *)FindNextStruct(
+      &ref, VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_STENCIL_LAYOUT);
+  if(stencil)
+    stencil->stencilLayout = layout;
+}
+static const VkAttachmentReference *DepthResolveReference(VkSubpassDescription &)
+{
+  return NULL;
+}
+static const VkAttachmentReference2 *DepthResolveReference(VkSubpassDescription2 &sub)
+{
+  const VkSubpassDescriptionDepthStencilResolve *resolve =
+      (const VkSubpassDescriptionDepthStencilResolve *)FindNextStruct(
+          &sub, VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE);
+  return resolve ? resolve->pDepthStencilResolveAttachment : NULL;
+}
+static void SetDepthResolveReference(VkSubpassDescription &, const VkAttachmentReference *)
+{
+}
+static void SetDepthResolveReference(VkSubpassDescription2 &sub, const VkAttachmentReference2 *ref)
+{
+  VkSubpassDescriptionDepthStencilResolve *resolve =
+      (VkSubpassDescriptionDepthStencilResolve *)FindNextStruct(
+          &sub, VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE);
+  if(resolve)
+    resolve->pDepthStencilResolveAttachment = ref;
+}
+
+// A callback mirror must not resolve on an artificial End. All physical references agree with
+// its attachment layouts, even when the source declared different layouts for simultaneous roles.
+template <typename RPCreateInfo>
+struct SubpassResolvePatch
+{
+  using Subpass = typename std::remove_cv<
+      typename std::remove_reference<decltype(RPCreateInfo().pSubpasses[0])>::type>::type;
+  using Reference = typename std::remove_cv<
+      typename std::remove_reference<decltype(Subpass().pColorAttachments[0])>::type>::type;
+
+  SubpassResolvePatch(RPCreateInfo &info, bool removeResolves,
+                      const VulkanCreationInfo::RenderPass *source = NULL,
+                      uint32_t logicalSubpass = 0)
+      : info(info), original(info.pSubpasses)
+  {
+    if(!removeResolves && !source)
+      return;
+    subpass = *info.pSubpasses;
+    CopyNexts(subpass);
+    if(source)
+    {
+      const Reference *dsResolve = DepthResolveReference(subpass);
+      size_t count = subpass.colorAttachmentCount + subpass.inputAttachmentCount;
+      if(subpass.pResolveAttachments)
+        count += subpass.colorAttachmentCount;
+      if(subpass.pDepthStencilAttachment)
+        count++;
+      if(dsResolve)
+        count++;
+      refs.resize(count);
+      size_t nextSize = 0;
+      auto sizeRefs = [&nextSize](const Reference *r, uint32_t n) {
+        if(r)
+          for(uint32_t i = 0; i < n; i++)
+            nextSize += ReferenceNextSize(r[i]);
+      };
+      sizeRefs(subpass.pColorAttachments, subpass.colorAttachmentCount);
+      sizeRefs(subpass.pInputAttachments, subpass.inputAttachmentCount);
+      sizeRefs(subpass.pResolveAttachments, subpass.colorAttachmentCount);
+      sizeRefs(subpass.pDepthStencilAttachment, 1);
+      sizeRefs(dsResolve, 1);
+      referenceNexts.resize(nextSize);
+      byte *next = referenceNexts.data();
+      size_t index = 0;
+      auto patch = [&](const Reference *r, uint32_t n) -> const Reference * {
+        if(!r)
+          return NULL;
+        Reference *out = refs.data() + index;
+        index += n;
+        for(uint32_t i = 0; i < n; i++)
+        {
+          out[i] = r[i];
+          CopyReferenceNext(out[i], next);
+          if(out[i].attachment != VK_ATTACHMENT_UNUSED)
+          {
+            out[i].layout = source->AttachmentLayout(out[i].attachment, logicalSubpass);
+            SetReferenceStencilLayout(
+                out[i], source->AttachmentLayout(out[i].attachment, logicalSubpass, true));
+          }
+        }
+        return out;
+      };
+      subpass.pColorAttachments = patch(subpass.pColorAttachments, subpass.colorAttachmentCount);
+      subpass.pInputAttachments = patch(subpass.pInputAttachments, subpass.inputAttachmentCount);
+      subpass.pResolveAttachments = patch(subpass.pResolveAttachments, subpass.colorAttachmentCount);
+      subpass.pDepthStencilAttachment = patch(subpass.pDepthStencilAttachment, 1);
+      SetDepthResolveReference(subpass, patch(dsResolve, 1));
+    }
+    if(removeResolves)
+    {
+      subpass.pResolveAttachments = NULL;
+      RemoveSubpassDepthResolve(subpass);
+    }
+    info.pSubpasses = &subpass;
+  }
+  ~SubpassResolvePatch() { info.pSubpasses = original; }
+
+  void CopyNexts(VkSubpassDescription &) {}
+  void CopyNexts(VkSubpassDescription2 &sub)
+  {
+    nexts.resize(GetNextPatchSize(sub.pNext));
+    byte *data = nexts.data();
+    CopyNextChainForPatching("VkSubpassDescription2", data, (VkBaseInStructure *)&sub);
+  }
+
+  RPCreateInfo &info;
+  const Subpass *original;
+  Subpass subpass;
+  rdcarray<byte> nexts, referenceNexts;
+  rdcarray<Reference> refs;
+};
+
+static void PatchStableStencilLayout(VkAttachmentDescription &, VkImageLayout)
+{
+}
+static void PatchStableStencilLayout(VkAttachmentDescription2 &attachment, VkImageLayout layout)
+{
+  VkAttachmentDescriptionStencilLayout *stencil =
+      (VkAttachmentDescriptionStencilLayout *)FindNextStruct(
+          &attachment, VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_STENCIL_LAYOUT);
+  if(stencil)
+    stencil->stencilInitialLayout = stencil->stencilFinalLayout = layout;
+}
+
+template <typename RPCreateInfo>
+static void PatchSubpassLoadOps(RPCreateInfo &info, const VulkanCreationInfo::RenderPass &original,
+                                uint32_t subpass, bool beginSubpass)
+{
+  if(original.subpasses.size() <= 1)
+    return;
+
+  using Attachment =
+      typename std::remove_cv<typename std::remove_reference<decltype(info.pAttachments[0])>::type>::type;
+  Attachment *attachments = (Attachment *)info.pAttachments;
+  for(uint32_t a = 0; a < info.attachmentCount; a++)
+  {
+    Attachment &att = attachments[a];
+    att.initialLayout = att.finalLayout = original.AttachmentLayout(a, subpass);
+    const VkImageLayout stencilLayout = original.AttachmentLayout(a, subpass, true);
+    PatchStableStencilLayout(att, stencilLayout);
+    // A physical pass boundary is not an original discard boundary. Preserve all intermediate
+    // values, including attachments whose original final store operation is NONE.
+    att.loadOp = att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    att.storeOp = att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    if(beginSubpass && original.FirstSubpassForAttachment(a) == subpass)
+    {
+      att.loadOp = original.attachments[a].loadOp;
+      att.stencilLoadOp = original.attachments[a].stencilLoadOp;
+      // The original discard was materialised before beginning the logical render pass.
+      if(att.loadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+        att.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      if(att.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+        att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    }
+  }
+}
+
 template <typename RPCreateInfo>
 static void MakeSubpassLoadRP(RPCreateInfo &info, const RPCreateInfo *origInfo, uint32_t s)
 {
@@ -136,6 +366,19 @@ static void MakeSubpassLoadRP(RPCreateInfo &info, const RPCreateInfo *origInfo, 
     }
   }
 
+  // A per-subpass pass also performs this subpass's resolves. Keep their layouts stable,
+  // just as for color/input/depth, so artificial interruptions cannot perform final transitions.
+  if(sub->pResolveAttachments)
+  {
+    for(uint32_t a = 0; a < sub->colorAttachmentCount; a++)
+    {
+      const auto &resolve = sub->pResolveAttachments[a];
+      if(resolve.attachment != VK_ATTACHMENT_UNUSED)
+        att[resolve.attachment].initialLayout = att[resolve.attachment].finalLayout = resolve.layout;
+    }
+  }
+  PatchSubpassDepthResolve(att, sub);
+
   for(uint32_t a = 0; a < sub->inputAttachmentCount; a++)
   {
     if(sub->pInputAttachments[a].attachment != VK_ATTACHMENT_UNUSED)
@@ -201,10 +444,10 @@ void WrappedVulkan::vkDestroyImageView(VkDevice device, VkImageView obj, const V
   if(DescriptorBuffers())
   {
     SCOPED_READLOCK(m_CapTransitionLock);
-    SCOPED_LOCK(m_DeviceAddressResourcesLock);
+    SCOPED_LOCK(m_DeferredDestructLock);
     if(IsActiveCapturing(m_State))
     {
-      m_DeviceAddressResources.DeadImageViews.push_back(obj);
+      m_DeferredDestructResources.DeadImageViews.push_back(obj);
       return;
     }
   }
@@ -285,13 +528,15 @@ void WrappedVulkan::vkDestroyRenderPass(VkDevice device, VkRenderPass obj,
   VkRenderPass unwrappedObj = Unwrap(obj);
   if(IsReplayMode(m_State))
   {
-    const VulkanCreationInfo::RenderPass &rpinfo = m_CreationInfo.m_RenderPass[GetResID(obj)];
+    VulkanCreationInfo::RenderPass &rpinfo = m_CreationInfo.m_RenderPass[GetResID(obj)];
 
     for(VkRenderPass loadrp : rpinfo.loadRPs)
     {
       ObjDisp(device)->DestroyRenderPass(Unwrap(device), Unwrap(loadrp), NULL);
       GetResourceManager()->ReleaseWrappedResource(loadrp, true);
     }
+
+    DestroySubpassMirrors(device, rpinfo);
 
     m_CreationInfo.erase(GetResID(obj));
   }
@@ -310,8 +555,8 @@ void WrappedVulkan::vkDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAl
     SCOPED_READLOCK(m_CapTransitionLock);
     if(IsActiveCapturing(m_State) && GetRecord(buffer)->hasBDA)
     {
-      SCOPED_LOCK(m_DeviceAddressResourcesLock);
-      m_DeviceAddressResources.DeadBuffers.push_back(buffer);
+      SCOPED_LOCK(m_DeferredDestructLock);
+      m_DeferredDestructResources.DeadBuffers.push_back(buffer);
       return;
     }
   }
@@ -370,14 +615,14 @@ void WrappedVulkan::vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR obj,
       deferFakeBackbuffers = IsActiveCapturing(m_State);
       if(deferFakeBackbuffers)
       {
-        SCOPED_LOCK(m_DeviceAddressResourcesLock);
+        SCOPED_LOCK(m_DeferredDestructLock);
         for(size_t i = 0; i < info.images.size(); i++)
         {
           SwapchainInfo::SwapImage &img = info.images[i];
-          m_InternalDeviceAddressResources.DeadImages.push_back(img.userSwapImage);
-          m_InternalDeviceAddressResources.DeadImageViews.push_back(img.view);
+          m_InternalDeferredDestructResources.DeadImages.push_back(img.userSwapImage);
+          m_InternalDeferredDestructResources.DeadImageViews.push_back(img.view);
         }
-        m_InternalDeviceAddressResources.DeadMemories.push_back(info.imageMemory);
+        m_InternalDeferredDestructResources.DeadMemories.push_back(info.imageMemory);
       }
     }
 
@@ -436,10 +681,10 @@ void WrappedVulkan::vkDestroyImage(VkDevice device, VkImage obj, const VkAllocat
   if(DescriptorBuffers())
   {
     SCOPED_READLOCK(m_CapTransitionLock);
-    SCOPED_LOCK(m_DeviceAddressResourcesLock);
+    SCOPED_LOCK(m_DeferredDestructLock);
     if(IsActiveCapturing(m_State))
     {
-      m_DeviceAddressResources.DeadImages.push_back(obj);
+      m_DeferredDestructResources.DeadImages.push_back(obj);
       return;
     }
   }
@@ -449,10 +694,12 @@ void WrappedVulkan::vkDestroyImage(VkDevice device, VkImage obj, const VkAllocat
     m_ForcedReferences.removeOne(GetRecord(obj));
   }
 
+  ResourceId id = GetResID(obj);
+
   VkImage unwrappedObj = Unwrap(obj);
   GetResourceManager()->ReleaseWrappedResource(obj, true);
 
-  EraseImageState(GetResID(obj));
+  EraseImageState(id);
 
   return ObjDisp(device)->DestroyImage(Unwrap(device), unwrappedObj, NULL);
 }
@@ -590,6 +837,9 @@ bool WrappedVulkan::ReleaseResource(WrappedVkRes *res)
     case eResRenderPass:
     {
       VkRenderPass real = nondisp->real.As<VkRenderPass>();
+      auto info = m_CreationInfo.m_RenderPass.find(GetResID(VkRenderPass(handle)));
+      if(info != m_CreationInfo.m_RenderPass.end())
+        DestroySubpassMirrors(dev, info->second);
       GetResourceManager()->ReleaseWrappedResource(VkRenderPass(handle));
       vt->DestroyRenderPass(Unwrap(dev), real, NULL);
       break;
@@ -882,31 +1132,37 @@ VkResult WrappedVulkan::vkCreateSampler(VkDevice device, const VkSamplerCreateIn
 void WrappedVulkan::PatchAttachment(VkFramebufferAttachmentImageInfo *att, VkFormat imgFormat,
                                     VkSampleCountFlagBits samples)
 {
+  VkImageUsageFlags2KHR usage = GetImageUsageFlags(att);
+  VkImageCreateFlags2KHR flags = GetImageCreateFlags(att);
+
   // this matches the mutations we do to images, so see vkCreateImage
-  att->usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-  att->usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-  att->usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
+  usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  usage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  usage &= ~VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
 
   if(IsYUVFormat(imgFormat))
-    att->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
   if(samples != VK_SAMPLE_COUNT_1_BIT)
   {
-    att->usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    att->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+    usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
     if(!IsDepthOrStencilFormat(imgFormat))
     {
       if(GetDebugManager() && GetShaderCache()->IsBuffer2MSSupported())
-        att->usage |= VK_IMAGE_USAGE_STORAGE_BIT;
+        usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
     else
     {
-      att->usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+      usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     }
   }
 
-  att->flags &= ~VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT;
+  flags &= ~VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT;
+
+  SetImageUsageFlags(att, usage);
+  SetImageCreateFlags(att, flags);
 }
 
 template <typename SerialiserType>
@@ -1320,6 +1576,62 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass(SerialiserType &ser, VkDevice d
           }
         }
 
+        if(rpinfo.subpasses.size() > 1)
+        {
+          rpinfo.beginRPs.resize(CreateInfo.subpassCount);
+          rpinfo.resumeRPs.resize(CreateInfo.subpassCount);
+          rpinfo.resolveRPs.resize(CreateInfo.subpassCount);
+          for(uint32_t s = 0; s < CreateInfo.subpassCount; s++)
+          {
+            MakeSubpassLoadRP(loadInfo, &CreateInfo, s);
+            PatchSubpassLoadOps(loadInfo, rpinfo, s, false);
+            {
+              SubpassResolvePatch<decltype(loadInfo)> resumeReferences(loadInfo, true, &rpinfo, s);
+              ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &loadInfo, NULL,
+                                                      &rpinfo.resumeRPs[s]);
+              if(ret != VK_SUCCESS)
+              {
+                m_CreationInfo.m_RenderPass[live] = rpinfo;
+                SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
+                                 "Error creating logical resume mirror, VkResult: %s",
+                                 ToStr(ret).c_str());
+                return false;
+              }
+            }
+            bool hasResolve = rpinfo.subpasses[s].depthstencilResolveAttachment >= 0;
+            for(uint32_t attachment : rpinfo.subpasses[s].resolveAttachments)
+              hasResolve |= attachment != VK_ATTACHMENT_UNUSED;
+            if(hasResolve)
+            {
+              SubpassResolvePatch<decltype(loadInfo)> resolveReferences(loadInfo, false, &rpinfo, s);
+              ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &loadInfo, NULL,
+                                                      &rpinfo.resolveRPs[s]);
+              if(ret != VK_SUCCESS)
+              {
+                m_CreationInfo.m_RenderPass[live] = rpinfo;
+                SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
+                                 "Error creating logical resolve mirror, VkResult: %s",
+                                 ToStr(ret).c_str());
+                return false;
+              }
+            }
+            PatchSubpassLoadOps(loadInfo, rpinfo, s, true);
+            SubpassResolvePatch<decltype(loadInfo)> resolvePatch(loadInfo, true, &rpinfo, s);
+            ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &loadInfo, NULL,
+                                                    &rpinfo.beginRPs[s]);
+            if(ret != VK_SUCCESS)
+            {
+              // Keep ownership in creation info so normal replay failure teardown releases all
+              // mirrors already created, as well as the original render pass and load mirrors.
+              m_CreationInfo.m_RenderPass[live] = rpinfo;
+              SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
+                               "Error creating logical subpass mirror, VkResult: %s",
+                               ToStr(ret).c_str());
+              return false;
+            }
+          }
+        }
+
         m_CreationInfo.m_RenderPass[live] = rpinfo;
       }
     }
@@ -1425,6 +1737,52 @@ VkResult WrappedVulkan::vkCreateRenderPass(VkDevice device, const VkRenderPassCr
 
         ResourceId loadRPid =
             GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), rpinfo.loadRPs[s]);
+      }
+
+      if(rpinfo.subpasses.size() > 1)
+      {
+        rpinfo.beginRPs.resize(pCreateInfo->subpassCount);
+        rpinfo.resumeRPs.resize(pCreateInfo->subpassCount);
+        rpinfo.resolveRPs.resize(pCreateInfo->subpassCount);
+        for(uint32_t s = 0; s < pCreateInfo->subpassCount; s++)
+        {
+          MakeSubpassLoadRP(info, pCreateInfo, s);
+          PatchSubpassLoadOps(info, rpinfo, s, false);
+          {
+            SubpassResolvePatch<decltype(info)> resumeReferences(info, true, &rpinfo, s);
+            ret =
+                ObjDisp(device)->CreateRenderPass(Unwrap(device), &info, NULL, &rpinfo.resumeRPs[s]);
+            if(ret != VK_SUCCESS)
+            {
+              m_CreationInfo.m_RenderPass[id] = rpinfo;
+              return ret;
+            }
+          }
+          bool hasResolve = rpinfo.subpasses[s].depthstencilResolveAttachment >= 0;
+          for(uint32_t attachment : rpinfo.subpasses[s].resolveAttachments)
+            hasResolve |= attachment != VK_ATTACHMENT_UNUSED;
+          if(hasResolve)
+          {
+            SubpassResolvePatch<decltype(info)> resolveReferences(info, false, &rpinfo, s);
+            ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &info, NULL,
+                                                    &rpinfo.resolveRPs[s]);
+            if(ret != VK_SUCCESS)
+            {
+              m_CreationInfo.m_RenderPass[id] = rpinfo;
+              return ret;
+            }
+          }
+          PatchSubpassLoadOps(info, rpinfo, s, true);
+          SubpassResolvePatch<decltype(info)> resolvePatch(info, true, &rpinfo, s);
+          ret = ObjDisp(device)->CreateRenderPass(Unwrap(device), &info, NULL, &rpinfo.beginRPs[s]);
+          if(ret != VK_SUCCESS)
+          {
+            // Keep ownership in creation info so normal replay failure teardown releases all
+            // mirrors already created, as well as the original render pass and load mirrors.
+            m_CreationInfo.m_RenderPass[id] = rpinfo;
+            return ret;
+          }
+        }
       }
 
       m_CreationInfo.m_RenderPass[id] = rpinfo;
@@ -1579,6 +1937,62 @@ bool WrappedVulkan::Serialise_vkCreateRenderPass2(SerialiserType &ser, VkDevice 
           }
         }
 
+        if(rpinfo.subpasses.size() > 1)
+        {
+          rpinfo.beginRPs.resize(CreateInfo.subpassCount);
+          rpinfo.resumeRPs.resize(CreateInfo.subpassCount);
+          rpinfo.resolveRPs.resize(CreateInfo.subpassCount);
+          for(uint32_t s = 0; s < CreateInfo.subpassCount; s++)
+          {
+            MakeSubpassLoadRP(loadInfo, &CreateInfo, s);
+            PatchSubpassLoadOps(loadInfo, rpinfo, s, false);
+            {
+              SubpassResolvePatch<decltype(loadInfo)> resumeReferences(loadInfo, true, &rpinfo, s);
+              ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &loadInfo, NULL,
+                                                       &rpinfo.resumeRPs[s]);
+              if(ret != VK_SUCCESS)
+              {
+                m_CreationInfo.m_RenderPass[live] = rpinfo;
+                SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
+                                 "Error creating logical resume mirror, VkResult: %s",
+                                 ToStr(ret).c_str());
+                return false;
+              }
+            }
+            bool hasResolve = rpinfo.subpasses[s].depthstencilResolveAttachment >= 0;
+            for(uint32_t attachment : rpinfo.subpasses[s].resolveAttachments)
+              hasResolve |= attachment != VK_ATTACHMENT_UNUSED;
+            if(hasResolve)
+            {
+              SubpassResolvePatch<decltype(loadInfo)> resolveReferences(loadInfo, false, &rpinfo, s);
+              ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &loadInfo, NULL,
+                                                       &rpinfo.resolveRPs[s]);
+              if(ret != VK_SUCCESS)
+              {
+                m_CreationInfo.m_RenderPass[live] = rpinfo;
+                SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
+                                 "Error creating logical resolve mirror, VkResult: %s",
+                                 ToStr(ret).c_str());
+                return false;
+              }
+            }
+            PatchSubpassLoadOps(loadInfo, rpinfo, s, true);
+            SubpassResolvePatch<decltype(loadInfo)> resolvePatch(loadInfo, true, &rpinfo, s);
+            ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &loadInfo, NULL,
+                                                     &rpinfo.beginRPs[s]);
+            if(ret != VK_SUCCESS)
+            {
+              // Keep ownership in creation info so normal replay failure teardown releases all
+              // mirrors already created, as well as the original render pass and load mirrors.
+              m_CreationInfo.m_RenderPass[live] = rpinfo;
+              SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
+                               "Error creating logical subpass mirror, VkResult: %s",
+                               ToStr(ret).c_str());
+              return false;
+            }
+          }
+        }
+
         m_CreationInfo.m_RenderPass[live] = rpinfo;
       }
     }
@@ -1685,6 +2099,52 @@ VkResult WrappedVulkan::vkCreateRenderPass2(VkDevice device,
 
         ResourceId loadRPid =
             GetResourceManager()->WrapResource(ResourceId(), Unwrap(device), rpinfo.loadRPs[s]);
+      }
+
+      if(rpinfo.subpasses.size() > 1)
+      {
+        rpinfo.beginRPs.resize(pCreateInfo->subpassCount);
+        rpinfo.resumeRPs.resize(pCreateInfo->subpassCount);
+        rpinfo.resolveRPs.resize(pCreateInfo->subpassCount);
+        for(uint32_t s = 0; s < pCreateInfo->subpassCount; s++)
+        {
+          MakeSubpassLoadRP(info, pCreateInfo, s);
+          PatchSubpassLoadOps(info, rpinfo, s, false);
+          {
+            SubpassResolvePatch<decltype(info)> resumeReferences(info, true, &rpinfo, s);
+            ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &info, NULL,
+                                                     &rpinfo.resumeRPs[s]);
+            if(ret != VK_SUCCESS)
+            {
+              m_CreationInfo.m_RenderPass[id] = rpinfo;
+              return ret;
+            }
+          }
+          bool hasResolve = rpinfo.subpasses[s].depthstencilResolveAttachment >= 0;
+          for(uint32_t attachment : rpinfo.subpasses[s].resolveAttachments)
+            hasResolve |= attachment != VK_ATTACHMENT_UNUSED;
+          if(hasResolve)
+          {
+            SubpassResolvePatch<decltype(info)> resolveReferences(info, false, &rpinfo, s);
+            ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &info, NULL,
+                                                     &rpinfo.resolveRPs[s]);
+            if(ret != VK_SUCCESS)
+            {
+              m_CreationInfo.m_RenderPass[id] = rpinfo;
+              return ret;
+            }
+          }
+          PatchSubpassLoadOps(info, rpinfo, s, true);
+          SubpassResolvePatch<decltype(info)> resolvePatch(info, true, &rpinfo, s);
+          ret = ObjDisp(device)->CreateRenderPass2(Unwrap(device), &info, NULL, &rpinfo.beginRPs[s]);
+          if(ret != VK_SUCCESS)
+          {
+            // Keep ownership in creation info so normal replay failure teardown releases all
+            // mirrors already created, as well as the original render pass and load mirrors.
+            m_CreationInfo.m_RenderPass[id] = rpinfo;
+            return ret;
+          }
+        }
       }
 
       m_CreationInfo.m_RenderPass[id] = rpinfo;
@@ -1930,22 +2390,18 @@ bool WrappedVulkan::Serialise_vkCopyImageToImage(SerialiserType &ser, VkDevice d
 
       AddAction(action);
 
-      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
-
+      VulkanEventNode &eventNode = GetLastEventNode();
       if(CopyImageToImageInfo.srcImage == CopyImageToImageInfo.dstImage)
       {
-        actionNode.resourceUsage.push_back(
-            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
-                         EventUsage(actionNode.action.eventId, ResourceUsage::Copy)));
+        eventNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage), ResourceUsage::Copy));
       }
       else
       {
-        actionNode.resourceUsage.push_back(
-            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage),
-                         EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
-        actionNode.resourceUsage.push_back(
-            make_rdcpair(GetResID(CopyImageToImageInfo.dstImage),
-                         EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
+        eventNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.srcImage), ResourceUsage::CopySrc));
+        eventNode.resourceUsage.push_back(
+            make_rdcpair(GetResID(CopyImageToImageInfo.dstImage), ResourceUsage::CopyDst));
       }
     }
   }
@@ -2025,10 +2481,8 @@ bool WrappedVulkan::Serialise_vkCopyImageToMemory(SerialiserType &ser, VkDevice 
 
       AddAction(action);
 
-      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
-
-      actionNode.resourceUsage.push_back(make_rdcpair(
-          GetResID(srcImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopySrc)));
+      VulkanEventNode &eventNode = GetLastEventNode();
+      eventNode.resourceUsage.push_back(make_rdcpair(GetResID(srcImage), ResourceUsage::CopySrc));
     }
   }
 
@@ -2112,10 +2566,8 @@ bool WrappedVulkan::Serialise_vkCopyMemoryToImage(SerialiserType &ser, VkDevice 
 
       AddAction(action);
 
-      VulkanActionTreeNode &actionNode = GetActionStack().back()->children.back();
-
-      actionNode.resourceUsage.push_back(make_rdcpair(
-          GetResID(dstImage), EventUsage(actionNode.action.eventId, ResourceUsage::CopyDst)));
+      VulkanEventNode &eventNode = GetLastEventNode();
+      eventNode.resourceUsage.push_back(make_rdcpair(GetResID(dstImage), ResourceUsage::CopyDst));
     }
   }
 
@@ -2573,6 +3025,8 @@ static ObjData GetObjData(VkObjectType objType, uint64_t object)
     case VK_OBJECT_TYPE_TENSOR_ARM:
     case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
     case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM:
+    case VK_OBJECT_TYPE_GPA_SESSION_AMD:
+    case VK_OBJECT_TYPE_SHADER_INSTRUMENTATION_ARM:
     case VK_OBJECT_TYPE_MAX_ENUM: break;
   }
 
@@ -2821,10 +3275,8 @@ bool WrappedVulkan::Serialise_SetCommandAnnotation(SerialiserType &ser, VkComman
       if(!m_RootAnnotation)
         m_RootAnnotation = new SDObject("Event Annotations"_lit, "Event Annotations"_lit);
 
-      PendingAnnotation annot = {m_BakedCmdBufferInfo[m_LastCmdBufferID].curEventID, key, valueType,
-                                 valueVectorWidth, value};
-
-      m_BakedCmdBufferInfo[m_LastCmdBufferID].annotations.push_back(annot);
+      PendingAnnotation annot = {0, key, valueType, valueVectorWidth, value};
+      m_BakedCmdBufferInfo[m_LastCmdBufferID].pendingAnnotations.push_back(annot);
 
       m_Replay->WriteFrameRecord().frameInfo.containsAnnotations = true;
     }
@@ -2994,7 +3446,8 @@ VkResult WrappedVulkan::vkDebugMarkerSetObjectNameEXT(VkDevice device,
     if(ObjDisp(device)->DebugMarkerSetObjectNameEXT)
       ObjDisp(device)->DebugMarkerSetObjectNameEXT(Unwrap(device), &unwrapped);
 
-    if(data.record)
+    VkResourceRecord *record = data.record;
+    if(record)
     {
       CACHE_THREAD_SERIALISER();
 
@@ -3003,23 +3456,28 @@ VkResult WrappedVulkan::vkDebugMarkerSetObjectNameEXT(VkDevice device,
 
       Chunk *chunk = scope.Get();
 
-      data.record->LockChunks();
-      while(data.record->HasChunks())
+      // command buffer records clear their chunks in vkBeginCommandBuffer, so store the name in the
+      // persistent alloc record so we don't lose it
+      if(record->resType == eResCommandBuffer)
+        record = record->cmdInfo->allocRecord;
+
+      record->LockChunks();
+      while(record->HasChunks())
       {
-        Chunk *end = data.record->GetLastChunk();
+        Chunk *end = record->GetLastChunk();
 
         if(end->GetChunkType<VulkanChunk>() == VulkanChunk::vkDebugMarkerSetObjectNameEXT)
         {
           end->Delete();
-          data.record->PopChunk();
+          record->PopChunk();
           continue;
         }
 
         break;
       }
-      data.record->UnlockChunks();
+      record->UnlockChunks();
 
-      data.record->AddChunk(chunk);
+      record->AddChunk(chunk);
     }
   }
 
@@ -3132,7 +3590,8 @@ VkResult WrappedVulkan::vkSetDebugUtilsObjectNameEXT(VkDevice device,
     if(ObjDisp(device)->SetDebugUtilsObjectNameEXT)
       ObjDisp(device)->SetDebugUtilsObjectNameEXT(Unwrap(device), &unwrapped);
 
-    if(data.record)
+    VkResourceRecord *record = data.record;
+    if(record)
     {
       CACHE_THREAD_SERIALISER();
 
@@ -3141,23 +3600,28 @@ VkResult WrappedVulkan::vkSetDebugUtilsObjectNameEXT(VkDevice device,
 
       Chunk *chunk = scope.Get();
 
-      data.record->LockChunks();
-      while(data.record->HasChunks())
+      // command buffer records clear their chunks in vkBeginCommandBuffer, so store the name in the
+      // persistent alloc record so we don't lose it
+      if(record->resType == eResCommandBuffer)
+        record = record->cmdInfo->allocRecord;
+
+      record->LockChunks();
+      while(record->HasChunks())
       {
-        Chunk *end = data.record->GetLastChunk();
+        Chunk *end = record->GetLastChunk();
 
         if(end->GetChunkType<VulkanChunk>() == VulkanChunk::vkSetDebugUtilsObjectNameEXT)
         {
           end->Delete();
-          data.record->PopChunk();
+          record->PopChunk();
           continue;
         }
 
         break;
       }
-      data.record->UnlockChunks();
+      record->UnlockChunks();
 
-      data.record->AddChunk(chunk);
+      record->AddChunk(chunk);
     }
   }
 
@@ -3366,3 +3830,158 @@ INSTANTIATE_FUNCTION_SERIALISED(void, SetCommandAnnotation, VkCommandBuffer cmd,
 INSTANTIATE_FUNCTION_SERIALISED(void, SetQueueAnnotation, VkQueue queue, rdcstr key,
                                 RENDERDOC_AnnotationType valueType, uint32_t valueVectorWidth,
                                 RENDERDOC_AnnotationValue value);
+
+#if ENABLED(ENABLE_UNIT_TESTS)
+
+#undef None
+#undef Always
+#include "catch/catch.hpp"
+
+TEST_CASE("Logical subpass mirrors preserve loads and resolve layouts", "[vulkan][renderpass]")
+{
+  VulkanCreationInfo::RenderPass original;
+  original.attachments.resize(3);
+  original.subpasses.resize(3);
+  for(auto &sub : original.subpasses)
+  {
+    sub.depthstencilAttachment = sub.depthstencilResolveAttachment = -1;
+    sub.fragmentDensityAttachment = sub.shadingRateAttachment = -1;
+  }
+  original.subpasses[0].colorAttachments = {0};
+  original.subpasses[0].colorLayouts = {VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+  original.subpasses[1].inputAttachments = {0};
+  original.subpasses[1].inputLayouts = {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  original.subpasses[1].inputStencilLayouts = {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  original.subpasses[1].colorAttachments = {1};
+  original.subpasses[1].colorLayouts = {VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+  original.subpasses[1].resolveAttachments = {2};
+  original.subpasses[1].resolveLayouts = {VK_IMAGE_LAYOUT_GENERAL};
+  for(auto &att : original.attachments)
+  {
+    att.initialLayout = att.stencilInitialLayout = VK_IMAGE_LAYOUT_GENERAL;
+    att.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    att.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_NONE;
+    att.storeOp = att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  }
+
+  CHECK(original.FirstSubpassForAttachment(0) == 0);
+  CHECK(original.FirstSubpassForAttachment(1) == 1);
+  CHECK(original.FirstSubpassForAttachment(2) == 1);
+  CHECK(original.FirstSubpassForAttachment(3) == ~0U);
+  CHECK(original.AttachmentLayout(0, 0) == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+  CHECK(original.AttachmentLayout(0, 1) == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  // Attachment zero is absent in subpass 2: a helper pass must preserve its last input layout.
+  CHECK(original.AttachmentLayout(0, 2) == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  CHECK(original.AttachmentLayout(1, 0) == VK_IMAGE_LAYOUT_GENERAL);
+
+  VkAttachmentDescription attachments[3] = {};
+  VkRenderPassCreateInfo info = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+  info.attachmentCount = 3;
+  info.pAttachments = attachments;
+  PatchSubpassLoadOps(info, original, 1, true);
+  CHECK(attachments[0].loadOp == VK_ATTACHMENT_LOAD_OP_LOAD);
+  CHECK(attachments[1].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR);
+  CHECK(attachments[2].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR);
+  CHECK(attachments[1].stencilLoadOp == VK_ATTACHMENT_LOAD_OP_NONE);
+  for(const auto &att : attachments)
+    CHECK(att.storeOp == VK_ATTACHMENT_STORE_OP_STORE);
+
+  // Repeated interruption resumes at this logical subpass without clearing either its input or
+  // the values already produced in it, even when the source final store discards the attachment.
+  PatchSubpassLoadOps(info, original, 2, false);
+  CHECK(attachments[0].initialLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  CHECK(attachments[0].finalLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  for(const auto &att : attachments)
+  {
+    CHECK(att.loadOp == VK_ATTACHMENT_LOAD_OP_LOAD);
+    CHECK(att.stencilLoadOp == VK_ATTACHMENT_LOAD_OP_LOAD);
+    CHECK(att.storeOp == VK_ATTACHMENT_STORE_OP_STORE);
+    CHECK(att.stencilStoreOp == VK_ATTACHMENT_STORE_OP_STORE);
+  }
+
+  VkAttachmentReference color = {1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+  VkAttachmentReference resolve = {2, VK_IMAGE_LAYOUT_GENERAL};
+  VkSubpassDescription subpasses[2] = {};
+  subpasses[1].colorAttachmentCount = 1;
+  subpasses[1].pColorAttachments = &color;
+  subpasses[1].pResolveAttachments = &resolve;
+  VkRenderPassCreateInfo source = info;
+  source.subpassCount = 2;
+  source.pSubpasses = subpasses;
+  MakeSubpassLoadRP(info, &source, 1);
+  CHECK(info.subpassCount == 1);
+  CHECK(info.pSubpasses == &subpasses[1]);
+  CHECK(attachments[1].initialLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+  CHECK(attachments[1].finalLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+  CHECK(attachments[2].initialLayout == VK_IMAGE_LAYOUT_GENERAL);
+  CHECK(attachments[2].finalLayout == VK_IMAGE_LAYOUT_GENERAL);
+  {
+    SubpassResolvePatch<VkRenderPassCreateInfo> interruption(info, true);
+    CHECK(info.pSubpasses->pResolveAttachments == NULL);
+    CHECK(subpasses[1].pResolveAttachments == &resolve);
+  }
+  CHECK(info.pSubpasses == &subpasses[1]);
+  CHECK(info.pSubpasses->pResolveAttachments == &resolve);
+
+  // A source attachment can be both an input and a color output. Physical mirrors and the
+  // explicit transition must choose one layout without mutating the inspected source roles.
+  original.subpasses[1].inputAttachments.push_back(1);
+  original.subpasses[1].inputLayouts.push_back(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  original.subpasses[1].inputStencilLayouts.push_back(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  VkAttachmentReference input = {1, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  subpasses[1].inputAttachmentCount = 1;
+  subpasses[1].pInputAttachments = &input;
+  CHECK(original.AttachmentLayout(1, 1) == VK_IMAGE_LAYOUT_GENERAL);
+  CHECK(original.AttachmentLayout(1, 2) == VK_IMAGE_LAYOUT_GENERAL);
+  PatchSubpassLoadOps(info, original, 1, false);
+  CHECK(attachments[1].initialLayout == VK_IMAGE_LAYOUT_GENERAL);
+  CHECK(attachments[1].finalLayout == VK_IMAGE_LAYOUT_GENERAL);
+  {
+    SubpassResolvePatch<VkRenderPassCreateInfo> interruption(info, true, &original, 1);
+    CHECK(info.pSubpasses->pColorAttachments[0].layout == VK_IMAGE_LAYOUT_GENERAL);
+    CHECK(info.pSubpasses->pInputAttachments[0].layout == VK_IMAGE_LAYOUT_GENERAL);
+    CHECK(info.pSubpasses->pResolveAttachments == NULL);
+    CHECK(color.layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    CHECK(input.layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
+  {
+    SubpassResolvePatch<VkRenderPassCreateInfo> commit(info, false, &original, 1);
+    CHECK(info.pSubpasses->pResolveAttachments != NULL);
+    CHECK(info.pSubpasses->pResolveAttachments[0].layout == VK_IMAGE_LAYOUT_GENERAL);
+  }
+
+  original.subpasses[1].inputLayouts[1] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  CHECK(original.AttachmentLayout(1, 1) == VK_IMAGE_LAYOUT_GENERAL);
+
+  // RenderPass2 depth/stencil resolve preserves its independent stencil layout as well.
+  VkAttachmentReferenceStencilLayout stencil = {VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_STENCIL_LAYOUT,
+                                                NULL, VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL};
+  VkAttachmentReference2 depthResolve = {VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2, &stencil, 2,
+                                         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL};
+  VkSubpassDescriptionDepthStencilResolve resolveInfo = {
+      VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE, NULL,
+      VK_RESOLVE_MODE_SAMPLE_ZERO_BIT, VK_RESOLVE_MODE_SAMPLE_ZERO_BIT, &depthResolve};
+  VkSubpassDescription2 subpass2 = {VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2, &resolveInfo};
+  VkAttachmentDescriptionStencilLayout stencilAttachment = {
+      VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_STENCIL_LAYOUT};
+  VkAttachmentDescription2 attachments2[3] = {};
+  attachments2[2].pNext = &stencilAttachment;
+  PatchSubpassDepthResolve(attachments2, &subpass2);
+  CHECK(attachments2[2].initialLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+  CHECK(attachments2[2].finalLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+  CHECK(stencilAttachment.stencilInitialLayout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL);
+  CHECK(stencilAttachment.stencilFinalLayout == VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL);
+  VkRenderPassCreateInfo2 info2 = {VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2};
+  info2.subpassCount = 1;
+  info2.pSubpasses = &subpass2;
+  {
+    SubpassResolvePatch<VkRenderPassCreateInfo2> interruption(info2, true);
+    CHECK(FindNextStruct(info2.pSubpasses,
+                         VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE) == NULL);
+    CHECK(FindNextStruct(&subpass2, VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE) ==
+          (const VkBaseInStructure *)&resolveInfo);
+  }
+  CHECK(info2.pSubpasses == &subpass2);
+}
+
+#endif

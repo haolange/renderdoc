@@ -1,10 +1,14 @@
+from typing import Dict, List, Tuple
+
 import renderdoc as rd
 import rdtest
 
 class VK_Resource_Usage(rdtest.TestCase):
     demos_test_name = 'VK_Resource_Usage'
-    resourceUsages = {}
-    eids = []
+    resourceUsages: Dict[rd.ResourceId, List[rd.EventUsage]] = {}
+    eids: List[int] = []
+    markerStart = 0
+    markerEnd = 0
 
     def add_action(self, action: rd.ActionDescription):
         self.eids.append(action.eventId)
@@ -13,13 +17,23 @@ class VK_Resource_Usage(rdtest.TestCase):
         for e in action.events:
             self.eids.append(e.eventId)
 
-    def check_resource_usage(self, res: rd.ResourceDescription, expectedUsages=[]):
+    def check_resource_usage(self, res: rd.ResourceDescription, expectedUsages: List[Tuple[int,rd.ResourceUsage]]):
         usages = self.resourceUsages[res.resourceId]
-        if len(usages) != len(expectedUsages):
-            for u in usages:
-                rdtest.log.print(f"Resource '{res.name}' {res.resourceId} usage EID:{u.eventId} usage:{u.usage.name}")
-            raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Incorrect resource usages count expected:{len(expectedUsages)} actual:{len(usages)}")
-        for i, u in enumerate(usages):
+        if len(usages) == 1 and usages[0].eventId == 0 and usages[0].usage == rd.ResourceUsage.Unused:
+            resUsages = usages
+        else:
+            resUsages = [u for u in usages if u.eventId >= self.markerStart and u.eventId <= self.markerEnd]
+        rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId} usages:{len(resUsages)} expectedUsages:{len(expectedUsages)}")
+        if len(resUsages) != len(expectedUsages):
+            rdtest.log.print(f"Usages for Resource '{res.name}' {res.resourceId}")
+            for u in resUsages:
+                rdtest.log.print(f"EID:{u.eventId} usage:{u.usage.name}")
+            rdtest.log.print(f"Expected Usages for Resource '{res.name}' {res.resourceId}")
+            for u in expectedUsages:
+                eid, usage = u
+                rdtest.log.print(f"EID:{eid} usage:{usage.name}")
+            raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Incorrect resource usages count expected:{len(expectedUsages)} actual:{len(resUsages)}")
+        for i, u in enumerate(resUsages):
             eid, usage = expectedUsages[i]
             if u.usage != usage:
                 raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} EID:{u.eventId} Incorrect resource usage expected:{usage.name} actual:{u.usage.name}")
@@ -27,6 +41,7 @@ class VK_Resource_Usage(rdtest.TestCase):
                 raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} usage:{u.usage.name} Incorrect resource usage EID expected:{eid} actual:{u.eventId}")
 
     def check_capture(self):
+        assert self.controller is not None
         # Cache the resource usage before running any replay i.e. without calling SetFrameEvent
         resources = self.controller.GetResources()
         for res in resources:
@@ -44,20 +59,162 @@ class VK_Resource_Usage(rdtest.TestCase):
         meshShader = self.find_action("Mesh Shader") is not None
         rdtest.log.print(f"Has Mesh Shader: {'Yes' if meshShader else 'No'}")
 
-        countDrawIndirectCount = 30 if drawIndirectCount else 0
-        countNested = 39 if nestedSecondaries else 0
-        countDescBufferCopy = 10 if descBuffer else 0
-        countDescBuffer = 21 if descBuffer else 0
-        countDescBuffer += countDescBufferCopy
-        countMeshShader = 33 if meshShader else 0
+        # Walk the actions finding all the Dispatch, Draw, DrawIndexed, DrawIndirect, DrawIndirectCount
+        sdfile = self.controller.GetStructuredFile()
+        actions = self.controller.GetRootActions().copy()
+
+        drawEIDs: List[int] = []
+        meshDispatchEIDs: List[int] = []
+        indexedEIDs: List[int] = []
+        indexedSpecialEIDs: List[int] = []
+        dispatchEIDs: List[int] = []
+        indirectEIDs: List[int] = []
+        multiEIDs: List[int] = []
+        indirectCountEIDs: List[int] = []
+        submitEIDs: List[int] = []
+        waitFencesEIDs: List[int] = []
+        resetFencesEIDs: List[int] = []
+        descSetDrawEIDs: List[int] = []
+        descBufferDrawEIDs: List[int] = []
+        cmdDrawIndirectEIDs: List[int] = []
+        cmdMeshDispatchIndirectEIDs: List[int] = []
+        endRenderPassEIDs : List[int] = []
+        fillBufferEIDs: List[int] = []
+        copyBufferEIDs: List[int] = []
+
+        markerGraphics = 0
+        markerGraphicsNoDescriptorSet = 0
+        markerGraphicsDescriptorSet = 0
+        markerGraphicsSecondaryCommandBuffer = 0
+        markerIndirect = 0
+        markerIndirectWriteIndirectDispatchData  = 0
+        markerIndirectDispatchWriteIndirectDrawData = 0
+        markerIndirectIndirectDraws = 0
+        markerIndirectSecondaryCommandBuffer = 0
+        markerIndirectSecondaryCommandBufferDispatchIndirect = 0
+        markerIndirectEnd = 0
+        markerNestedSecondaryCommandBuffer = 0
+        markerNestedSecondaryCommandBufferDispatch = 0
+        markerDescriptorBuffer = 0
+        markerBarrierCommandSubmitFence = 0
+        markerCompute = 0
+        markerComputeDescriptorSet = 0
+        markerComputeSecondaryCommandBuffer = 0
+        markerLooseEventsAfterIndirectDrawsDrawIndirectSingle = 0
+        markerMultipleCommandBufferSubmits = 0
+        markerMultipleSecondaryCommandBufferExecutes = 0
+
+        self.markerStart = self.find_action("Resource Usage: Start").eventId
+        self.markerEnd = self.find_action("Resource Usage: End").eventId
+        markerIndirectWriteIndirectDispatchData = self.find_action("Indirect Write IndirectDispatch Data").eventId
+        markerGraphics = self.find_action("Graphics").eventId
+        markerGraphicsNoDescriptorSet = self.find_action("No Descriptor Set", markerGraphics).eventId
+        markerGraphicsDescriptorSet = self.find_action("Descriptor Set", markerGraphicsNoDescriptorSet+1).eventId
+        markerGraphicsSecondaryCommandBuffer = self.find_action("Secondary Command Buffer").eventId
+        if nestedSecondaries:
+            markerNestedSecondaryCommandBuffer = self.find_action("Nested Secondary Command Buffer").eventId
+            markerNestedSecondaryCommandBufferDispatch = self.find_action("Dispatch", markerNestedSecondaryCommandBuffer).eventId
+        if descBuffer:
+            markerDescriptorBuffer = self.find_action("Descriptor Buffer").eventId
+        markerBarrierCommandSubmitFence = self.find_action("Barrier Command Submit Fence").eventId
+        markerCompute = self.find_action("Compute").eventId
+        markerComputeSecondaryCommandBuffer = self.find_action("Secondary Command Buffer", markerCompute).eventId
+        markerLooseEventsAfterIndirectDraws = self.find_action("Loose Events After Indirect Draws").eventId
+        markerLooseEventsAfterIndirectDrawsDrawIndirectSingle = self.find_action("DrawIndirect: Single", markerLooseEventsAfterIndirectDraws).eventId
+        markerMultipleCommandBufferSubmits = self.find_action("Multiple Command Buffer Submits").eventId
+        markerMultipleSecondaryCommandBufferExecutes = self.find_action("Multiple Secondary Command Buffer Executes").eventId
+
+        while len(actions) > 0:
+            action = actions.pop(0)
+            actions += action.children
+            flags = action.flags
+            if flags & rd.ActionFlags.Drawcall:
+                drawEIDs.append(action.eventId)
+            if flags & rd.ActionFlags.Indexed:
+                # Special case remove this from the indexed list
+                # vkCmdDrawIndexedIndirect(1) => <3, 1>
+                if action.customName.endswith("<3, 1>"):
+                    indexedSpecialEIDs.append(action.eventId)
+                else:
+                    indexedEIDs.append(action.eventId)
+            if flags & rd.ActionFlags.Dispatch:
+                dispatchEIDs.append(action.eventId)
+            if flags & rd.ActionFlags.Indirect:
+                indirectEIDs.append(action.eventId)
+                if "Count" in action.customName:
+                    indirectCountEIDs.append(action.eventId)
+            if flags & rd.ActionFlags.MeshDispatch:
+                meshDispatchEIDs.append(action.eventId)
+            if flags & rd.ActionFlags.MultiAction:
+                multiEIDs.append(action.eventId)
+                if "Count" in action.customName:
+                    if not action.eventId in indirectCountEIDs:
+                        indirectCountEIDs.append(action.eventId)
+            if flags & rd.ActionFlags.PushMarker:
+                parentName = action.parent.customName if action.parent is not None else None
+                markerPath = parentName + "." + action.customName if parentName is not None else action.customName
+                if not markerIndirect and markerPath == "Indirect":
+                    markerIndirect = action.eventId
+                    markerIndirectEnd = action.children[-1].eventId
+                if not markerComputeDescriptorSet and markerPath == "Compute.Descriptor Set":
+                    markerComputeDescriptorSet = action.eventId
+            if "vkCmdDrawIndirect(" in action.customName:
+                cmdDrawIndirectEIDs.append(action.eventId)
+            if "vkCmdDrawIndexedIndirect(" in action.customName:
+                cmdDrawIndirectEIDs.append(action.eventId)
+            if "vkCmdDrawMeshTasksIndirectEXT(" in action.customName:
+                cmdMeshDispatchIndirectEIDs.append(action.eventId)
+            for e in action.events:
+                eventName = sdfile.chunks[e.chunkIndex].name
+                if "vkQueueSubmit" in eventName:
+                    submitEIDs.append(e.eventId)
+                if "vkWaitForFences" in eventName:
+                    waitFencesEIDs.append(e.eventId)
+                if "vkResetFences" in eventName:
+                    resetFencesEIDs.append(e.eventId)
+                if "vkCmdCopyBuffer" in eventName:
+                    copyBufferEIDs.append(e.eventId)
+                if "vkCmdFillBuffer" in eventName:
+                    fillBufferEIDs.append(e.eventId)
+                if "vkCmdEndRenderPass" in eventName:
+                    endRenderPassEIDs.append(e.eventId)
+
+        markerIndirectDispatchWriteIndirectDrawData = self.find_action("Indirect Dispatch Write IndirectDraw Data", markerIndirect).eventId
+        markerIndirectIndirectDraws = self.find_action("Indirect Draws", markerIndirectDispatchWriteIndirectDrawData).eventId
+        markerIndirectSecondaryCommandBuffer = self.find_action("Secondary Command Buffer", markerIndirect).eventId
+        markerIndirectSecondaryCommandBufferDispatchIndirect = self.find_action("DispatchIndirect", markerIndirectSecondaryCommandBuffer).eventId
+
+        descSetDrawEIDs += [eid for eid in drawEIDs 
+                            if (eid > markerGraphicsDescriptorSet and eid < markerGraphicsSecondaryCommandBuffer) or 
+                               (eid > markerIndirect and (not nestedSecondaries or eid < markerNestedSecondaryCommandBuffer))]
+        descBufferDrawEIDs += [eid for eid in drawEIDs if descBuffer and eid > markerDescriptorBuffer]
+
+        drawEIDs.sort()
+        indexedEIDs.sort()
+        indexedSpecialEIDs.sort()
+        dispatchEIDs.sort()
+        multiEIDs.sort()
+        indirectEIDs.sort()
+        meshDispatchEIDs.sort()
+        indirectCountEIDs.sort()
+        submitEIDs.sort()
+        waitFencesEIDs.sort()
+        resetFencesEIDs.sort()
+        descSetDrawEIDs.sort()
+        descBufferDrawEIDs.sort()
+        fillBufferEIDs.sort()
+        copyBufferEIDs.sort()
+        endRenderPassEIDs.sort()
+        cmdDrawIndirectEIDs.sort()
+        cmdMeshDispatchIndirectEIDs.sort()
 
         action = self.find_action("Draw")
-        self.controller.SetFrameEvent(action.eventId, False)
+        self.set_event(action.eventId, False)
         swapImage = self.controller.GetPipelineState().GetOutputTargets()[0].resource
 
         with rdtest.log.auto_section("Checking Resource Usage"):
-            for res in self.controller.GetResources():
-                expectedUsage = []
+            for res in resources:
+                expectedUsage: List[Tuple[int,rd.ResourceUsage]] = []
                 if res.type == rd.ResourceType.Device:
                     expectedUsage = [(0,rd.ResourceUsage.Unused)]
                 elif res.type == rd.ResourceType.Queue:
@@ -67,76 +224,14 @@ class VK_Resource_Usage(rdtest.TestCase):
                 elif res.type == rd.ResourceType.SwapchainImage:
                     # the swap chain image has usage, anything else does not
                     if res.resourceId == swapImage:
-                        expectedUsage = [(6,rd.ResourceUsage.Barrier), 
-                                        (6,rd.ResourceUsage.Discard), 
-                                        (7,rd.ResourceUsage.Clear), 
-                                        (8,rd.ResourceUsage.Barrier), 
-                                        (32,rd.ResourceUsage.ColorTarget), 
-                                        (35,rd.ResourceUsage.ColorTarget), 
-                                        (42,rd.ResourceUsage.ColorTarget), 
-                                        (45,rd.ResourceUsage.ColorTarget), 
-                                        (59,rd.ResourceUsage.ColorTarget), 
-                                        (62,rd.ResourceUsage.ColorTarget), 
-                                        (73,rd.ResourceUsage.ColorTarget), 
-                                        (76,rd.ResourceUsage.ColorTarget), 
-                                        (118,rd.ResourceUsage.ColorTarget), 
-                                        (122,rd.ResourceUsage.ColorTarget), 
-                                        (126,rd.ResourceUsage.ColorTarget), 
-                                        (127,rd.ResourceUsage.ColorTarget), 
-                                        (128,rd.ResourceUsage.ColorTarget), 
-                                        (129,rd.ResourceUsage.ColorTarget), 
-                                        (134,rd.ResourceUsage.ColorTarget), 
-                                        (135,rd.ResourceUsage.ColorTarget), 
-                                        (136,rd.ResourceUsage.ColorTarget), 
-                                        (140,rd.ResourceUsage.ColorTarget), 
-                                        (175,rd.ResourceUsage.ColorTarget), 
-                                        (179,rd.ResourceUsage.ColorTarget), 
-                                        (180,rd.ResourceUsage.ColorTarget), 
-                                        (181,rd.ResourceUsage.ColorTarget), 
-                                        (182,rd.ResourceUsage.ColorTarget), 
-                                        (187,rd.ResourceUsage.ColorTarget), 
-                                        (188,rd.ResourceUsage.ColorTarget), 
-                                        (189,rd.ResourceUsage.ColorTarget), 
-                                        (206,rd.ResourceUsage.ColorTarget), 
-                                        (210,rd.ResourceUsage.ColorTarget), 
-                                        (211,rd.ResourceUsage.ColorTarget), 
-                                        (212,rd.ResourceUsage.ColorTarget), 
-                                        (213,rd.ResourceUsage.ColorTarget), 
-                                        (218,rd.ResourceUsage.ColorTarget), 
-                                        (219,rd.ResourceUsage.ColorTarget), 
-                                        (220,rd.ResourceUsage.ColorTarget), 
-                                        (225,rd.ResourceUsage.ColorTarget)] 
-                        if drawIndirectCount:
-                            expectedUsage += [
-                                        (230,rd.ResourceUsage.ColorTarget), 
-                                        (233,rd.ResourceUsage.ColorTarget), 
-                                        (237,rd.ResourceUsage.ColorTarget), 
-                                        (241,rd.ResourceUsage.ColorTarget), 
-                                        (246,rd.ResourceUsage.ColorTarget), 
-                                        (247,rd.ResourceUsage.ColorTarget), 
-                                        (248,rd.ResourceUsage.ColorTarget), 
-                                        (253,rd.ResourceUsage.ColorTarget), 
-                                        (254,rd.ResourceUsage.ColorTarget)]
-                        if nestedSecondaries:
-                            expectedUsage += [
-                                        (249+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.ColorTarget), 
-                                        (252+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.ColorTarget)] 
-                        if descBuffer:
-                            expectedUsage += [
-                                        (254+countDrawIndirectCount+countNested,rd.ResourceUsage.ColorTarget), 
-                                        (257+countDrawIndirectCount+countNested,rd.ResourceUsage.ColorTarget)] 
-                        if meshShader:
-                            expectedUsage += [
-                                        (239+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (243+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (244+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (247+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (250+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (254+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (258+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget), 
-                                        (262+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.ColorTarget)] 
-
-                        expectedUsage += [(233+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier)]
+                        expectedUsage = [
+                                        (self.markerStart + 1,rd.ResourceUsage.Barrier), 
+                                        (self.markerStart + 1,rd.ResourceUsage.Discard), 
+                                        (self.markerStart + 2,rd.ResourceUsage.Clear), 
+                                        (self.markerStart + 3,rd.ResourceUsage.Barrier)] 
+                        expectedUsage += [(eid,rd.ResourceUsage.ColorTarget) for eid in drawEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.ColorTarget) for eid in meshDispatchEIDs]
+                        expectedUsage += [(markerBarrierCommandSubmitFence - 1, rd.ResourceUsage.Barrier)]
                     else:
                         expectedUsage = []
                 elif res.type == rd.ResourceType.RenderPass:
@@ -154,251 +249,124 @@ class VK_Resource_Usage(rdtest.TestCase):
                 elif res.type == rd.ResourceType.PipelineState:
                     expectedUsage = [(0,rd.ResourceUsage.Unused)]
                 elif res.type == rd.ResourceType.Buffer:
-                    if (res.name == "Vertex Buffer"):
-                        expectedUsage = [(32,rd.ResourceUsage.VertexBuffer), 
-                                        (35,rd.ResourceUsage.VertexBuffer),
-                                        (42,rd.ResourceUsage.VertexBuffer),
-                                        (45,rd.ResourceUsage.VertexBuffer),
-                                        (59,rd.ResourceUsage.VertexBuffer), 
-                                        (62,rd.ResourceUsage.VertexBuffer), 
-                                        (73,rd.ResourceUsage.VertexBuffer), 
-                                        (76,rd.ResourceUsage.VertexBuffer), 
-                                        (118,rd.ResourceUsage.VertexBuffer), 
-                                        (122,rd.ResourceUsage.VertexBuffer), 
-                                        (126,rd.ResourceUsage.VertexBuffer), 
-                                        (127,rd.ResourceUsage.VertexBuffer), 
-                                        (128,rd.ResourceUsage.VertexBuffer), 
-                                        (129,rd.ResourceUsage.VertexBuffer), 
-                                        (134,rd.ResourceUsage.VertexBuffer), 
-                                        (135,rd.ResourceUsage.VertexBuffer), 
-                                        (136,rd.ResourceUsage.VertexBuffer), 
-                                        (140,rd.ResourceUsage.VertexBuffer), 
-                                        (175,rd.ResourceUsage.VertexBuffer), 
-                                        (179,rd.ResourceUsage.VertexBuffer), 
-                                        (180,rd.ResourceUsage.VertexBuffer), 
-                                        (181,rd.ResourceUsage.VertexBuffer), 
-                                        (182,rd.ResourceUsage.VertexBuffer), 
-                                        (187,rd.ResourceUsage.VertexBuffer), 
-                                        (188,rd.ResourceUsage.VertexBuffer), 
-                                        (189,rd.ResourceUsage.VertexBuffer), 
-                                        (206,rd.ResourceUsage.VertexBuffer), 
-                                        (210,rd.ResourceUsage.VertexBuffer), 
-                                        (211,rd.ResourceUsage.VertexBuffer), 
-                                        (212,rd.ResourceUsage.VertexBuffer), 
-                                        (213,rd.ResourceUsage.VertexBuffer), 
-                                        (218,rd.ResourceUsage.VertexBuffer), 
-                                        (219,rd.ResourceUsage.VertexBuffer), 
-                                        (220,rd.ResourceUsage.VertexBuffer),
-                                        (225,rd.ResourceUsage.VertexBuffer)] 
-                        if drawIndirectCount:
-                            expectedUsage += [
-                                        (230,rd.ResourceUsage.VertexBuffer), 
-                                        (233,rd.ResourceUsage.VertexBuffer), 
-                                        (237,rd.ResourceUsage.VertexBuffer), 
-                                        (241,rd.ResourceUsage.VertexBuffer), 
-                                        (246,rd.ResourceUsage.VertexBuffer), 
-                                        (247,rd.ResourceUsage.VertexBuffer), 
-                                        (248,rd.ResourceUsage.VertexBuffer), 
-                                        (253,rd.ResourceUsage.VertexBuffer), 
-                                        (254,rd.ResourceUsage.VertexBuffer)]
-                        if nestedSecondaries:
-                            expectedUsage += [
-                                        (249+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.VertexBuffer), 
-                                        (252+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.VertexBuffer)]
-                        if descBuffer:
-                            expectedUsage += [
-                                        (254+countDrawIndirectCount+countNested,rd.ResourceUsage.VertexBuffer), 
-                                        (257+countDrawIndirectCount+countNested,rd.ResourceUsage.VertexBuffer)]
-                    if (res.name == "Index Buffer"):
-                        expectedUsage = [(35,rd.ResourceUsage.IndexBuffer),
-                                        (45,rd.ResourceUsage.IndexBuffer),
-                                        (62,rd.ResourceUsage.IndexBuffer),
-                                        (76,rd.ResourceUsage.IndexBuffer),
-                                        (134,rd.ResourceUsage.IndexBuffer),
-                                        (135,rd.ResourceUsage.IndexBuffer),
-                                        (136,rd.ResourceUsage.IndexBuffer),
-                                        (140,rd.ResourceUsage.IndexBuffer),
-                                        (187,rd.ResourceUsage.IndexBuffer),
-                                        (188,rd.ResourceUsage.IndexBuffer),
-                                        (189,rd.ResourceUsage.IndexBuffer),
-                                        (218,rd.ResourceUsage.IndexBuffer),
-                                        (219,rd.ResourceUsage.IndexBuffer),
-                                        (220,rd.ResourceUsage.IndexBuffer)]
-                        if drawIndirectCount:
-                            expectedUsage += [
-                                        (233,rd.ResourceUsage.IndexBuffer), 
-                                        (241,rd.ResourceUsage.IndexBuffer), 
-                                        (253,rd.ResourceUsage.IndexBuffer),
-                                        (254,rd.ResourceUsage.IndexBuffer)]
-                        if nestedSecondaries:
-                            expectedUsage += [
-                                        (252+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.IndexBuffer)]
-                        if descBuffer:
-                            expectedUsage += [
-                                        (257+countDrawIndirectCount+countNested,rd.ResourceUsage.IndexBuffer)]
-                    if (res.name == "Compute Buffer In"):
-                        expectedUsage += [(87,rd.ResourceUsage.CS_Constants),
-                                        (94,rd.ResourceUsage.CS_Constants)]
-                        if nestedSecondaries:
-                            expectedUsage += [(265+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.CS_Constants)]
-                        if descBuffer:
-                            expectedUsage += [(262+countDrawIndirectCount+countNested,rd.ResourceUsage.CS_Constants)]
-                    if (res.name == "Compute Buffer Out"):
-                        expectedUsage += [(87,rd.ResourceUsage.CS_RWResource),
-                                        (94,rd.ResourceUsage.CS_RWResource)]
-                        if nestedSecondaries:
-                            expectedUsage += [(265+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.CS_RWResource)]
-                        if descBuffer:
-                            expectedUsage += [(262+countDrawIndirectCount+countNested,rd.ResourceUsage.CS_RWResource)]
-                    if (res.name == "Indirect Data"):
-                        expectedUsage += [(14,rd.ResourceUsage.Barrier),
-                                        (15,rd.ResourceUsage.Clear),
-                                        (16,rd.ResourceUsage.Barrier),
-                                        (20,rd.ResourceUsage.CS_RWResource),
-                                        (21,rd.ResourceUsage.Barrier),
-                                        (95,rd.ResourceUsage.Barrier),
-                                        (106,rd.ResourceUsage.CS_RWResource),
-                                        (106,rd.ResourceUsage.Indirect),
-                                        (107,rd.ResourceUsage.Barrier),
-                                        (118,rd.ResourceUsage.Indirect),
-                                        (122,rd.ResourceUsage.Indirect),
-                                        (125,rd.ResourceUsage.Indirect),
-                                        (133,rd.ResourceUsage.Indirect),
-                                        (140,rd.ResourceUsage.Indirect),
-                                        (142,rd.ResourceUsage.Barrier),
-                                        (147,rd.ResourceUsage.Barrier),
-                                        (148,rd.ResourceUsage.Clear),
-                                        (149,rd.ResourceUsage.Barrier),
-                                        (153,rd.ResourceUsage.CS_RWResource),
-                                        (155,rd.ResourceUsage.Barrier),
-                                        (157,rd.ResourceUsage.CS_RWResource),
-                                        (157,rd.ResourceUsage.Indirect),
-                                        (158,rd.ResourceUsage.CS_RWResource),
-                                        (158,rd.ResourceUsage.Indirect),
-                                        (159,rd.ResourceUsage.Barrier),
-                                        (160,rd.ResourceUsage.CS_RWResource),
-                                        (160,rd.ResourceUsage.Indirect),
-                                        (161,rd.ResourceUsage.Barrier),
-                                        (175,rd.ResourceUsage.Indirect),
-                                        (178,rd.ResourceUsage.Indirect),
-                                        (186,rd.ResourceUsage.Indirect),
-                                        (206,rd.ResourceUsage.Indirect),
-                                        (209,rd.ResourceUsage.Indirect),
-                                        (217,rd.ResourceUsage.Indirect),
-                                        (225,rd.ResourceUsage.IndexBuffer),
-                                        (225,rd.ResourceUsage.Indirect)]
-                        if drawIndirectCount:
-                            expectedUsage += [
-                                        (230,rd.ResourceUsage.Indirect),
-                                        (230,rd.ResourceUsage.Indirect),
-                                        (233,rd.ResourceUsage.Indirect),
-                                        (233,rd.ResourceUsage.Indirect),
-                                        (237,rd.ResourceUsage.Indirect),
-                                        (237,rd.ResourceUsage.Indirect),
-                                        (241,rd.ResourceUsage.Indirect),
-                                        (241,rd.ResourceUsage.Indirect),
-                                        (245,rd.ResourceUsage.Indirect),
-                                        (245,rd.ResourceUsage.Indirect),
-                                        (252,rd.ResourceUsage.Indirect),
-                                        (252,rd.ResourceUsage.Indirect)]
-                        expectedUsage += [(229+countDrawIndirectCount,rd.ResourceUsage.Barrier)]
-                        if nestedSecondaries:
-                            expectedUsage += [
-                                        (266+countDrawIndirectCount+countDescBufferCopy,rd.ResourceUsage.Barrier)]
-                        if meshShader:
-                            expectedUsage += [
-                                        (242+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (247+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (250+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (253+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (253+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (258+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (258+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (262+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect),
-                                        (262+countDrawIndirectCount+countNested+countDescBuffer,rd.ResourceUsage.Indirect)]
-                    if (res.name == "Barrier Buffer"):
-                        expectedUsage = [(240+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (248+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (256+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (264+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (272+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (280+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (288+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (296+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (304+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (312+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier)]
-                    if (res.name == "Barrier2 Buffer"):
-                        expectedUsage = [(320+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (325+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (330+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier),
-                                        (335+countDrawIndirectCount+countNested+countDescBuffer+countMeshShader,rd.ResourceUsage.Barrier)]
-                    if (res.name == "Descriptor Buffer"):
-                        if descBuffer:
-                            expectedUsage = [(233+countDrawIndirectCount,rd.ResourceUsage.Barrier), 
-                                        (234+countDrawIndirectCount,rd.ResourceUsage.CopySrc),
-                                        (235+countDrawIndirectCount,rd.ResourceUsage.Barrier),
-                                        (236+countDrawIndirectCount,rd.ResourceUsage.Clear),
-                                        (239+countDrawIndirectCount,rd.ResourceUsage.Barrier),
-                                        (240+countDrawIndirectCount,rd.ResourceUsage.CopyDst)]
-                    if (res.name == "Descriptor Backup Buffer"):
-                        if descBuffer:
-                            expectedUsage = [(233+countDrawIndirectCount,rd.ResourceUsage.Barrier), 
-                                        (234+countDrawIndirectCount,rd.ResourceUsage.CopyDst),
-                                        (239+countDrawIndirectCount,rd.ResourceUsage.Barrier),
-                                        (240+countDrawIndirectCount,rd.ResourceUsage.CopySrc)]
+                    if res.name == "Vertex Buffer":
+                        expectedUsage += [(eid,rd.ResourceUsage.VertexBuffer) for eid in drawEIDs]
+                    if res.name == "Index Buffer":
+                        expectedUsage += [(eid,rd.ResourceUsage.IndexBuffer) for eid in indexedEIDs]
+                    if res.name == "Compute Buffer In":
+                        # All dispatches within "Compute" region
+                        # All dispatches within "Nested Secondary Command Buffer" region
+                        expectedUsage += [(eid,rd.ResourceUsage.CS_Constants) for eid in dispatchEIDs 
+                                          if (eid > markerComputeDescriptorSet and eid < markerIndirect) or 
+                                             (nestedSecondaries and eid > markerNestedSecondaryCommandBuffer)]
+                    if res.name == "Compute Buffer Out":
+                        # All dispatches within "Compute" region
+                        # All dispatches within "Nested Secondary Command Buffer" region
+                        expectedUsage += [(eid,rd.ResourceUsage.CS_RWResource) for eid in dispatchEIDs 
+                                          if (eid > markerComputeDescriptorSet and eid < markerIndirect) or 
+                                             (nestedSecondaries and eid > markerNestedSecondaryCommandBuffer)]
+                    if res.name == "Indirect Data":
+                        expectedUsage += [(markerIndirectWriteIndirectDispatchData + 1,rd.ResourceUsage.Barrier),
+                                        (markerIndirectWriteIndirectDispatchData + 2,rd.ResourceUsage.Clear),
+                                        (markerIndirectWriteIndirectDispatchData + 3,rd.ResourceUsage.Barrier)]
+
+                        expectedUsage += [(markerIndirectSecondaryCommandBuffer - 2,rd.ResourceUsage.Barrier),
+                                        (markerIndirectSecondaryCommandBuffer + 3,rd.ResourceUsage.Barrier),
+                                        (markerIndirectSecondaryCommandBuffer + 5,rd.ResourceUsage.Barrier)]
+                        expectedUsage += [(markerIndirectIndirectDraws - 2,rd.ResourceUsage.Barrier)]
+
+                        expectedUsage += [(markerIndirectSecondaryCommandBufferDispatchIndirect - 1,rd.ResourceUsage.Barrier),
+                                        (markerIndirectSecondaryCommandBufferDispatchIndirect + 3,rd.ResourceUsage.Barrier),
+                                        (markerIndirectSecondaryCommandBufferDispatchIndirect + 5,rd.ResourceUsage.Barrier)]
+
+                        for eid in dispatchEIDs:
+                            if eid in indirectEIDs:
+                                continue
+                            if eid in indirectCountEIDs:
+                                continue
+                            if eid in multiEIDs:
+                                continue
+                            if eid in indexedSpecialEIDs:
+                                continue
+                            if eid > markerIndirectWriteIndirectDispatchData and eid < markerGraphics:
+                                expectedUsage.append((eid,rd.ResourceUsage.CS_RWResource))
+                                expectedUsage.append((eid+1,rd.ResourceUsage.Barrier))
+                            if eid > markerComputeSecondaryCommandBuffer and eid < markerIndirect:
+                                expectedUsage.append((eid+1,rd.ResourceUsage.Barrier))
+                            if eid > markerIndirectSecondaryCommandBuffer and eid < markerIndirectEnd:
+                                    expectedUsage.append((eid,rd.ResourceUsage.CS_RWResource))
+                        for eid in cmdDrawIndirectEIDs:
+                            if eid in indirectCountEIDs:
+                                continue
+                            if eid in multiEIDs:
+                                continue
+                            if eid in indexedSpecialEIDs:
+                                continue
+                            if eid > markerIndirectIndirectDraws and eid < markerIndirectEnd:
+                                expectedUsage.append((eid,rd.ResourceUsage.Indirect))
+                            if eid > markerLooseEventsAfterIndirectDrawsDrawIndirectSingle and eid < markerDescriptorBuffer:
+                                expectedUsage.append((eid,rd.ResourceUsage.Indirect))
+                        expectedUsage += [(eid,rd.ResourceUsage.Clear) for eid in fillBufferEIDs 
+                                          if eid > markerIndirect and eid < markerIndirectEnd]
+                        expectedUsage += [(eid,rd.ResourceUsage.CS_RWResource) for eid in indirectEIDs if eid in dispatchEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.Indirect) for eid in indirectEIDs if eid in dispatchEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.Indirect) for eid in multiEIDs if not eid in indirectCountEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.Indirect) for eid in indirectCountEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.Indirect) for eid in indirectCountEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.IndexBuffer) for eid in indexedSpecialEIDs if not eid in indirectCountEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.Indirect) for eid in indexedSpecialEIDs if not eid in indirectCountEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.Indirect) for eid in cmdMeshDispatchIndirectEIDs if not eid in multiEIDs]
+                        for eid in endRenderPassEIDs:
+                            if eid > markerLooseEventsAfterIndirectDraws:
+                                expectedUsage.append((eid+2,rd.ResourceUsage.Barrier))
+                                break
+                        for eid in dispatchEIDs:
+                            if nestedSecondaries and eid > markerNestedSecondaryCommandBufferDispatch:
+                                expectedUsage.append((eid + 1,rd.ResourceUsage.Barrier))
+                                break
+                    if res.name == "Barrier Buffer":
+                        expectedUsage += [(eid,rd.ResourceUsage.Barrier) 
+                                for eid in range(markerMultipleCommandBufferSubmits + 1, markerMultipleCommandBufferSubmits + 1 + 10*8, 8)]
+                    if res.name == "Barrier2 Buffer":
+                        expectedUsage += [(eid,rd.ResourceUsage.Barrier) 
+                                for eid in range(markerMultipleSecondaryCommandBufferExecutes + 3, markerMultipleSecondaryCommandBufferExecutes + 3 + 4*5, 5)]
+                    if res.name == "Descriptor Buffer":
+                        first = True
+                        for eid in copyBufferEIDs:
+                            if eid > markerLooseEventsAfterIndirectDraws:
+                                expectedUsage.append((eid-1,rd.ResourceUsage.Barrier))
+                                if first:
+                                    expectedUsage.append((eid,rd.ResourceUsage.CopySrc))
+                                    first = False
+                                else:
+                                    expectedUsage.append((eid,rd.ResourceUsage.CopyDst))
+                        for eid in fillBufferEIDs:
+                            if eid > markerLooseEventsAfterIndirectDraws:
+                                expectedUsage.append((eid-1,rd.ResourceUsage.Barrier))
+                                expectedUsage.append((eid,rd.ResourceUsage.Clear))
+                                break
+                    if res.name == "Descriptor Backup Buffer":
+                        first = True
+                        for eid in copyBufferEIDs:
+                            if eid > markerLooseEventsAfterIndirectDraws:
+                                expectedUsage.append((eid-1,rd.ResourceUsage.Barrier))
+                                if first:
+                                    expectedUsage.append((eid,rd.ResourceUsage.CopyDst))
+                                    first = False
+                                else:
+                                    expectedUsage.append((eid,rd.ResourceUsage.CopySrc))
+                                    break
                 elif res.type == rd.ResourceType.Texture:
-                    if (res.name == "Offscreen MSAA Image"):
-                        expectedUsage = [(11,rd.ResourceUsage.Barrier), 
-                                        (11,rd.ResourceUsage.Discard), 
-                                        (12,rd.ResourceUsage.Clear)]
-                    if (res.name == "Offscreen Image"):
-                        expectedUsage = [(9,rd.ResourceUsage.Barrier), 
-                                        (9,rd.ResourceUsage.Discard), 
-                                        (10,rd.ResourceUsage.Clear), 
-                                        (42,rd.ResourceUsage.PS_Resource), 
-                                        (45,rd.ResourceUsage.PS_Resource), 
-                                        (118,rd.ResourceUsage.PS_Resource), 
-                                        (122,rd.ResourceUsage.PS_Resource), 
-                                        (126,rd.ResourceUsage.PS_Resource), 
-                                        (127,rd.ResourceUsage.PS_Resource), 
-                                        (128,rd.ResourceUsage.PS_Resource), 
-                                        (129,rd.ResourceUsage.PS_Resource), 
-                                        (134,rd.ResourceUsage.PS_Resource), 
-                                        (135,rd.ResourceUsage.PS_Resource), 
-                                        (136,rd.ResourceUsage.PS_Resource), 
-                                        (140,rd.ResourceUsage.PS_Resource), 
-                                        (175,rd.ResourceUsage.PS_Resource), 
-                                        (179,rd.ResourceUsage.PS_Resource), 
-                                        (180,rd.ResourceUsage.PS_Resource), 
-                                        (181,rd.ResourceUsage.PS_Resource), 
-                                        (182,rd.ResourceUsage.PS_Resource), 
-                                        (187,rd.ResourceUsage.PS_Resource), 
-                                        (188,rd.ResourceUsage.PS_Resource), 
-                                        (189,rd.ResourceUsage.PS_Resource), 
-                                        (206,rd.ResourceUsage.PS_Resource), 
-                                        (210,rd.ResourceUsage.PS_Resource), 
-                                        (211,rd.ResourceUsage.PS_Resource), 
-                                        (212,rd.ResourceUsage.PS_Resource), 
-                                        (213,rd.ResourceUsage.PS_Resource), 
-                                        (218,rd.ResourceUsage.PS_Resource), 
-                                        (219,rd.ResourceUsage.PS_Resource), 
-                                        (220,rd.ResourceUsage.PS_Resource),
-                                        (225,rd.ResourceUsage.PS_Resource)]
-                        if drawIndirectCount:
-                            expectedUsage += [
-                                        (230,rd.ResourceUsage.PS_Resource), 
-                                        (233,rd.ResourceUsage.PS_Resource), 
-                                        (237,rd.ResourceUsage.PS_Resource), 
-                                        (241,rd.ResourceUsage.PS_Resource), 
-                                        (246,rd.ResourceUsage.PS_Resource), 
-                                        (247,rd.ResourceUsage.PS_Resource), 
-                                        (248,rd.ResourceUsage.PS_Resource), 
-                                        (253,rd.ResourceUsage.PS_Resource), 
-                                        (254,rd.ResourceUsage.PS_Resource)]
-                        if descBuffer:
-                            expectedUsage += [
-                                        (254+countDrawIndirectCount+countNested,rd.ResourceUsage.PS_Resource), 
-                                        (257+countDrawIndirectCount+countNested,rd.ResourceUsage.PS_Resource)]
+                    if res.name == "Offscreen MSAA Image":
+                        expectedUsage = [(self.markerStart + 6,rd.ResourceUsage.Barrier), 
+                                        (self.markerStart + 6,rd.ResourceUsage.Discard), 
+                                        (self.markerStart + 7,rd.ResourceUsage.Clear)]
+                    if res.name == "Offscreen Image":
+                        expectedUsage = [(self.markerStart + 4,rd.ResourceUsage.Barrier), 
+                                        (self.markerStart + 4,rd.ResourceUsage.Discard), 
+                                        (self.markerStart + 5,rd.ResourceUsage.Clear)] 
+                        expectedUsage += [(eid,rd.ResourceUsage.PS_Resource) for eid in descSetDrawEIDs]
+                        expectedUsage += [(eid,rd.ResourceUsage.PS_Resource) for eid in descBufferDrawEIDs]
                 elif res.type == rd.ResourceType.CommandBuffer:
                     expectedUsage = [(0,rd.ResourceUsage.Unused)]
                 elif res.type == rd.ResourceType.DescriptorStore:
@@ -407,7 +375,7 @@ class VK_Resource_Usage(rdtest.TestCase):
                     expectedUsage = [(0,rd.ResourceUsage.Unused)]
                 else:
                     raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Unexpected resource type {res.type.name}")
-                rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId} usages:{len(self.controller.GetUsage(res.resourceId))} expectedUsages:{len(expectedUsage)}")
+                expectedUsage.sort(key=lambda x: x[0])
                 self.check_resource_usage(res, expectedUsage)
 
         actions = self.controller.GetRootActions()
@@ -416,14 +384,17 @@ class VK_Resource_Usage(rdtest.TestCase):
 
         # Select every event of the resource usage to ensure the EID is valid
         with rdtest.log.auto_section("Checking Resource Usage Events can be replayed"):
-            for res in self.controller.GetResources():
+            for res in resources:
                 rdtest.log.print(f"Resource '{res.name}' type:{res.type.name} {res.resourceId}")
                 usages = self.resourceUsages[res.resourceId]
                 for u in usages:
                     eid = u.eventId
                     if eid == 0:
                         continue
-                    self.controller.SetFrameEvent(eid, True)
+                    self.set_event(eid, True)
                     if eid not in self.eids:
                         raise rdtest.TestFailureException(f"'{res.name}' {res.resourceId} Missing EID:{eid}")
         
+        with rdtest.log.auto_section("Checking Indirect Action Names"):
+            if not self.check_indirect_action_name_consistency(self.controller):
+                raise rdtest.TestFailureException("Indirect action parameters do not match its event parameters")

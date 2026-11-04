@@ -412,6 +412,51 @@ D3D12DebugManager::D3D12DebugManager(WrappedID3D12Device *wrapper)
     }
   }
 
+  {
+    bytebuf root = EncodeRootSig(m_pDevice->RootSigVersion(),
+                                 {
+                                     cbvParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
+                                     srvParam(D3D12_SHADER_VISIBILITY_ALL, 0, 1),
+                                     constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 2, 1),
+                                     srvParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
+                                     uavParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
+                                 });
+
+    hr = m_pDevice->CreateRootSignature(0, root.data(), root.size(), __uuidof(ID3D12RootSignature),
+                                        (void **)&m_EIPatchRootSig);
+
+    if(FAILED(hr))
+    {
+      RDCERR("Couldn't create execute indirect patching RootSig! HRESULT: %s", ToStr(hr).c_str());
+    }
+  }
+
+  {
+    rdcstr mischlsl = GetEmbeddedResource(misc_hlsl);
+
+    ID3DBlob *eiPatchCS;
+
+    shaderCache->GetShaderBlob(mischlsl.c_str(), "RENDERDOC_ExecuteIndirectPatchCS",
+                               D3DCOMPILE_WARNINGS_ARE_ERRORS, {}, "cs_5_0", &eiPatchCS);
+
+    RDCASSERT(eiPatchCS);
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC compPipeDesc = {};
+    compPipeDesc.pRootSignature = m_EIPatchRootSig;
+    compPipeDesc.CS.BytecodeLength = eiPatchCS->GetBufferSize();
+    compPipeDesc.CS.pShaderBytecode = eiPatchCS->GetBufferPointer();
+
+    hr = m_pDevice->CreateComputePipelineState(&compPipeDesc, __uuidof(ID3D12PipelineState),
+                                               (void **)&m_EIPatchPso);
+
+    if(FAILED(hr))
+    {
+      RDCERR("Couldn't create m_MeshPickPipe! HRESULT: %s", ToStr(hr).c_str());
+    }
+
+    SAFE_RELEASE(eiPatchCS);
+  }
+
   shaderCache->SetCaching(false);
 
   D3D12_RESOURCE_DESC readbackDesc;
@@ -865,6 +910,18 @@ bool D3D12DebugManager::CreateShaderDebugResources()
       {
         smMajor = smMaxSupport.HighestShaderModel >> 4;
         smMinor = smMaxSupport.HighestShaderModel & 0xF;
+
+        // make sure we can compile this SM version
+        ID3DBlob *testBlob = NULL;
+        if(m_pDevice->GetShaderCache()->GetShaderBlob(
+               "float4 main() : SV_Target0 { return 0.0f.xxxx; }", "main", 0, {},
+               StringFormat::Fmt("ps_%d_%d", smMajor, smMinor).c_str(), &testBlob) != "")
+        {
+          SAFE_RELEASE(testBlob);
+          continue;
+        }
+        SAFE_RELEASE(testBlob);
+
         break;
       }
     }
@@ -1700,13 +1757,20 @@ void D3D12DebugManager::FillWithDiscardPattern(ID3D12GraphicsCommandListX *cmd,
     b.Transition.pResource = res;
     b.Transition.Subresource = sub;
 
-    // TODO can we do better than an educated guess as to what the previous state was?
-    if(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
-      b.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    else if(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
-      b.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    if(cmd->GetType() == D3D12_COMMAND_LIST_TYPE_COMPUTE)
+    {
+      b.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
     else
-      b.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+    {
+      // TODO can we do better than an educated guess as to what the previous state was?
+      if(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+      else if(desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+      else
+        b.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+    }
 
     b.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
 
@@ -2035,58 +2099,7 @@ D3D12_CPU_DESCRIPTOR_HANDLE D3D12DebugManager::GetUAVClearHandle(CBVUAVSRVSlot s
 
 void D3D12DebugManager::PrepareExecuteIndirectPatching(GPUAddressRangeTracker &origAddresses)
 {
-  D3D12ShaderCache *shaderCache = m_pDevice->GetShaderCache();
-
-  shaderCache->SetCaching(true);
-
   HRESULT hr = S_OK;
-
-  {
-    bytebuf root = EncodeRootSig(m_pDevice->RootSigVersion(),
-                                 {
-                                     cbvParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
-                                     srvParam(D3D12_SHADER_VISIBILITY_ALL, 0, 1),
-                                     constParam(D3D12_SHADER_VISIBILITY_ALL, 0, 2, 1),
-                                     srvParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
-                                     uavParam(D3D12_SHADER_VISIBILITY_ALL, 0, 0),
-                                 });
-
-    hr = m_pDevice->CreateRootSignature(0, root.data(), root.size(), __uuidof(ID3D12RootSignature),
-                                        (void **)&m_EIPatchRootSig);
-
-    if(FAILED(hr))
-    {
-      RDCERR("Couldn't create execute indirect patching RootSig! HRESULT: %s", ToStr(hr).c_str());
-    }
-  }
-
-  {
-    rdcstr mischlsl = GetEmbeddedResource(misc_hlsl);
-
-    ID3DBlob *eiPatchCS;
-
-    shaderCache->GetShaderBlob(mischlsl.c_str(), "RENDERDOC_ExecuteIndirectPatchCS",
-                               D3DCOMPILE_WARNINGS_ARE_ERRORS, {}, "cs_5_0", &eiPatchCS);
-
-    RDCASSERT(eiPatchCS);
-
-    D3D12_COMPUTE_PIPELINE_STATE_DESC compPipeDesc = {};
-    compPipeDesc.pRootSignature = m_EIPatchRootSig;
-    compPipeDesc.CS.BytecodeLength = eiPatchCS->GetBufferSize();
-    compPipeDesc.CS.pShaderBytecode = eiPatchCS->GetBufferPointer();
-
-    hr = m_pDevice->CreateComputePipelineState(&compPipeDesc, __uuidof(ID3D12PipelineState),
-                                               (void **)&m_EIPatchPso);
-
-    if(FAILED(hr))
-    {
-      RDCERR("Couldn't create m_MeshPickPipe! HRESULT: %s", ToStr(hr).c_str());
-    }
-
-    SAFE_RELEASE(eiPatchCS);
-  }
-
-  shaderCache->SetCaching(false);
 
   struct buffermapping
   {

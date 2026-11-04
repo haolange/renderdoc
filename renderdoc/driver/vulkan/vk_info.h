@@ -232,12 +232,11 @@ struct VulkanCreationInfo
     rdcarray<SpecConstant> specConstantData;
 
     void Init(VulkanResourceManager *resourceMan, const VulkanCreationInfo &info, ResourceId id,
-              const rdcspv::Reflector &spv, const rdcstr &entry, VkShaderStageFlagBits stage,
+              const rdcstr &entry, VkShaderStageFlagBits stage,
               const rdcarray<SpecConstant> &specInfo);
 
     void PopulateDisassembly(const rdcspv::Reflector &spirv);
-    void Reload(VulkanResourceManager *resourceMan, const VulkanCreationInfo &info, ResourceId id,
-                const rdcspv::Reflector &spv);
+    void Reload(VulkanResourceManager *resourceMan, const VulkanCreationInfo &info, ResourceId id);
   };
 
   struct ShaderEntry
@@ -409,6 +408,10 @@ struct VulkanCreationInfo
     uint32_t stippleFactor;
     uint16_t stipplePattern;
 
+    // VkDepthBiasRepresentationInfoEXT
+    VkDepthBiasRepresentationEXT depthBiasRepresentation;
+    VkBool32 depthBiasExact;
+
     // VkPipelineMultisampleStateCreateInfo
     VkSampleCountFlagBits rasterizationSamples;
     bool sampleShadingEnable;
@@ -562,6 +565,9 @@ struct VulkanCreationInfo
       rdcarray<VkImageLayout> inputLayouts;
       rdcarray<VkImageLayout> inputStencilLayouts;
       rdcarray<VkImageLayout> colorLayouts;
+      rdcarray<VkImageLayout> resolveLayouts;
+      VkImageLayout depthstencilResolveLayout;
+      VkImageLayout stencilResolveLayout;
       VkImageLayout depthLayout;
       VkImageLayout stencilLayout;
       VkImageLayout fragmentDensityLayout;
@@ -580,6 +586,87 @@ struct VulkanCreationInfo
     // one for each subpass, as we preserve attachments
     // in the layout that the subpass uses
     rdcarray<VkRenderPass> loadRPs;
+
+    // Unwrapped first-entry mirrors for logical subpass replay. They differ from loadRPs only
+    // in the original load operations applied at an attachment's first use. Owned by this RP.
+    rdcarray<VkRenderPass> beginRPs;
+    // PH-only resume mirrors. Ordinary loadRPs retain the captured partial-replay semantics.
+    rdcarray<VkRenderPass> resumeRPs;
+    // Unwrapped mirrors that commit resolves only at recorded logical subpass boundaries.
+    rdcarray<VkRenderPass> resolveRPs;
+
+    VkImageLayout AttachmentLayout(uint32_t attachment, uint32_t subpass, bool stencil = false) const
+    {
+      // Use one physical layout per attachment/aspect, including attachments temporarily absent
+      // from a subpass. Conflicting source read/write roles require GENERAL in diagnostic mirrors;
+      // the original role declarations remain unchanged for capture inspection.
+      for(uint32_t s = RDCMIN(subpass + 1, (uint32_t)subpasses.size()); s > 0; s--)
+      {
+        const Subpass &sub = subpasses[s - 1];
+        bool found = false;
+        VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        auto use = [&found, &layout](VkImageLayout next) {
+          if(!found)
+            layout = next;
+          else if(layout != next)
+            layout = VK_IMAGE_LAYOUT_GENERAL;
+          found = true;
+        };
+        for(uint32_t i = 0; i < sub.colorAttachments.size(); i++)
+          if(sub.colorAttachments[i] == attachment)
+            use(sub.colorLayouts[i]);
+        for(uint32_t i = 0; i < sub.resolveAttachments.size(); i++)
+          if(sub.resolveAttachments[i] == attachment)
+            use(sub.resolveLayouts[i]);
+        for(uint32_t i = 0; i < sub.inputAttachments.size(); i++)
+          if(sub.inputAttachments[i] == attachment)
+            use(stencil ? sub.inputStencilLayouts[i] : sub.inputLayouts[i]);
+        if(sub.depthstencilAttachment == (int32_t)attachment)
+          use(stencil ? sub.stencilLayout : sub.depthLayout);
+        if(sub.depthstencilResolveAttachment == (int32_t)attachment)
+          use(stencil ? sub.stencilResolveLayout : sub.depthstencilResolveLayout);
+        if(sub.fragmentDensityAttachment == (int32_t)attachment)
+          use(sub.fragmentDensityLayout);
+        if(sub.shadingRateAttachment == (int32_t)attachment)
+          use(sub.shadingRateLayout);
+        if(found)
+        {
+          // Input attachments must use a readable layout even if the source assigned the same
+          // attachment-only layout to both its input and output references.
+          if(sub.inputAttachments.contains(attachment) && layout != VK_IMAGE_LAYOUT_GENERAL &&
+             layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL &&
+             layout != VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT &&
+             layout != VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ)
+            layout = VK_IMAGE_LAYOUT_GENERAL;
+          return layout;
+        }
+      }
+      VkImageLayout layout = stencil ? attachments[attachment].stencilInitialLayout
+                                     : attachments[attachment].initialLayout;
+      return layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_GENERAL : layout;
+    }
+
+    uint32_t FirstSubpassForAttachment(uint32_t attachment) const
+    {
+      for(uint32_t s = 0; s < subpasses.size(); s++)
+      {
+        const Subpass &sub = subpasses[s];
+        if(sub.inputAttachments.contains(attachment) || sub.colorAttachments.contains(attachment) ||
+           sub.resolveAttachments.contains(attachment) ||
+           sub.depthstencilAttachment == (int32_t)attachment ||
+           sub.depthstencilResolveAttachment == (int32_t)attachment ||
+           sub.fragmentDensityAttachment == (int32_t)attachment ||
+           sub.shadingRateAttachment == (int32_t)attachment)
+          return s;
+      }
+      return ~0U;
+    }
   };
   std::unordered_map<ResourceId, RenderPass> m_RenderPass;
 
@@ -651,6 +738,9 @@ struct VulkanCreationInfo
     bool external;
 
     VkMemoryRequirements mrq;
+
+    ResourceId boundMemory;
+    uint64_t boundMemoryOffset;
 
     ResourceId inlineDescriptorId;
   };
@@ -767,6 +857,9 @@ struct VulkanCreationInfo
     VkImageSubresourceRange range;
     VkComponentMapping componentMapping;
 
+    uint32_t storageSliceOffset;
+    uint32_t storageSliceCount;
+
     bool isDepthImage;
 
     // VkImageViewMinLodCreateInfoEXT
@@ -798,10 +891,13 @@ struct VulkanCreationInfo
     }
 
     rdcspv::Reflector spirv;
-    // Only set when separate debug spirv is found
-    rdcarray<uint32_t> initialSpirv;
 
     rdcstr unstrippedPath;
+
+    // indicate if we've ever found a debug blob, so that if we fail to on a second retry we don't
+    // overwrite the loading log from the successful load with anything but a successful load
+    bool debugBlobEverFound = false;
+
     rdcstr debugInfoLoadingLog;
 
     std::map<ShaderModuleReflectionKey, ShaderModuleReflection> m_Reflections;
@@ -842,11 +938,14 @@ struct VulkanCreationInfo
   {
     void Init(VulkanResourceManager *resourceMan, VulkanCreationInfo &info,
               const VkAccelerationStructureCreateInfoKHR *pCreateInfo);
+    void Init(VulkanResourceManager *resourceMan, WrappedVulkan *vk, VulkanCreationInfo &info,
+              const VkAccelerationStructureCreateInfo2KHR *pCreateInfo);
 
     ResourceId buffer;
     uint64_t offset;
     uint64_t size;
     VkAccelerationStructureTypeKHR type;
+    VkDeviceAddress address;
   };
   std::unordered_map<ResourceId, AccelerationStructure> m_AccelerationStructure;
 

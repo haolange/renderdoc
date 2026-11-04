@@ -987,8 +987,14 @@ public:
     D3D12_SHADER_BYTECODE GetDesc()
     {
       D3D12_SHADER_BYTECODE ret;
-      ret.BytecodeLength = m_Bytecode.size();
-      ret.pShaderBytecode = (const void *)&m_Bytecode[0];
+
+      // once we've processed into the DXBC file, it owns the blob
+      const bytebuf &bytecode =
+          m_Bytecode.empty() && m_DXBCFile ? m_DXBCFile->GetShaderBlob() : m_Bytecode;
+
+      ret.BytecodeLength = bytecode.size();
+      ret.pShaderBytecode = (const void *)&bytecode[0];
+
       return ret;
     }
 
@@ -997,8 +1003,9 @@ public:
     {
       if(m_DXBCFile == NULL && !m_Bytecode.empty())
       {
-        m_DXBCFile = new DXBC::DXBCContainer(m_Bytecode, rdcstr(), GraphicsAPI::D3D12,
-                                             m_ShaderExtSlot, m_ShaderExtSpace);
+        m_DXBCFile = new DXBC::DXBCContainer(std::move(m_Bytecode));
+        m_DXBCFile->SetShaderExts(GraphicsAPI::D3D12, m_ShaderExtSlot, m_ShaderExtSpace);
+        m_Bytecode.clear();
       }
       return m_DXBCFile;
     }
@@ -1480,6 +1487,7 @@ class WrappedID3D12Resource
   size_t DeleteOverlappingAccStructsInRangeAtOffset(D3D12BufferOffset bufferOffset);
 
   WrappedID3D12Heap *m_Heap = NULL;
+  uint64_t m_HeapOffset = 0;
 
   Threading::CriticalSection m_accStructResourcesCS;
   rdcflatmap<D3D12BufferOffset, D3D12AccelerationStructure *> m_accelerationStructMap;
@@ -1498,6 +1506,7 @@ public:
   }
 
   WrappedID3D12Heap *GetHeap() { return m_Heap; }
+  uint64_t GetHeapOffset() { return m_HeapOffset; }
 
   ID3D12Pageable *UnwrappedResidencyPageable()
   {
@@ -1575,6 +1584,7 @@ public:
       device->AddReplayResource(GetResourceID(), this);
 
     m_Heap = (WrappedID3D12Heap *)heap;
+    m_HeapOffset = HeapOffset;
     SAFE_ADDREF(m_Heap);
 
     // assuming only valid for buffers
@@ -1732,7 +1742,8 @@ public:
   }
 };
 
-class WrappedID3D12RootSignature : public WrappedDeviceChild12<ID3D12RootSignature>
+class WrappedID3D12RootSignature
+    : public WrappedDeviceChild12<ID3D12RootSignature, ID3D12RootSignature1>
 {
 public:
   ALLOCATE_WITH_WRAPPED_POOL(WrappedID3D12RootSignature);
@@ -1750,6 +1761,31 @@ public:
   {
   }
   virtual ~WrappedID3D12RootSignature() { Shutdown(); }
+
+  //////////////////////////////
+  // implement ID3D12RootSignature1
+
+  virtual SIZE_T STDMETHODCALLTYPE GetSerializedSize()
+  {
+    ID3D12RootSignature1 *real1 = NULL;
+    m_pReal->QueryInterface(__uuidof(ID3D12RootSignature1), (void **)&real1);
+
+    if(!real1)
+      return 0;
+
+    return real1->GetSerializedSize();
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE GetSerializedData(void *pData, SIZE_T Size)
+  {
+    ID3D12RootSignature1 *real1 = NULL;
+    m_pReal->QueryInterface(__uuidof(ID3D12RootSignature1), (void **)&real1);
+
+    if(!real1)
+      return E_NOINTERFACE;
+
+    return real1->GetSerializedData(pData, Size);
+  }
 };
 
 class WrappedID3D12PipelineLibrary : public WrappedDeviceChild12<ID3D12PipelineLibrary1>

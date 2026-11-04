@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Development|Win32">
@@ -31,7 +31,6 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <CharacterSet>Unicode</CharacterSet>
-    <PlatformToolset>v145</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
     <LinkIncremental>false</LinkIncremental>
@@ -845,10 +844,10 @@ namespace DXCEnumerateAndCheck {
                                             0     1    2
       -->
       <MajorVersion>$(VersionFile.Substring($(MajorVersionStart)).Split('
-')[0].Split(' ')[2])</MajorVersion>
+')[0].Split(' ')[2].Trim())</MajorVersion>
       <MinorVersionStart>$(VersionFile.IndexOf('#define RENDERDOC_VERSION_MINOR'))</MinorVersionStart>
       <MinorVersion>$(VersionFile.Substring($(MinorVersionStart)).Split('
-')[0].Split(' ')[2])</MinorVersion>
+')[0].Split(' ')[2].Trim())</MinorVersion>
     </PropertyGroup>
     <Message Text="Processing layer JSON file for RenderDoc $(MajorVersion).$(MinorVersion)" Importance="High" />
     <!-- Read the template json, replace the major/minor versions -->

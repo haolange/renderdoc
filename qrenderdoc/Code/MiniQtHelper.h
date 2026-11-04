@@ -35,7 +35,7 @@ public:
   MiniQtHelper(ICaptureContext &ctx);
   virtual ~MiniQtHelper();
 
-  void InvokeOntoUIThread(std::function<void()> callback) override;
+  void InvokeOntoUIThread(UIInvokeCallback callback) override;
 
   QWidget *CreateToplevelWidget(const rdcstr &windowTitle, WidgetCallback closed) override;
   void CloseToplevelWidget(QWidget *widget) override;
@@ -68,11 +68,17 @@ public:
                      int32_t columnSpan) override;
   void AddWidget(QWidget *parent, QWidget *child) override;
   void InsertWidget(QWidget *parent, int32_t index, QWidget *child) override;
+  void SetLayoutSpacing(QWidget *layout, int spacing) override;
+  void SetLayoutMargins(QWidget *layout, int horizontal, int vertical) override;
 
   // widget manipulation
 
   void SetWidgetText(QWidget *widget, const rdcstr &text) override;
+  void AppendText(QWidget *widget, const rdcstr &text) override;
   rdcstr GetWidgetText(QWidget *widget) override;
+
+  void ScrollToTop(QWidget *widget) override;
+  void ScrollToBottom(QWidget *widget) override;
 
   void SetWidgetFont(QWidget *widget, const rdcstr &font, int32_t fontSize, bool bold,
                      bool italic) override;

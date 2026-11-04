@@ -603,7 +603,41 @@ enum class DXOp : uint32_t
   SampleCmpBias = 255,
   StartVertexLocation = 256,
   StartInstanceLocation = 257,
-  NumOpCodes = 258,
+  AllocateRayQuery2 = 258,
+  HitObject_TraceRay = 262,
+  HitObject_FromRayQuery = 263,
+  HitObject_FromRayQueryWithAttrs = 264,
+  HitObject_MakeMiss = 265,
+  HitObject_MakeNop = 266,
+  HitObject_Invoke = 267,
+  MaybeReorderThread = 268,
+  HitObject_IsMiss = 269,
+  HitObject_IsHit = 270,
+  HitObject_IsNop = 271,
+  HitObject_RayFlags = 272,
+  HitObject_RayTMin = 273,
+  HitObject_RayTCurrent = 274,
+  HitObject_WorldRayOrigin = 275,
+  HitObject_WorldRayDirection = 276,
+  HitObject_ObjectRayOrigin = 277,
+  HitObject_ObjectRayDirection = 278,
+  HitObject_ObjectToWorld3x4 = 279,
+  HitObject_WorldToObject3x4 = 280,
+  HitObject_GeometryIndex = 281,
+  HitObject_InstanceIndex = 282,
+  HitObject_InstanceID = 283,
+  HitObject_PrimitiveIndex = 284,
+  HitObject_HitKind = 285,
+  HitObject_ShaderTableIndex = 286,
+  HitObject_SetShaderTableIndex = 287,
+  HitObject_LoadLocalRootTableConstant = 288,
+  HitObject_Attributes = 289,
+  RawBufferVectorLoad = 303,
+  RawBufferVectorStore = 304,
+  VectorReduceAnd = 309,
+  VectorReduceOr = 310,
+  FDot = 311,
+  NumOpCodes,
 };
 
 enum class AtomicBinOpCode : uint32_t
@@ -1202,6 +1236,7 @@ struct DIBase
     LocalVariable,
     Expression,
     LexicalBlock,
+    LexicalBlockFile,
     Subrange,
     Namespace,
     ImportedEntity,
@@ -1678,11 +1713,13 @@ public:
   uint32_t GetMinorVersion() const { return m_Minor; }
   D3D_PRIMITIVE_TOPOLOGY GetOutputTopology();
   const rdcstr &GetDisassembly(bool dxcStyle, const DXBC::Reflection *reflection);
+  void ProcessDXIL(const DXBC::Reflection *reflection);
 
   // IDebugInfo interface
   rdcstr GetCompilerSig() const override { return m_CompilerSig; }
   rdcstr GetEntryFunction() const override { return m_EntryPoint; }
   rdcstr GetShaderProfile() const override { return m_Profile; }
+  bool HasSourceDebugInfo() const override { return m_SourceInfo; }
   ShaderCompileFlags GetShaderCompileFlags() const override { return m_CompileFlags; }
   void GetLineInfo(size_t instruction, uintptr_t offset, LineColumnInfo &lineInfo) const override;
   void GetCallstack(size_t instruction, uintptr_t offset, rdcarray<rdcstr> &callstack) const override;
@@ -1700,7 +1737,6 @@ public:
 
   static char GetDXILIdentifier(const bool dxcStyle) { return dxcStyle ? '%' : '_'; }
 protected:
-  void Parse(const DXBC::Reflection *reflection);
   void SettleIDs();
   void ParseReferences(const DXBC::Reflection *reflection);
   void MakeDXCDisassemblyString();
@@ -1759,6 +1795,7 @@ protected:
   uint32_t m_DXILVersion;
 
   rdcstr m_CompilerSig, m_EntryPoint, m_Profile;
+  bool m_SourceInfo = false;
   ShaderCompileFlags m_CompileFlags;
   DXBC::ThreadScope m_Threadscope = DXBC::ThreadScope::Thread;
 

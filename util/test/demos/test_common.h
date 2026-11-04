@@ -83,11 +83,12 @@ enum class ShaderStage
   task,
 };
 
-bool InternalSpvCompiler();
 bool SpvCompilationSupported();
-std::vector<uint32_t> CompileShaderToSpv(const std::string &source_text, SPIRVTarget target,
-                                         ShaderLang lang, ShaderStage stage, const char *entry_point,
-                                         const std::map<std::string, std::string> &macros = {});
+std::vector<uint32_t> CompileShaderToSpv(const char *demo_name, const std::string &source_text,
+                                         SPIRVTarget target, ShaderLang lang, ShaderStage stage,
+                                         const char *entry_point,
+                                         const std::map<std::string, std::string> &macros = {},
+                                         bool debug_info = true);
 
 struct Vec2f
 {
@@ -205,7 +206,7 @@ struct GraphicsTest
   virtual GraphicsWindow *MakeWindow(int width, int height, const char *title) { return NULL; }
   virtual int main() { return 9; }
   virtual void Prepare(int argc, char **argv);
-  virtual void SetName(const char *name) { screenTitle = name; }
+  virtual void SetName(const char *name) { demoName = screenTitle = name; }
   virtual bool Init();
   virtual void Shutdown();
 
@@ -217,11 +218,14 @@ struct GraphicsTest
 
   int curFrame = -1;
 
+  const char *demoName = "Unknown_Test";
   const char *screenTitle = "RenderDoc test program";
 
   bool headless = false;
 
   RENDERDOC_API_1_7_0 *rdoc = NULL;
+
+  std::string tmpPath;
 
   // shared parameters
   static int maxFrameCount;

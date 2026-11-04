@@ -377,11 +377,6 @@ RENDERDOC_ExecuteAndInject(const rdcstr &app, const rdcstr &workingDir, const rd
   return ret;
 }
 
-extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_GetDefaultCaptureOptions(CaptureOptions *opts)
-{
-  *opts = CaptureOptions();
-}
-
 extern "C" RENDERDOC_API ResultDetails RENDERDOC_CC RENDERDOC_StartGlobalHook(
     const rdcstr &pathmatch, const rdcstr &capturefile, const CaptureOptions &opts)
 {
@@ -1017,8 +1012,6 @@ extern "C" RENDERDOC_API int RENDERDOC_CC RENDERDOC_RunFunctionalTests(const rdc
                          // specify python module path
                          L"--pyrenderdoc",
                          StringFormat::UTF82Wide(modulePath),
-                         // force in-process as we can't fork out to python to pass args
-                         L"--in-process",
                      });
 
   rdcarray<wchar_t *> wideArgStrings;

@@ -92,18 +92,16 @@ struct AllocatedImage
   void free();
 };
 
-#define CHECK_VKR(cmd)                                                               \
-  do                                                                                 \
-  {                                                                                  \
-    VkResult _vkr = cmd;                                                             \
-    if(_vkr != VK_SUCCESS)                                                           \
-    {                                                                                \
-      fprintf(stdout, "%s:%d Vulkan Error: %s executing:\n%s\n", __FILE__, __LINE__, \
-              vkh::result_str(_vkr), #cmd);                                          \
-      fflush(stdout);                                                                \
-      DEBUG_BREAK();                                                                 \
-      exit(1);                                                                       \
-    }                                                                                \
+#define CHECK_VKR(cmd)                                                          \
+  do                                                                            \
+  {                                                                             \
+    VkResult _vkr = cmd;                                                        \
+    if(_vkr != VK_SUCCESS)                                                      \
+    {                                                                           \
+      TEST_ERROR("%s:%d Vulkan Error: %s executing:\n%s\n", __FILE__, __LINE__, \
+                 vkh::result_str(_vkr), #cmd);                                  \
+      exit(1);                                                                  \
+    }                                                                           \
   } while(0);
 
 struct VulkanGraphicsTest;
@@ -196,6 +194,13 @@ struct VulkanGraphicsTest : public GraphicsTest
 {
   static const TestAPI API = TestAPI::Vulkan;
 
+  enum CompileOptionFlags
+  {
+    None = 0,
+    SeparateDebug = 1 << 0,
+    RelativeDebugName = 1 << 1,
+  };
+
   VulkanGraphicsTest();
 
   void Prepare(int argc, char **argv);
@@ -224,7 +229,7 @@ struct VulkanGraphicsTest : public GraphicsTest
   VkPipelineShaderStageCreateInfo CompileShaderModule(
       const std::string &source_text, ShaderLang lang, ShaderStage stage,
       const char *entry_point = "main", const std::map<std::string, std::string> &macros = {},
-      SPIRVTarget target = SPIRVTarget::vulkan);
+      SPIRVTarget target = SPIRVTarget::vulkan, uint32_t compileOptions = CompileOptionFlags::None);
   VkCommandBuffer GetCommandBuffer(VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
                                    VulkanWindow *window = NULL);
 

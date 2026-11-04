@@ -28,6 +28,14 @@ RD_TEST(VK_Pixel_History, VulkanGraphicsTest)
 {
   static constexpr const char *Description = "Tests pixel history";
 
+  VkPhysicalDeviceNestedCommandBufferFeaturesEXT nestedFeats = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT,
+  };
+
+  VkPhysicalDeviceNestedCommandBufferPropertiesEXT nestedProps = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_PROPERTIES_EXT,
+  };
+
   std::string common = R"EOSHADER(
 
 #version 460 core
@@ -122,6 +130,8 @@ void main()
 
     devExts.push_back(VK_KHR_MAINTENANCE1_EXTENSION_NAME);
 
+    optDevExts.push_back(VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME);
+
     VulkanGraphicsTest::Prepare(argc, argv);
 
     if(!Avail.empty())
@@ -134,6 +144,17 @@ void main()
       Avail = "D32S8 not supported";
       return;
     }
+
+    if(hasExt(VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME))
+    {
+      getPhysFeatures2(&nestedFeats);
+
+      if((nestedFeats.nestedCommandBuffer) && (nestedFeats.nestedCommandBufferRendering))
+      {
+        nestedFeats.pNext = (void *)devInfoNext;
+        devInfoNext = &nestedFeats;
+      }
+    }
   }
 
   struct VKTestBatch
@@ -141,10 +162,13 @@ void main()
     std::string name;
 
     bool secondary = false;
+    bool nested = false;
     bool uint = false;
 
     AllocatedImage colImg;
     AllocatedImage depthImg;
+    AllocatedImage resolveImg;
+    bool multiSubpass = false;
 
     VkFormat depthFormat;
 
@@ -179,12 +203,13 @@ void main()
 
   void BuildTestBatch(const std::string &name, VkSampleCountFlagBits sampleCount,
                       VkFormat colourFormat, VkFormat depthStencilFormat, int targetMip = -1,
-                      int targetSlice = -1, int targetDepthSlice = -1)
+                      int targetSlice = -1, int targetDepthSlice = -1, bool multiSubpass = false)
   {
     batches.push_back({});
 
     VKTestBatch &batch = batches.back();
     batch.name = name;
+    batch.multiSubpass = multiSubpass;
     batch.extent = mainWindow->scissor.extent;
 
     uint32_t arraySize = targetSlice >= 0 ? 5 : 1;
@@ -365,11 +390,41 @@ vec4 ProcessColor(vec4 col)
           VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE));
     }
 
-    renderPassCreateInfo.addSubpass(cols,
-                                    depthView == VK_NULL_HANDLE
-                                        ? VK_ATTACHMENT_UNUSED
-                                        : (uint32_t)renderPassCreateInfo.attachments.size() - 1,
-                                    VK_IMAGE_LAYOUT_GENERAL);
+    const uint32_t depthAttachment = depthView == VK_NULL_HANDLE
+                                         ? VK_ATTACHMENT_UNUSED
+                                         : (uint32_t)renderPassCreateInfo.attachments.size() - 1;
+    std::vector<VkAttachmentReference> resolves;
+    if(multiSubpass && sampleCount != VK_SAMPLE_COUNT_1_BIT)
+    {
+      batch.resolveImg = AllocatedImage(
+          this,
+          vkh::ImageCreateInfo(batch.extent.width, batch.extent.height, 0, colourFormat,
+                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT),
+          VmaAllocationCreateInfo({0, VMA_MEMORY_USAGE_GPU_ONLY}));
+      setName(batch.resolveImg.image, batch.name + " resolveImg");
+      atts.push_back(createImageView(
+          vkh::ImageViewCreateInfo(batch.resolveImg.image, VK_IMAGE_VIEW_TYPE_2D, colourFormat)));
+      resolves.push_back({(uint32_t)renderPassCreateInfo.attachments.size(), VK_IMAGE_LAYOUT_GENERAL});
+      renderPassCreateInfo.attachments.push_back(
+          vkh::AttachmentDescription(colourFormat, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                     VK_ATTACHMENT_LOAD_OP_LOAD, VK_ATTACHMENT_STORE_OP_STORE));
+    }
+    const uint32_t subpassCount = multiSubpass ? 3 : 1;
+    for(uint32_t subpass = 0; subpass < subpassCount; subpass++)
+      renderPassCreateInfo.addSubpass(cols, depthAttachment, VK_IMAGE_LAYOUT_GENERAL, resolves);
+    // The selected draw subpass follows an empty first subpass and is followed by an empty final
+    // subpass. Resumes must not clear it again or perform any of its boundary resolves early.
+    for(uint32_t subpass = 1; subpass < subpassCount; subpass++)
+    {
+      VkSubpassDependency dependency = {};
+      dependency.srcSubpass = subpass - 1;
+      dependency.dstSubpass = subpass;
+      dependency.srcStageMask = dependency.dstStageMask = VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+      dependency.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+      dependency.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+      renderPassCreateInfo.dependencies.push_back(dependency);
+    }
 
     batch.rp = createRenderPass(renderPassCreateInfo);
 
@@ -381,6 +436,7 @@ vec4 ProcessColor(vec4 col)
     vkh::GraphicsPipelineCreateInfo pipeCreateInfo;
 
     pipeCreateInfo.renderPass = batch.rp;
+    pipeCreateInfo.subpass = multiSubpass ? 1 : 0;
 
     pipeCreateInfo.layout = layout;
 
@@ -659,6 +715,22 @@ vec4 ProcessColor(vec4 col)
     if(!Init())
       return 3;
 
+    bool nestedSecondaries = hasExt(VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME);
+    if(nestedSecondaries)
+    {
+      getPhysFeatures2(&nestedFeats);
+      if(!nestedFeats.nestedCommandBuffer)
+        nestedSecondaries = false;
+      if(!nestedFeats.nestedCommandBufferRendering)
+        nestedSecondaries = false;
+      getPhysProperties2(&nestedProps);
+      if(nestedProps.maxCommandBufferNestingLevel < 5)
+        nestedSecondaries = false;
+    }
+
+    if(nestedSecondaries)
+      TEST_LOG("Running tests with nested secondaries");
+
     PixelHistory::init();
 
     AllocatedBuffer vb(
@@ -698,6 +770,10 @@ vec4 ProcessColor(vec4 col)
     bbBlitSource = batches.back().colImg.image;
 
     BuildTestBatch("MSAA", VK_SAMPLE_COUNT_4_BIT, VK_FORMAT_R8G8B8A8_UNORM, defaultDepthFormat);
+    BuildTestBatch("Multi subpass", VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM,
+                   defaultDepthFormat, -1, -1, -1, true);
+    BuildTestBatch("Multi subpass MSAA", VK_SAMPLE_COUNT_4_BIT, VK_FORMAT_R8G8B8A8_UNORM,
+                   defaultDepthFormat, -1, -1, -1, true);
     BuildTestBatch("Colour Only", VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM,
                    VK_FORMAT_UNDEFINED);
     BuildTestBatch("Depth Only", VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_UNDEFINED, defaultDepthFormat);
@@ -707,6 +783,12 @@ vec4 ProcessColor(vec4 col)
                    defaultDepthFormat, -1, 3);
     BuildTestBatch("Secondary", VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM, defaultDepthFormat);
     batches.back().secondary = true;
+    if(nestedSecondaries)
+    {
+      BuildTestBatch("Secondary Nested", VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM,
+                     defaultDepthFormat);
+      batches.back().nested = true;
+    }
 
     BuildTestBatch("3D texture", VK_SAMPLE_COUNT_1_BIT, VK_FORMAT_R8G8B8A8_UNORM,
                    defaultDepthFormat, -1, -1, 8);
@@ -764,6 +846,22 @@ vec4 ProcessColor(vec4 col)
 
         vkh::cmdBindVertexBuffers(cmd, 0, {vb.buffer}, {0});
 
+        if(b.resolveImg.image != VK_NULL_HANDLE)
+        {
+          vkh::cmdPipelineBarrier(
+              cmd, {vkh::ImageMemoryBarrier(0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                                            VK_IMAGE_LAYOUT_GENERAL, b.resolveImg.image)});
+          VkClearColorValue sentinel = {{0.125f, 0.25f, 0.5f, 1.0f}};
+          VkImageSubresourceRange range = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+          vkCmdClearColorImage(cmd, b.resolveImg.image, VK_IMAGE_LAYOUT_GENERAL, &sentinel, 1,
+                               &range);
+          vkh::cmdPipelineBarrier(
+              cmd, {vkh::ImageMemoryBarrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                            VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                                            VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+                                            b.resolveImg.image)});
+        }
+
         // set clears correctly for depth-only batches, the extra clear value on colour only is ignored
         std::vector<VkClearValue> clears;
         if(b.colImg.image == VK_NULL_HANDLE)
@@ -806,6 +904,38 @@ vec4 ProcessColor(vec4 col)
           }
           popMarker(cmd);
         }
+        else if(b.nested)
+        {
+          pushMarker(cmd, "Batch: " + b.name);
+          {
+            setMarker(cmd, "Begin RenderPass");
+            vkCmdBeginRenderPass(cmd,
+                                 vkh::RenderPassBeginInfo(b.rp, b.fb, {{0, 0}, b.extent}, clears),
+                                 VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
+            VkCommandBuffer cmd3 = GetCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+            secondaries.push_back(cmd3);
+            vkBeginCommandBuffer(
+                cmd3, vkh::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+                                                  vkh::CommandBufferInheritanceInfo(b.rp, 0, b.fb)));
+            vkh::cmdBindVertexBuffers(cmd3, 0, {vb.buffer}, {0});
+            RunBatch(b, cmd3);
+            vkEndCommandBuffer(cmd3);
+
+            VkCommandBuffer cmd2 = GetCommandBuffer(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+            secondaries.push_back(cmd2);
+            vkBeginCommandBuffer(
+                cmd2, vkh::CommandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+                                                  vkh::CommandBufferInheritanceInfo(b.rp, 0, b.fb)));
+            vkCmdExecuteCommands(cmd2, 1, &cmd3);
+            vkEndCommandBuffer(cmd2);
+
+            vkCmdExecuteCommands(cmd, 1, &cmd2);
+
+            vkCmdEndRenderPass(cmd);
+          }
+          popMarker(cmd);
+        }
         else
         {
           pushMarker(cmd, "Batch: " + b.name);
@@ -816,7 +946,11 @@ vec4 ProcessColor(vec4 col)
                                  vkh::RenderPassBeginInfo(b.rp, b.fb, {{0, 0}, b.extent}, clears),
                                  VK_SUBPASS_CONTENTS_INLINE);
 
+            if(b.multiSubpass)
+              vkCmdNextSubpass(cmd, VK_SUBPASS_CONTENTS_INLINE);
             RunBatch(b, cmd);
+            if(b.multiSubpass)
+              vkCmdNextSubpass(cmd, VK_SUBPASS_CONTENTS_INLINE);
 
             vkCmdEndRenderPass(cmd);
 

@@ -409,9 +409,26 @@ void ApplySingleEnvMod(EnvironmentModification &m, rdcstr &value)
 
 void ApplyEnvironmentModifications(rdcarray<EnvironmentModification> &modifications)
 {
-  // turn environment string to a UTF-8 map
-  char **currentEnvironment = GetCurrentEnvironment();
-  std::map<rdcstr, rdcstr> currentEnv = EnvStringToEnvMap(currentEnvironment);
+  bool needOldEnv = false;
+
+  for(const EnvironmentModification &env : modifications)
+  {
+    if(env.mod != EnvMod::Set)
+    {
+      needOldEnv = true;
+      break;
+    }
+  }
+
+  std::map<rdcstr, rdcstr> currentEnv;
+
+  // turn environment string to a UTF-8 map, but only if we actually need to. Environment variables
+  // are garbage 70s tier tech and so are not thread safe, minimise interaction with them as much as possible
+  if(needOldEnv)
+  {
+    char **currentEnvironment = GetCurrentEnvironment();
+    currentEnv = EnvStringToEnvMap(currentEnvironment);
+  }
 
   for(size_t i = 0; i < modifications.size(); i++)
   {
@@ -899,10 +916,19 @@ void GetHookedEnvp(char *const *envp, rdcstr &envpStr, rdcarray<char *> &modifie
 
 void ResetHookingEnvVars()
 {
-  direct_setenv(LIB_PATH_ENV_VAR, Process::GetEnvVariable("RENDERDOC_ORIGLIBPATH").c_str(), true);
-  direct_setenv(PRELOAD_ENV_VAR, Process::GetEnvVariable("RENDERDOC_ORIGPRELOAD").c_str(), true);
-  direct_setenv("RENDERDOC_ORIGLIBPATH", "", true);
-  direct_setenv("RENDERDOC_ORIGPRELOAD", "", true);
+  rdcstr origpath = Process::GetEnvVariable("RENDERDOC_ORIGLIBPATH");
+  rdcstr origpreload = Process::GetEnvVariable("RENDERDOC_ORIGPRELOAD");
+
+  if(!origpath.empty())
+  {
+    direct_setenv(LIB_PATH_ENV_VAR, origpath.c_str(), true);
+    direct_setenv("RENDERDOC_ORIGLIBPATH", "", true);
+  }
+  if(!origpreload.empty())
+  {
+    direct_setenv(PRELOAD_ENV_VAR, origpreload.c_str(), true);
+    direct_setenv("RENDERDOC_ORIGPRELOAD", "", true);
+  }
 }
 
 rdcpair<RDResult, uint32_t> Process::LaunchAndInjectIntoProcess(

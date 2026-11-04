@@ -236,7 +236,8 @@ void Program::ParseConstant(ValueList &values, const LLVMBC::BlockOrRecord &cons
     c->setCompound(alloc, std::move(members));
     values.addValue();
   }
-  else if(IS_KNOWN(constant.id, ConstantsRecord::EVAL_GEP))
+  else if(IS_KNOWN(constant.id, ConstantsRecord::EVAL_INBOUNDS_GEP) ||
+          IS_KNOWN(constant.id, ConstantsRecord::EVAL_GEP))
   {
     Constant *c = values.nextValue<Constant>();
 
@@ -2230,11 +2231,11 @@ void Program::SetValueSymtabString(Value *v, const rdcstr &s)
   }
   else if(Instruction *i = cast<Instruction>(v))
   {
+    rdcstr &str = i->extra(alloc).name;
+    str = s;
 #if DISABLED(DXC_COMPATIBLE_DISASM)
     // For instruction names convert "." -> "_" to allow the name to be used as debugger variable name
     // "." is treated as a field separator by the debugger
-    rdcstr &str = i->extra(alloc).name;
-    str = s;
     for(size_t j = 0; j < str.size(); ++j)
     {
       if(str[j] == '.')

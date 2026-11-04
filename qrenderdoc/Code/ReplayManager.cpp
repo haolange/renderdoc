@@ -26,6 +26,7 @@
 #include <QApplication>
 #include <QMutexLocker>
 #include <QProgressDialog>
+#include "Code/pyrenderdoc/PythonContext.h"
 #include "CaptureContext.h"
 #include "QRDUtils.h"
 
@@ -55,7 +56,11 @@ void ReplayManager::OpenCapture(const QString &capturefile, const ReplayOptions 
   int proxyRenderer = -1;
 
   m_Thread = new LambdaThread([this, proxyRenderer, capturefile, opts, progress]() {
+    PythonContext::AddDebuggableThread();
+
     run(proxyRenderer, capturefile, opts, progress);
+
+    PythonContext::RemoveDebuggableThread();
   });
   m_Thread->setName(lit("ReplayManager"));
   m_Thread->start(QThread::HighestPriority);
@@ -247,7 +252,7 @@ QString ReplayManager::GetCurrentProcessingTag()
   return m_CommandTag;
 }
 
-void ReplayManager::AsyncInvoke(const rdcstr &tag, ReplayManager::InvokeCallback m)
+void ReplayManager::AsyncInvoke(ReplayManager::ReplayInvokeCallback m, rdcstr tag)
 {
   QString qtag;
 
@@ -277,23 +282,56 @@ void ReplayManager::AsyncInvoke(const rdcstr &tag, ReplayManager::InvokeCallback
   PushInvoke(cmd);
 }
 
-void ReplayManager::AsyncInvoke(ReplayManager::InvokeCallback m)
+void ReplayManager::BlockInvoke(ReplayManager::ReplayInvokeCallback m)
 {
-  InvokeHandle *cmd = new InvokeHandle(m);
-  cmd->selfdelete = true;
+  if(IsRunning() && m_Thread->isCurrentThread())
+  {
+    m(m_Renderer);
+    return;
+  }
 
-  PushInvoke(cmd);
-}
-
-void ReplayManager::BlockInvoke(ReplayManager::InvokeCallback m)
-{
   InvokeHandle *cmd = new InvokeHandle(m);
 
   PushInvoke(cmd);
+
+  void *ctx = PythonContext::PausePythonThreading();
 
   cmd->processed.acquire();
 
+  PythonContext::ResumePythonThreading(ctx);
+
   delete cmd;
+}
+
+bool ReplayManager::AccessInvoke(std::function<void(ICaptureAccess *)> callback, bool blocking,
+                                 bool forceReplay, rdcstr tag)
+{
+  if(!GetCaptureAccess())
+    return false;
+
+  // some long running processes may be better to put on the replay thread even when local, so
+  // that we can keep the UI thread unblocked
+  if(CurrentRemote().IsConnected() || forceReplay)
+  {
+    if(!IsRunning())
+    {
+      // if the replay thread isn't running, we won't be able to invoke so just treat this as-if
+      // it's a local capture and block
+      callback(GetCaptureAccess());
+      return true;
+    }
+
+    if(blocking)
+      BlockInvoke([this, callback](IReplayController *) { callback(GetCaptureAccess()); });
+    else
+      AsyncInvoke([this, callback](IReplayController *) { callback(GetCaptureAccess()); }, tag);
+  }
+  else
+  {
+    callback(GetCaptureAccess());
+  }
+
+  return true;
 }
 
 void ReplayManager::CancelReplayLoop()
@@ -312,6 +350,8 @@ void ReplayManager::CloseThread()
   if(m_Thread == NULL)
     return;
 
+  void *ctx = PythonContext::PausePythonThreading();
+
   // wait for the thread to close and clean up
   while(m_Thread->isRunning())
   {
@@ -319,6 +359,8 @@ void ReplayManager::CloseThread()
 
   m_Thread->deleteLater();
   m_Thread = NULL;
+
+  PythonContext::ResumePythonThreading(ctx);
 }
 
 ResultDetails ReplayManager::ConnectToRemoteServer(RemoteHost host)

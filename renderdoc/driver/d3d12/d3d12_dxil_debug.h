@@ -50,8 +50,6 @@ public:
                            uint64_t dataOffset) const override;
   bool TypedUAVStore(const BindingSlot &slot, const DXILDebug::ViewFmt &fmt, uint64_t dataOffset,
                      const ShaderValue &value) override;
-  bool TypedSRVStore(const BindingSlot &slot, const DXILDebug::ViewFmt &fmt, uint64_t dataOffset,
-                     const ShaderValue &value) override;
   void GetCBV(const BindingSlot &slot) override;
   UAVInfo GetUAV(const BindingSlot &slot) override;
   SRVInfo GetSRV(const BindingSlot &slot) override;
@@ -80,7 +78,8 @@ public:
   bool IsCBVCached(const DXDebug::BindingSlot &slot) const override;
   bool IsSRVCached(const DXDebug::BindingSlot &slot) const override;
   bool IsUAVCached(const DXDebug::BindingSlot &slot) const override;
-  bool IsResourceInfoCached(const DXDebug::BindingSlot &slot, uint32_t mipLevel) override;
+  bool IsResourceInfoCached(DXIL::ResourceClass resClass, const DXDebug::BindingSlot &slot,
+                            uint32_t mipLevel) override;
   bool IsSampleInfoCached(const DXDebug::BindingSlot &slot) override;
   bool IsRenderTargetSampleInfoCached() override;
   bool IsResourceReferenceInfoCached(const DXDebug::BindingSlot &slot) override;
@@ -127,6 +126,8 @@ public:
   const rdcarray<ShaderVariable> &GetThreadsInputs() const override { return m_ThreadsInputs; }
   const rdcarray<SourceVariableMapping> &GetSourceVars() const override { return m_SourceVars; }
   const ShaderVariable &GetInputPlaceholder() const override { return m_InputPlaceholder; }
+  void AddDebugMessage(MessageCategory cat, MessageSeverity sev, MessageSource src,
+                       const rdcstr &desc) override;
 
 private:
   bool IsDeviceThread() const { return Threading::GetCurrentID() == m_DeviceThreadID; }
@@ -166,19 +167,22 @@ private:
 
   struct ResourceInfoMiplevel
   {
+    DXIL::ResourceClass resClass;
     BindingSlot slot;
     uint32_t mipLevel;
 
     bool operator<(const ResourceInfoMiplevel &o) const
     {
-      if(mipLevel == o.mipLevel)
+      if(resClass != o.resClass)
+        return resClass < o.resClass;
+      if(!(slot == o.slot))
         return slot < o.slot;
       return mipLevel < o.mipLevel;
     }
 
     bool operator==(const ResourceInfoMiplevel &o) const
     {
-      return slot == o.slot && mipLevel == o.mipLevel;
+      return resClass == o.resClass && slot == o.slot && mipLevel == o.mipLevel;
     }
   };
 

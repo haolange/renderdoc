@@ -560,7 +560,11 @@
   DeclExt(KHR_present_wait2);                          \
   DeclExt(EXT_fragment_density_map_offset);            \
   DeclExt(EXT_image_drm_format_modifier);              \
-  DeclExt(EXT_custom_resolve);
+  DeclExt(EXT_custom_resolve);                         \
+  DeclExt(NV_device_diagnostic_checkpoints);           \
+  DeclExt(EXT_depth_bias_control);                     \
+  DeclExt(EXT_present_timing);                         \
+  DeclExt(KHR_device_address_commands);
 
 // for simplicity and since the check itself is platform agnostic,
 // these aren't protected in platform defines
@@ -707,7 +711,11 @@
   CheckExt(KHR_present_wait2, VKXX);                          \
   CheckExt(EXT_fragment_density_map_offset, VKXX);            \
   CheckExt(EXT_image_drm_format_modifier, VKXX);              \
-  CheckExt(EXT_custom_resolve, VKXX);
+  CheckExt(EXT_custom_resolve, VKXX);                         \
+  CheckExt(NV_device_diagnostic_checkpoints, VKXX);           \
+  CheckExt(EXT_depth_bias_control, VKXX);                     \
+  CheckExt(EXT_present_timing, VKXX);                         \
+  CheckExt(KHR_device_address_commands, VKXX);
 
 #define HookInitVulkanInstanceExts_PhysDev()                                                         \
   HookInitExtension(KHR_surface, GetPhysicalDeviceSurfaceSupportKHR);                                \
@@ -985,7 +993,6 @@
   HookInitPromotedExtension(KHR_dynamic_rendering, CmdBeginRendering, KHR);                          \
   HookInitPromotedExtension(KHR_dynamic_rendering, CmdEndRendering, KHR);                            \
   HookInitExtension(EXT_fragment_density_map_offset, CmdEndRendering2EXT);                           \
-  HookInitExtension(EXT_custom_resolve, CmdBeginCustomResolveEXT);                                   \
   HookInitPromotedExtension(KHR_dynamic_rendering_local_read, CmdSetRenderingAttachmentLocations,    \
                             KHR);                                                                    \
   HookInitPromotedExtension(KHR_dynamic_rendering_local_read,                                        \
@@ -1114,6 +1121,36 @@
   HookInitExtension(KHR_present_wait2, WaitForPresent2KHR);                                          \
   HookInitExtension(EXT_image_drm_format_modifier, GetImageDrmFormatModifierPropertiesEXT);          \
   HookInitExtension(EXT_custom_resolve, CmdBeginCustomResolveEXT);                                   \
+  HookInitExtension(NV_device_diagnostic_checkpoints, CmdSetCheckpointNV);                           \
+  HookInitExtension(NV_device_diagnostic_checkpoints, GetQueueCheckpointDataNV);                     \
+  HookInitExtension(NV_device_diagnostic_checkpoints, GetQueueCheckpointData2NV);                    \
+  HookInitExtension(EXT_depth_bias_control, CmdSetDepthBias2EXT);                                    \
+  HookInitExtension(EXT_present_timing, GetPastPresentationTimingEXT);                               \
+  HookInitExtension(EXT_present_timing, GetSwapchainTimeDomainPropertiesEXT);                        \
+  HookInitExtension(EXT_present_timing, GetSwapchainTimingPropertiesEXT);                            \
+  HookInitExtension(EXT_present_timing, SetSwapchainPresentTimingQueueSizeEXT);                      \
+  HookInitExtension(KHR_device_address_commands, CmdBindIndexBuffer3KHR);                            \
+  HookInitExtension(KHR_device_address_commands, CmdBindVertexBuffers3KHR);                          \
+  HookInitExtension(KHR_device_address_commands, CmdCopyImageToMemoryKHR);                           \
+  HookInitExtension(KHR_device_address_commands, CmdCopyMemoryKHR);                                  \
+  HookInitExtension(KHR_device_address_commands, CmdCopyMemoryToImageKHR);                           \
+  HookInitExtension(KHR_device_address_commands, CmdCopyQueryPoolResultsToMemoryKHR);                \
+  HookInitExtension(KHR_device_address_commands, CmdDispatchIndirect2KHR);                           \
+  HookInitExtension(KHR_device_address_commands, CmdDrawIndexedIndirect2KHR);                        \
+  HookInitExtension(KHR_device_address_commands, CmdDrawIndirect2KHR);                               \
+  HookInitExtension(KHR_device_address_commands, CmdFillMemoryKHR);                                  \
+  HookInitExtension(KHR_device_address_commands, CmdUpdateMemoryKHR);                                \
+  HookInitExtension(KHR_device_address_commands, CmdDrawMeshTasksIndirectCount2EXT);                 \
+  HookInitExtension(KHR_device_address_commands, CmdWriteMarkerToMemoryAMD);                         \
+  HookInitExtension(KHR_device_address_commands, CmdBeginConditionalRendering2EXT);                  \
+  HookInitExtension(KHR_device_address_commands, CmdDrawMeshTasksIndirect2EXT);                      \
+  HookInitExtension(KHR_device_address_commands, CmdBeginTransformFeedback2EXT);                     \
+  HookInitExtension(KHR_device_address_commands, CmdBindTransformFeedbackBuffers2EXT);               \
+  HookInitExtension(KHR_device_address_commands, CmdDrawIndirectByteCount2EXT);                      \
+  HookInitExtension(KHR_device_address_commands, CmdEndTransformFeedback2EXT);                       \
+  HookInitExtension(KHR_device_address_commands, CmdDrawIndexedIndirectCount2KHR);                   \
+  HookInitExtension(KHR_device_address_commands, CmdDrawIndirectCount2KHR);                          \
+  HookInitExtension(KHR_device_address_commands, CreateAccelerationStructure2KHR);                   \
   HookInitExtension_Device_Win32();                                                                  \
   HookInitExtension_Device_Linux();                                                                  \
   HookInitExtension_Device_Android();                                                                \
@@ -2088,6 +2125,80 @@
               image, VkImageDrmFormatModifierPropertiesEXT *, pProperties);                          \
   HookDefine2(void, vkCmdBeginCustomResolveEXT, VkCommandBuffer, commandBuffer,                      \
               const VkBeginCustomResolveInfoEXT *, pBeginCustomResolveInfo);                         \
+  HookDefine2(void, vkCmdSetCheckpointNV, VkCommandBuffer, commandBuffer, const void *,              \
+              pCheckpointMarker);                                                                    \
+  HookDefine3(void, vkGetQueueCheckpointDataNV, VkQueue, queue, uint32_t *, pCheckpointDataCount,    \
+              VkCheckpointDataNV *, pCheckpointData);                                                \
+  HookDefine3(void, vkGetQueueCheckpointData2NV, VkQueue, queue, uint32_t *, pCheckpointDataCount,   \
+              VkCheckpointData2NV *, pCheckpointData);                                               \
+  HookDefine2(void, vkCmdSetDepthBias2EXT, VkCommandBuffer, commandBuffer,                           \
+              const VkDepthBiasInfoEXT *, pDepthBiasInfo);                                           \
+  HookDefine3(VkResult, vkGetPastPresentationTimingEXT, VkDevice, device,                            \
+              const VkPastPresentationTimingInfoEXT *, pPastPresentationTimingInfo,                  \
+              VkPastPresentationTimingPropertiesEXT *, pPastPresentationTimingProperties);           \
+  HookDefine4(VkResult, vkGetSwapchainTimeDomainPropertiesEXT, VkDevice, device, VkSwapchainKHR,     \
+              swapchain, VkSwapchainTimeDomainPropertiesEXT *, pSwapchainTimeDomainProperties,       \
+              uint64_t *, pTimeDomainsCounter);                                                      \
+  HookDefine4(VkResult, vkGetSwapchainTimingPropertiesEXT, VkDevice, device, VkSwapchainKHR,         \
+              swapchain, VkSwapchainTimingPropertiesEXT *, pSwapchainTimingProperties, uint64_t *,   \
+              pSwapchainTimingPropertiesCounter);                                                    \
+  HookDefine3(VkResult, vkSetSwapchainPresentTimingQueueSizeEXT, VkDevice, device, VkSwapchainKHR,   \
+              swapchain, uint32_t, size);                                                            \
+  HookDefine2(void, vkCmdBindIndexBuffer3KHR, VkCommandBuffer, commandBuffer,                        \
+              const VkBindIndexBuffer3InfoKHR *, pInfo);                                             \
+  HookDefine4(void, vkCmdBindVertexBuffers3KHR, VkCommandBuffer, commandBuffer, uint32_t,            \
+              firstBinding, uint32_t, bindingCount, const VkBindVertexBuffer3InfoKHR *,              \
+              pBindingInfos);                                                                        \
+  HookDefine2(void, vkCmdCopyMemoryKHR, VkCommandBuffer, commandBuffer,                              \
+              const VkCopyDeviceMemoryInfoKHR *, pCopyMemoryInfo);                                   \
+  HookDefine2(void, vkCmdCopyImageToMemoryKHR, VkCommandBuffer, commandBuffer,                       \
+              const VkCopyDeviceMemoryImageInfoKHR *, pCopyMemoryInfo);                              \
+  HookDefine2(void, vkCmdCopyMemoryToImageKHR, VkCommandBuffer, commandBuffer,                       \
+              const VkCopyDeviceMemoryImageInfoKHR *, pCopyMemoryInfo);                              \
+  HookDefine7(void, vkCmdCopyQueryPoolResultsToMemoryKHR, VkCommandBuffer, commandBuffer,            \
+              VkQueryPool, queryPool, uint32_t, firstQuery, uint32_t, queryCount,                    \
+              const VkStridedDeviceAddressRangeKHR *, pDstRange, VkAddressCommandFlagsKHR,           \
+              dstFlags, VkQueryResultFlags, queryResultFlags);                                       \
+  HookDefine2(void, vkCmdDispatchIndirect2KHR, VkCommandBuffer, commandBuffer,                       \
+              const VkDispatchIndirect2InfoKHR *, pInfo);                                            \
+  HookDefine2(void, vkCmdDrawIndexedIndirect2KHR, VkCommandBuffer, commandBuffer,                    \
+              const VkDrawIndirect2InfoKHR *, pInfo);                                                \
+  HookDefine2(void, vkCmdDrawIndirect2KHR, VkCommandBuffer, commandBuffer,                           \
+              const VkDrawIndirect2InfoKHR *, pInfo);                                                \
+  HookDefine4(void, vkCmdFillMemoryKHR, VkCommandBuffer, commandBuffer,                              \
+              const VkDeviceAddressRangeKHR *, pDstRange, VkAddressCommandFlagsKHR, dstFlags,        \
+              uint32_t, data);                                                                       \
+  HookDefine5(void, vkCmdUpdateMemoryKHR, VkCommandBuffer, commandBuffer,                            \
+              const VkDeviceAddressRangeKHR *, pDstRange, VkAddressCommandFlagsKHR, dstFlags,        \
+              VkDeviceSize, dataSize, const void *, pData);                                          \
+  HookDefine2(void, vkCmdDrawMeshTasksIndirectCount2EXT, VkCommandBuffer, commandBuffer,             \
+              const VkDrawIndirectCount2InfoKHR *, pInfo);                                           \
+  HookDefine2(void, vkCmdWriteMarkerToMemoryAMD, VkCommandBuffer, commandBuffer,                     \
+              const VkMemoryMarkerInfoAMD *, pInfo);                                                 \
+  HookDefine2(void, vkCmdBeginConditionalRendering2EXT, VkCommandBuffer, commandBuffer,              \
+              const VkConditionalRenderingBeginInfo2EXT *, pConditionalRenderingBegin);              \
+  HookDefine2(void, vkCmdDrawMeshTasksIndirect2EXT, VkCommandBuffer, commandBuffer,                  \
+              const VkDrawIndirect2InfoKHR *, pInfo);                                                \
+  HookDefine4(void, vkCmdBeginTransformFeedback2EXT, VkCommandBuffer, commandBuffer, uint32_t,       \
+              firstCounterRange, uint32_t, counterRangeCount,                                        \
+              const VkBindTransformFeedbackBuffer2InfoEXT *, pCounterInfos);                         \
+  HookDefine4(void, vkCmdBindTransformFeedbackBuffers2EXT, VkCommandBuffer, commandBuffer,           \
+              uint32_t, firstBinding, uint32_t, bindingCount,                                        \
+              const VkBindTransformFeedbackBuffer2InfoEXT *, pBindingInfos);                         \
+  HookDefine6(void, vkCmdDrawIndirectByteCount2EXT, VkCommandBuffer, commandBuffer, uint32_t,        \
+              instanceCount, uint32_t, firstInstance, const VkBindTransformFeedbackBuffer2InfoEXT *, \
+              pCounterInfo, uint32_t, counterOffset, uint32_t, vertexStride);                        \
+  HookDefine4(void, vkCmdEndTransformFeedback2EXT, VkCommandBuffer, commandBuffer, uint32_t,         \
+              firstCounterRange, uint32_t, counterRangeCount,                                        \
+              const VkBindTransformFeedbackBuffer2InfoEXT *, pCounterInfos);                         \
+  HookDefine2(void, vkCmdDrawIndexedIndirectCount2KHR, VkCommandBuffer, commandBuffer,               \
+              const VkDrawIndirectCount2InfoKHR *, pInfo);                                           \
+  HookDefine2(void, vkCmdDrawIndirectCount2KHR, VkCommandBuffer, commandBuffer,                      \
+              const VkDrawIndirectCount2InfoKHR *, pInfo);                                           \
+  HookDefine4(VkResult, vkCreateAccelerationStructure2KHR, VkDevice, device,                         \
+              const VkAccelerationStructureCreateInfo2KHR *, pCreateInfo,                            \
+              const VkAllocationCallbacks *, pAllocator, VkAccelerationStructureKHR *,               \
+              pAccelerationStructure);                                                               \
   HookDefine_Win32();                                                                                \
   HookDefine_Linux();                                                                                \
   HookDefine_Android();                                                                              \

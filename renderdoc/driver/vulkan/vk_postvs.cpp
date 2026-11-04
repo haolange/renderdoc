@@ -2917,14 +2917,34 @@ void VulkanReplay::FetchMeshOut(uint32_t eventId, VulkanRenderState &state)
     const SDFile *file = GetStructuredFile();
 
     // it doesn't matter if this is an indirect sub command or an inlined 1-draw non-indirect count,
-    // either way the 'offset' is valid - either from the start, or updated for this particular draw
-    // when we originally patched (and fortunately that part doesn't change).
+    // either way the offset/address is valid - either from the start, or updated for this
+    // particular draw when we originally patched (and fortunately that part doesn't change).
     if(chunkIdx < file->chunks.size())
     {
       const SDChunk *chunk = file->chunks[chunkIdx];
 
-      ResourceId buf = chunk->FindChild("buffer")->AsResourceId();
-      uint64_t offs = chunk->FindChild("offset")->AsUInt64();
+      ResourceId buf;
+      uint64_t offs = 0;
+
+      // For the DrawMeshTasks2 variants, the structured data layout differs between fake indirect
+      // sub commands and the real serialised command chunk. The real commands store the address
+      // inside an "Info" struct, but fake sub command chunks just store the address directly since
+      // the rest of the information is redundant.
+      if(chunk->FindChild("buffer") && chunk->FindChild("offset"))
+      {
+        buf = chunk->FindChild("buffer")->AsResourceId();
+        offs = chunk->FindChild("offset")->AsUInt64();
+      }
+      else if(chunk->FindChild("Info"))
+      {
+        m_pDriver->GetResIDFromAddr(
+            chunk->FindChild("Info")->FindChild("addressRange")->FindChild("address")->AsUInt64(),
+            buf, offs);
+      }
+      else if(chunk->FindChild("address"))
+      {
+        m_pDriver->GetResIDFromAddr(chunk->FindChild("address")->AsUInt64(), buf, offs);
+      }
 
       bytebuf dispatchArgs;
       GetBufferData(buf, offs, sizeof(VkDrawMeshTasksIndirectCommandEXT), dispatchArgs);
@@ -3309,6 +3329,7 @@ void VulkanReplay::FetchMeshOut(uint32_t eventId, VulkanRenderState &state)
       shaderCreateInfo.codeType = VK_SHADER_CODE_TYPE_SPIRV_EXT;
       shaderCreateInfo.codeSize = taskSpirv.size() * sizeof(uint32_t);
       shaderCreateInfo.pCode = taskSpirv.data();
+      shaderCreateInfo.pSpecializationInfo = &taskSpecInfo;
 
       vkr = m_pDriver->vkCreateShadersEXT(m_Device, 1, &shaderCreateInfo, NULL, &taskShader);
 
@@ -3521,7 +3542,9 @@ void VulkanReplay::FetchMeshOut(uint32_t eventId, VulkanRenderState &state)
 
   if(state.dynamicRendering.active)
   {
-    numViews = RDCMAX(numViews, Log2Ceil(state.dynamicRendering.viewMask + 1));
+    numViews = state.dynamicRendering.viewMask == ~0U
+                   ? 32
+                   : RDCMAX(numViews, Log2Ceil(state.dynamicRendering.viewMask + 1));
   }
   else
   {
@@ -4467,7 +4490,9 @@ void VulkanReplay::FetchVSOut(uint32_t eventId, VulkanRenderState &state)
 
   if(state.dynamicRendering.active)
   {
-    numViews = RDCMAX(numViews, Log2Ceil(state.dynamicRendering.viewMask + 1));
+    numViews = state.dynamicRendering.viewMask == ~0U
+                   ? 32
+                   : RDCMAX(numViews, Log2Ceil(state.dynamicRendering.viewMask + 1));
   }
   else
   {
@@ -5853,6 +5878,21 @@ void VulkanReplay::FetchTessGSOut(uint32_t eventId, VulkanRenderState &state)
     if(StageIndex(stage.stage) == stageIndex)
     {
       stage.module = module;
+      break;
+    }
+  }
+
+  // remove the pixel shader
+  for(uint32_t i = 0; i < pipeCreateInfo.stageCount; i++)
+  {
+    VkPipelineShaderStageCreateInfo &stage =
+        (VkPipelineShaderStageCreateInfo &)pipeCreateInfo.pStages[i];
+
+    if(stage.stage == VK_SHADER_STAGE_FRAGMENT_BIT)
+    {
+      if(i < pipeCreateInfo.stageCount - 1)
+        stage = pipeCreateInfo.pStages[pipeCreateInfo.stageCount - 1];
+      pipeCreateInfo.stageCount--;
       break;
     }
   }

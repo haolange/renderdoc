@@ -111,9 +111,19 @@ class VulkanHook : LibraryHook
 
     // we don't register any library or function hooks because we use the layer system
 
-    // we assume the implicit layer is registered - the UI will prompt the user about installing it.
-    Process::RegisterEnvironmentModification(
-        EnvironmentModification(EnvMod::Set, EnvSep::NoSep, RENDERDOC_VULKAN_LAYER_VAR, "1"));
+    // support self-hosted capture by checking our filename and tweaking the env var we set
+    if(VulkanLayerJSONBasename != "renderdoc")
+    {
+      Process::RegisterEnvironmentModification(EnvironmentModification(
+          EnvMod::Set, EnvSep::NoSep,
+          "ENABLE_VULKAN_" + strupper(VulkanLayerJSONBasename) + "_CAPTURE", "1"));
+    }
+    else
+    {
+      // we assume the implicit layer is registered - the UI will prompt the user about installing it.
+      Process::RegisterEnvironmentModification(
+          EnvironmentModification(EnvMod::Set, EnvSep::NoSep, RENDERDOC_VULKAN_LAYER_VAR, "1"));
+    }
 
     // RTSS layer is buggy, disable it to avoid bug reports that are caused by it
     Process::RegisterEnvironmentModification(
@@ -158,19 +168,14 @@ class VulkanHook : LibraryHook
     Process::RegisterEnvironmentModification(
         EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_VK_LAYER_GPUOpen_GRS", "1"));
 
+    Process::RegisterEnvironmentModification(
+        EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_LAYER_NV_PRESENT_1", "1"));
+
     // fpsmon not only has a buggy layer but it also picks an absurdly generic disable environment
     // variable :(. Hopefully no other program picks this, or if it does then it's probably not a
     // bad thing to disable too
     Process::RegisterEnvironmentModification(
         EnvironmentModification(EnvMod::Set, EnvSep::NoSep, "DISABLE_LAYER", "1"));
-
-    // support self-hosted capture by checking our filename and tweaking the env var we set
-    if(VulkanLayerJSONBasename != "renderdoc")
-    {
-      Process::RegisterEnvironmentModification(EnvironmentModification(
-          EnvMod::Set, EnvSep::NoSep,
-          "ENABLE_VULKAN_" + strupper(VulkanLayerJSONBasename) + "_CAPTURE", "1"));
-    }
 
     // check options to set further variables, and apply
     OptionsUpdated();

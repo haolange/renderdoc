@@ -23,13 +23,12 @@
     <ProjectGuid>{EC8C6087-E99E-44B3-B8DC-3C9FE7907F47}</ProjectGuid>
     <RootNamespace>demos</RootNamespace>
     <ProjectName>demos</ProjectName>
-    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
   </PropertyGroup>
+  <Import Project="$(SolutionDir)\..\WindowsSDKTarget.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v140</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
@@ -40,6 +39,11 @@
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <!-- WindowsSDKFix is relative to parent solution, replicate it here -->
+  <!-- <Import Project="$(SolutionDir)\..\WindowsSDKFix.props" /> -->
+  <PropertyGroup>
+    <IncludePath>$(SolutionDir)\..\sdkfix;$(IncludePath)</IncludePath>
+  </PropertyGroup>
   <PropertyGroup>
     <OutDir>$(SolutionDir)</OutDir>
     <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
@@ -98,30 +102,6 @@
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-    </Link>
-  </ItemDefinitionGroup>
-  <PropertyGroup Condition="$(Platform)=='x64' and exists('3rdparty/shaderc/x64/lib/shaderc_combined.lib') and $(PlatformToolset)=='v143'">
-    <HaveShaderc>1</HaveShaderc>
-  </PropertyGroup>
-  <PropertyGroup Condition="$(Platform)=='x86' and exists('3rdparty/shaderc/x86/lib/shaderc_combined.lib') and $(PlatformToolset)=='v143'">
-    <HaveShaderc>1</HaveShaderc>
-  </PropertyGroup>
-  <ItemDefinitionGroup Condition="$(Platform)=='x64' and $(HaveShaderc)=='1'">
-    <ClCompile>
-      <AdditionalIncludeDirectories>3rdparty/shaderc/x64/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>HAVE_SHADERC=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <Link>
-      <AdditionalDependencies>3rdparty/shaderc/x64/lib/shaderc_combined.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="$(Platform)=='x86' and $(HaveShaderc)=='1'">
-    <ClCompile>
-      <AdditionalIncludeDirectories>3rdparty/shaderc/x86/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>HAVE_SHADERC=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <Link>
-      <AdditionalDependencies>3rdparty/shaderc/x86/lib/shaderc_combined.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -234,6 +214,7 @@
     <ClCompile Include="d3d12\d3d12_sharing.cpp" />
     <ClCompile Include="d3d12\d3d12_simple_dispatch.cpp" />
     <ClCompile Include="d3d12\d3d12_simple_triangle.cpp" />
+    <ClCompile Include="d3d12\d3d12_stripped_shaders.cpp" />
     <ClCompile Include="d3d12\d3d12_subgroup_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_swapchain_zoo.cpp" />
     <ClCompile Include="d3d12\d3d12_template.cpp" />
@@ -329,6 +310,7 @@
     <ClCompile Include="vk\vk_descriptor_buffer_analyse.cpp" />
     <ClCompile Include="vk\vk_descriptor_reuse.cpp" />
     <ClCompile Include="vk\vk_descriptor_variable_count.cpp" />
+    <ClCompile Include="vk\vk_device_address_commands.cpp" />
     <ClCompile Include="vk\vk_discard_zoo.cpp" />
     <ClCompile Include="vk\vk_dynamic_rendering.cpp" />
     <ClCompile Include="vk\vk_empty_capture.cpp" />
@@ -367,6 +349,7 @@
     <ClCompile Include="vk\vk_shader_printf.cpp" />
     <ClCompile Include="vk\vk_spec_constants.cpp" />
     <ClCompile Include="vk\vk_spirv_13_shaders.cpp" />
+    <ClCompile Include="vk\vk_stripped_shaders.cpp" />
     <ClCompile Include="vk\vk_subgroup_zoo.cpp" />
     <ClCompile Include="vk\vk_sync2.cpp" />
     <ClCompile Include="vk\vk_template.cpp" />
@@ -390,6 +373,7 @@
     <ClCompile Include="vk\vk_adv_cbuffer_zoo.cpp" />
     <ClCompile Include="vk\vk_secondary_cmdbuf.cpp" />
     <ClCompile Include="vk\vk_video_textures.cpp" />
+    <ClCompile Include="vk\vk_vrs.cpp" />
     <ClCompile Include="vk\vk_vs_max_desc_set.cpp" />
     <ClCompile Include="vk\vk_simple_triangle.cpp" />
     <ClCompile Include="vk\vk_test.cpp" />
@@ -459,7 +443,6 @@
     <ClInclude Include="3rdparty\nuklear\nuklear.h" />
     <ClInclude Include="3rdparty\nuklear\nuklear_gdi.h" />
     <ClInclude Include="3rdparty\nuklear\nuklear_xlib.h" />
-    <ClInclude Include="3rdparty\shaderc\shaderc.h" />
     <ClInclude Include="renderdoc_app.h" />
     <ClInclude Include="test_common.h" />
     <ClInclude Include="vk\vk_headers.h" />
@@ -548,8 +531,6 @@ namespace DXCEnumerateAndCheck {
       <Output TaskParameter="DebugOut" PropertyName="DebugOutDXC" />
     </GetDXCDLL>
     <Message Condition="$(DXCDLLFolder.Length) &gt; 0" Importance="high" Text="Using DXC/D3DCompiler dlls from $(DXCDLLFolder)." />
-    <Message Condition="$(HaveShaderc)=='1'" Importance="high" Text="Built with linked shaderc." />
-    <Message Condition="$(HaveShaderc)!='1'" Importance="high" Text="Not built with linked shaderc." />
     <PropertyGroup Condition="$(DXCDLLFolder.Length) &gt; 0">
       <DXCDLLSourceLocation>$(DXCDLLFolder)</DXCDLLSourceLocation>
     </PropertyGroup>

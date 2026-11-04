@@ -481,6 +481,60 @@ static const char *dxOpFunctionNames[] = {
 "dx.op.sampleCmpBias",
 "dx.op.startVertexLocation",
 "dx.op.startInstanceLocation",
+"dx.op.allocateRayQuery2",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.hitObject_TraceRay",
+"dx.op.hitObject_FromRayQuery",
+"dx.op.hitObject_FromRayQueryWithAttrs",
+"dx.op.hitObject_MakeMiss",
+"dx.op.hitObject_MakeNop",
+"dx.op.hitObject_Invoke",
+"dx.op.maybeReorderThread",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateVector",
+"dx.op.hitObject_StateVector",
+"dx.op.hitObject_StateVector",
+"dx.op.hitObject_StateVector",
+"dx.op.hitObject_StateMatrix",
+"dx.op.hitObject_StateMatrix",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_StateScalar",
+"dx.op.hitObject_SetShaderTableIndex",
+"dx.op.hitObject_LoadLocalRootTableConstant",
+"dx.op.hitObject_Attributes",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.reserved",
+"dx.op.rawBufferVectorLoad",
+"dx.op.rawBufferVectorStore",
+"dx.op.matVecMul",
+"dx.op.matVecMulAdd",
+"dx.op.outerProductAccumulate",
+"dx.op.vectorAccumulate",
+"dx.op.vectorReduce",
+"dx.op.vectorReduce",
+"dx.op.dot",
 };
 
 static const char *dxcOpNames[] = {
@@ -742,6 +796,60 @@ static const char *dxcOpNames[] = {
 "SampleCmpBias(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,bias,clamp)",
 "StartVertexLocation()",
 "StartInstanceLocation()",
+"AllocateRayQuery2(constRayFlags,constRayQueryFlags)",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"HitObject_TraceRay(accelerationStructure,rayFlags,instanceInclusionMask,rayContributionToHitGroupIndex,multiplierForGeometryContributionToHitGroupIndex,missShaderIndex,Origin_X,Origin_Y,Origin_Z,TMin,Direction_X,Direction_Y,Direction_Z,TMax,payload)",
+"HitObject_FromRayQuery(rayQueryHandle)",
+"HitObject_FromRayQueryWithAttrs(rayQueryHandle,HitKind,CommittedAttribs))",
+"HitObject_MakeMiss(RayFlags,MissShaderIndex,Origin_X,Origin_Y,Origin_Z,TMin,Direction_X,Direction_Y,Direction_Z,TMax)",
+"HitObject_MakeNop()",
+"HitObject_Invoke(hitObject,payload)",
+"MaybeReorderThread(hitObject,coherenceHint,numCoherenceHintBitsFromLSB)",
+"HitObject_IsMiss(hitObject)",
+"HitObject_IsHit(hitObject)",
+"HitObject_IsNop(hitObject)",
+"HitObject_RayFlags(hitObject)",
+"HitObject_RayTMin(hitObject)",
+"HitObject_RayTCurrent(hitObject)",
+"HitObject_WorldRayOrigin(hitObject,component)",
+"HitObject_WorldRayDirection(hitObject,component)",
+"HitObject_ObjectRayOrigin(hitObject,component)",
+"HitObject_ObjectRayDirection(hitObject,component)",
+"HitObject_ObjectToWorld3x4(hitObject,row,col)",
+"HitObject_WorldToObject3x4(hitObject,row,col)",
+"HitObject_GeometryIndex(hitObject)",
+"HitObject_InstanceIndex(hitObject)",
+"HitObject_InstanceID(hitObject)",
+"HitObject_PrimitiveIndex(hitObject)",
+"HitObject_HitKind(hitObject)",
+"HitObject_ShaderTableIndex(hitObject)",
+"HitObject_SetShaderTableIndex(hitObject,shaderTableIndex)",
+"HitObject_LoadLocalRootTableConstant(hitObject,offset)",
+"HitObject_Attributes(hitObject,attributes)",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"Reserved()",
+"RawBufferVectorLoad(buf,index,elementOffset,alignment)",
+"RawBufferVectorStore(uav,index,elementOffset,value0,alignment)",
+"MatVecMul(inputVector,isInputUnsigned,inputInterpretation,matrixBuffer,matrixOffset,matrixIntepretation,matrixM,matrixK,matrixLayout,matrixTranspose,matrixStride,isOutputUnsigned)",
+"MatVecMulAdd(inputVector,isInputUnsigned,inputInterpretation,matrixBuffer,matrixOffset,matrixIntepretation,matrixM,matrixK,matrixLayout,matrixTranspose,matrixStride,biasBuffer,biasOffset,biasIntepretation,isOutputUnsigned)",
+"OuterProductAccumulate(inputVector1,inputVector2,matrixBuffer,matrixOffset,matrixIntepretation,matrixLayout,matrixStride)",
+"VectorAccumulate(inputVector,arrayBuffer,arrayOffset)",
+"VectorReduceAnd(a)",
+"VectorReduceOr(a)",
+"FDot(a,b)",
 };
 
 static const char *funcNameSigs[] = {
@@ -1021,7 +1129,7 @@ static rdcstr GetResourceShapeName(DXIL::ResourceKind shape, bool uav)
     case DXIL::ResourceKind::Texture2DArray: return prefix + "Texture2DArray";
     case DXIL::ResourceKind::Texture2DMSArray: return prefix + "Texture2DMSArray";
     case DXIL::ResourceKind::TextureCubeArray: return prefix + "TextureCubeArray";
-    case DXIL::ResourceKind::TypedBuffer: return prefix + "TypedBuffer";
+    case DXIL::ResourceKind::TypedBuffer: return prefix + "Buffer";
     case DXIL::ResourceKind::RawBuffer: return prefix + "ByteAddressBuffer";
     case DXIL::ResourceKind::StructuredBuffer: return prefix + "StructuredBuffer";
     case DXIL::ResourceKind::CBuffer: return "CBuffer";
@@ -1128,7 +1236,7 @@ static rdcstr GetResourceTypeName(const Type *type)
   return "UNHANDLED RESOURCE TYPE";
 };
 
-void Program::Parse(const DXBC::Reflection *reflection)
+void Program::ProcessDXIL(const DXBC::Reflection *reflection)
 {
   if(m_Parsed)
     return;
@@ -1137,7 +1245,9 @@ void Program::Parse(const DXBC::Reflection *reflection)
 
   m_EntryPointInterfaces.clear();
   FillEntryPointInterfaces();
+#if DISABLED(DXC_COMPATIBLE_DISASM)
   ParseReferences(reflection);
+#endif
 
   if(m_Type == DXBC::ShaderType::Compute || m_Type == DXBC::ShaderType::Amplification ||
      m_Type == DXBC::ShaderType::Mesh)
@@ -1262,35 +1372,25 @@ void Program::SettleIDs()
   for(size_t i = 0; i < m_Functions.size(); i++)
   {
     // Generating the global SSA Id must be done before calling processFunction
-#if ENABLED(DXC_COMPATIBLE_DISASM)
-    uint32_t slot = 0;
-#endif
     size_t curBlock = 0;
     Function &func = *m_Functions[i];
+#if DISABLED(DXC_COMPATIBLE_DISASM)
     for(Instruction *arg : func.args)
     {
       RDCASSERT(curBlock < func.blocks.size());
-#if DISABLED(DXC_COMPATIBLE_DISASM)
       if(arg->slot == ~0U)
         arg->slot = m_NextSSAId++;
-#else
-      if(arg->getName().isEmpty())
-        arg->slot = slot++;
-#endif
       rdcstr n = GetInstResultName(arg);
       SetSSAName(arg->slot, n);
     }
+#endif
+#if DISABLED(DXC_COMPATIBLE_DISASM)
     for(Instruction *inst : func.instructions)
     {
       if(!inst->type->isVoid())
       {
-#if DISABLED(DXC_COMPATIBLE_DISASM)
         if(inst->slot == ~0U)
           inst->slot = m_NextSSAId++;
-#else
-        if(inst->getName().isEmpty())
-          inst->slot = slot++;
-#endif
         rdcstr n = GetInstResultName(inst);
         SetSSAName(inst->slot, n);
       }
@@ -1355,6 +1455,7 @@ void Program::SettleIDs()
         }
       }
     }
+#endif
 
     m_Accum.processFunction(m_Functions[i]);
 
@@ -1828,7 +1929,8 @@ rdcstr Program::DisassembleGlobalVars(int &instructionLine) const
     if(g.section >= 0)
       ret += StringFormat::Fmt(", section %s", escapeString(m_Sections[g.section]).c_str());
 
-    ret += " // " + escapeString(g.name);
+    if(!dxcStyleFormatting)
+      ret += " // " + escapeString(g.name);
     ret += "\n";
     instructionLine++;
   }
@@ -1933,11 +2035,15 @@ const rdcstr &Program::GetDisassembly(bool dxcStyle, const DXBC::Reflection *ref
 {
   if(m_Disassembly.empty() || (dxcStyle != m_DXCStyle))
   {
+#if DISABLED(DXC_COMPATIBLE_DISASM)
     m_DXCStyle = dxcStyle;
+#else
+    m_DXCStyle = true;
+#endif
 
-    Parse(reflection);
+    ProcessDXIL(reflection);
 
-    if(dxcStyle)
+    if(m_DXCStyle)
       MakeDXCDisassemblyString();
     else
       MakeRDDisassemblyString(reflection);
@@ -1949,6 +2055,9 @@ void Program::MakeDXCDisassemblyString()
 {
   const bool dxcStyleFormatting = true;
   const char dxilIdentifier = Program::GetDXILIdentifier(dxcStyleFormatting);
+
+  RDCCOMPILE_ASSERT(ARRAY_COUNT(dxcOpNames) == (size_t)DXOp::NumOpCodes,
+                    "dxcOpNames array is not correct!");
 
   m_Disassembly.clear();
 #if DISABLED(DXC_COMPATIBLE_DISASM)
@@ -3023,6 +3132,9 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
   const bool dxcStyleFormatting = m_DXCStyle;
   const char dxilIdentifier = Program::GetDXILIdentifier(dxcStyleFormatting);
 
+  RDCCOMPILE_ASSERT(ARRAY_COUNT(dxOpFunctionNames) == (size_t)DXOp::NumOpCodes,
+                    "dxOpFunctionNames array is not correct!");
+
   m_Disassembly.clear();
   m_DisassemblyInstructionLine = 1;
 
@@ -3657,7 +3769,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                             case ResourceKind::TextureCubeArray:
                               typeStr += "TextureCubeArray";
                               break;
-                            case ResourceKind::TypedBuffer: typeStr += "TypedBuffer"; break;
+                            case ResourceKind::TypedBuffer: typeStr += "Buffer"; break;
                             default: break;
                           }
                           break;

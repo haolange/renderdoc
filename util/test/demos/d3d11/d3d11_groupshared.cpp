@@ -36,6 +36,8 @@ RWStructuredBuffer<float> indata : register(u0);
 RWStructuredBuffer<float4> outdata : register(u1);
 
 groupshared float gsmData[MAX_THREADS];
+groupshared float gsmSmallArray[MAX_THREADS];
+groupshared float3 gsmSmall2DArray[3][MAX_THREADS];
 
 cbuffer consts : register(b0)
 {
@@ -115,6 +117,31 @@ void main(uint3 gid : SV_GroupThreadID)
     outval.z = GetGSMValue(gid.x + 2);
     outval.w = GetGSMValue(gid.x + 3);
   }
+  else if (IsTest(3))
+  {
+    // Out of bounds GSM access should not crash
+    uint idx = gid.x;
+    uint oneu = (idx+1)/(idx+1);
+    uint zerou = oneu - 1;
+    uint idxOOB = idx * 2 + MAX_THREADS * oneu;
+
+    gsmSmallArray[idx] = (float)gid.x;
+    gsmSmall2DArray[zerou][idx].x = (float)gid.x;
+    gsmSmall2DArray[zerou][idx].y = (float)gid.x + 1.0;
+    gsmSmall2DArray[oneu][idx].x = (float)gid.x;
+    gsmSmall2DArray[oneu][idx].y = (float)gid.x + 1.0;
+    gsmSmall2DArray[oneu+oneu][idx].x = (float)gid.x;
+    gsmSmall2DArray[oneu+oneu][idx].y = (float)gid.x + 1.0;
+
+    gsmSmallArray[idxOOB] += (float)zerou;
+    gsmSmall2DArray[oneu][idxOOB].x += (float)zerou;
+    gsmSmall2DArray[oneu][idxOOB].y += (float)zerou;
+
+    outval.x = gsmSmallArray[idx + zerou];
+    outval.y = gsmSmallArray[idx + zerou];
+    outval.z = gsmSmall2DArray[oneu][idx + zerou].x;
+    outval.w = gsmSmall2DArray[oneu][idx + zerou].y;
+  }
 
   outdata[gid.x] = outval;
 }
@@ -136,7 +163,7 @@ void main(uint3 gid : SV_GroupThreadID)
     ID3D11UnorderedAccessViewPtr inUAV = MakeUAV(inBuf);
     ID3D11UnorderedAccessViewPtr outUAV = MakeUAV(outBuf);
 
-    ID3D11ComputeShaderPtr shad = CreateCS(Compile(comp, "main", "cs_5_0", true));
+    ID3D11ComputeShaderPtr shad = CreateCS(Compile(comp, "main", "cs_5_0"));
 
     int cbufferdata[4];
     memset(cbufferdata, 0, sizeof(cbufferdata));

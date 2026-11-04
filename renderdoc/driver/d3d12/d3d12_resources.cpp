@@ -392,7 +392,7 @@ HRESULT STDMETHODCALLTYPE WrappedID3D12Resource::Map(UINT Subresource,
     map[Subresource].realPtr = (byte *)mapPtr;
     map[Subresource].refcount++;
 
-    // on the first map, register this so we can flush any updates in case it's left persistant
+    // on the first map, register this so we can flush any updates in case it's left persistent
     if(map[Subresource].refcount == 1)
       m_pDevice->Map(this, Subresource);
   }
@@ -650,9 +650,22 @@ void WrappedID3D12PipelineState::ShaderEntry::ReloadShaderDebugInformation()
 
 void WrappedID3D12PipelineState::ShaderEntry::Reload()
 {
+  bool wasBuilt = m_Built;
   m_Built = false;
   *m_Details = ShaderReflection();
-  SAFE_DELETE(m_DXBCFile);
+
+  if(m_DXBCFile)
+  {
+    // recreate the DXBC file, this will pull any old debug info over
+    m_DXBCFile = new DXBC::DXBCContainer(m_DXBCFile, rdcstr());
+    m_DXBCFile->SetShaderExts(GraphicsAPI::D3D12, m_ShaderExtSlot, m_ShaderExtSpace);
+  }
+
+  if(wasBuilt)
+  {
+    BuildReflection();
+    m_Built = true;
+  }
 }
 
 rdcpair<uint32_t, uint32_t> FindMatchingRootParameter(const D3D12RootSignature &sig,
@@ -994,8 +1007,7 @@ void D3D12ShaderExportDatabase::PopulateDatabase(size_t NumSubobjects,
           RDCERR("Falling back to expensive container-based enumeration of entry points");
 
           DXBC::DXBCContainer container(
-              bytebuf((byte *)dxil->DXILLibrary.pShaderBytecode, dxil->DXILLibrary.BytecodeLength),
-              rdcstr(), GraphicsAPI::D3D12, ~0U, ~0U);
+              bytebuf((byte *)dxil->DXILLibrary.pShaderBytecode, dxil->DXILLibrary.BytecodeLength));
 
           entries = container.GetEntryPoints();
         }
@@ -1604,9 +1616,9 @@ D3D12_SHADER_RESOURCE_VIEW_DESC MakeSRVDesc(const D3D12_RESOURCE_DESC &desc)
 
     ret.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
     ret.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-    ret.Buffer.StructureByteStride = 0;
+    ret.Buffer.StructureByteStride = 16;
     ret.Buffer.FirstElement = 0;
-    ret.Buffer.NumElements = (UINT)desc.Width;
+    ret.Buffer.NumElements = (UINT)desc.Width / 16;
   }
   else if(desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D)
   {

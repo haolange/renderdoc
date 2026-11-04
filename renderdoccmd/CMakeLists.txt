@@ -202,11 +202,13 @@ if(ANDROID)
     endif()
     set(RENDERDOC_ANDROID_KEYSTORE "${CMAKE_CURRENT_BINARY_DIR}/debug.keystore" CACHE FILEPATH
         "Android development signing keystore; retain it across paired runtime rebuilds")
+    set(RENDERDOC_ANDROID_KEYSTORE_ALIAS "rdocandroidkey" CACHE STRING
+        "Alias of the retained Android development signing key")
     set(KEYSTORE ${RENDERDOC_ANDROID_KEYSTORE})
     if(NOT EXISTS "${KEYSTORE}")
     add_custom_command(OUTPUT ${KEYSTORE}
                        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-                       COMMAND ${JAVA_BIN}/keytool -genkey -keystore ${KEYSTORE} -storepass android -alias rdocandroidkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=, OU=, O=, L=, S=, C=")
+                       COMMAND ${JAVA_BIN}/keytool -genkey -keystore ${KEYSTORE} -storepass android -alias ${RENDERDOC_ANDROID_KEYSTORE_ALIAS} -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=, OU=, O=, L=, S=, C=")
     endif()
 
     # APK_VERSION_CODE corresponds to android:versionCode, an internal integer value that can be queried. Higher numbers indicate more recent versions.
@@ -320,7 +322,7 @@ if(ANDROID)
                        COMMAND ${DEX_COMMAND}
                        COMMAND ${BUILD_TOOLS}/aapt package -f -M AndroidManifest.xml --version-code ${APK_VERSION_CODE} --version-name ${APK_VERSION_NAME} -S res -I ${ANDROID_JAR} -F RenderDocCmd-unaligned.apk bin libs
                        COMMAND ${BUILD_TOOLS}/zipalign -f 4 RenderDocCmd-unaligned.apk RenderDocCmd.apk
-                       COMMAND ${BUILD_TOOLS}/apksigner${TOOL_SCRIPT_EXTENSION} sign --ks ${KEYSTORE} --ks-pass pass:android --key-pass pass:android --ks-key-alias rdocandroidkey RenderDocCmd.apk
+                       COMMAND ${BUILD_TOOLS}/apksigner${TOOL_SCRIPT_EXTENSION} sign --ks ${KEYSTORE} --ks-pass pass:android --key-pass pass:android --ks-key-alias ${RENDERDOC_ANDROID_KEYSTORE_ALIAS} RenderDocCmd.apk
                        COMMAND ${CMAKE_COMMAND} -E copy RenderDocCmd.apk ${APK_FILE})
 
 endif()

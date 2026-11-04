@@ -64,7 +64,9 @@ For a paired remote-presentation runtime, build the Windows client and both Andr
 from the same source. The native `PresentReplay` acknowledgement uses a matching remote
 protocol; older helpers are rejected during handshake. Keep the development signing key
 outside disposable build output and pass `-DRENDERDOC_ANDROID_KEYSTORE=/absolute/path/to/debug.keystore`
-to each Android build. Reusing the key allows APK updates without deleting application data.
+to each Android build. If the retained key uses another alias, also pass
+`-DRENDERDOC_ANDROID_KEYSTORE_ALIAS=<existing-alias>` (the default is `rdocandroidkey`).
+Reusing the key allows APK updates without deleting application data.
 Never replace an active user-owned helper as part of a runtime update.
 
 ### Note:

@@ -36,6 +36,7 @@ extern "C" bool IsThreadBlocking(PyObject *global_handle);
 extern "C" void SetThreadBlocking(PyObject *global_handle, bool block);
 extern "C" void QueueDecRef(PyObject *obj);
 extern "C" void ProcessDecRefQueue();
+extern "C" PyObject *DoFunctionCall(PyObject *object, PyObject *args);
 
 struct ExceptionData
 {
@@ -183,6 +184,10 @@ struct PyObjectRefCounter
   PyObjectRefCounter(const PyObjectRefCounter &o) { obj = Py_NewRef(o.obj); }
   ~PyObjectRefCounter()
   {
+    // Qt can release pending callbacks after Python has shut down.
+    if(!Py_IsInitialized())
+      return;
+
     // it may not be safe at the point this is destroyed to decref the object. For example if a
     // python lambda is passed into a C++ invoke function, we will be holding the only reference to
     // that lambda here when the async invoke completes and destroyed the std::function wrapping it.
@@ -246,9 +251,7 @@ struct varfunc
 
     ProcessDecRefQueue();
 
-    PyObject *result = PyObject_Call(func, args, 0);
-
-    Py_DECREF(args);
+    PyObject *result = DoFunctionCall(func, args);
 
     if(result == NULL)
     {

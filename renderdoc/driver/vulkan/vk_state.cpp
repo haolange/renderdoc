@@ -173,8 +173,19 @@ VulkanRenderState::VulkanRenderState()
 }
 
 void VulkanRenderState::BeginRenderPassAndApplyState(WrappedVulkan *vk, VkCommandBuffer cmd,
-                                                     PipelineBinding binding, bool obeySuspending)
+                                                     PipelineBinding binding, bool obeySuspending,
+                                                     RenderPassMode mode)
 {
+  if(!dynamicRendering.active)
+  {
+    // Every physical LOAD mirror (including auxiliary callback passes) must observe all preceding
+    // attachment stores, not only the target pixel's readback barriers. Single-subpass mirrors
+    // have no original external dependency to carry that visibility across interruptions.
+    VkMemoryBarrier dependency = {VK_STRUCTURE_TYPE_MEMORY_BARRIER, NULL, VK_ACCESS_MEMORY_WRITE_BIT,
+                                  VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT};
+    DoPipelineBarrier(cmd, 1, &dependency);
+  }
+
   if(dynamicRendering.active)
   {
     // this is left in case for future refactors - for action callbacks that want to stop the
@@ -207,14 +218,24 @@ void VulkanRenderState::BeginRenderPassAndApplyState(WrappedVulkan *vk, VkComman
 
     VulkanCreationInfo::Framebuffer fbinfo = vk->GetDebugManager()->GetFramebufferInfo(framebuffer);
 
+    const VulkanCreationInfo::RenderPass &rpinfo =
+        vk->GetDebugManager()->GetRenderPassInfo(renderPass);
+    const bool beginSubpass = mode == RenderPassMode::BeginSubpass;
+    VkRenderPass nativeRP = mode == RenderPassMode::Resolve ? rpinfo.resolveRPs[subpass]
+                            : beginSubpass                  ? rpinfo.beginRPs[subpass]
+                            : splitRenderPass               ? rpinfo.resumeRPs[subpass]
+                                                            : Unwrap(rpinfo.loadRPs[subpass]);
+
     VkRenderPassBeginInfo rpbegin = {
         VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         NULL,
-        Unwrap(vk->GetDebugManager()->GetRenderPassInfo(renderPass).loadRPs[subpass]),
+        nativeRP,
         Unwrap(fbinfo.loadFBs[subpass]),
         renderArea,
-        (uint32_t)vk->GetDebugManager()->GetRenderPassInfo(renderPass).attachments.size(),
-        empty,
+        beginSubpass
+            ? (uint32_t)renderPassClears.size()
+            : (uint32_t)vk->GetDebugManager()->GetRenderPassInfo(renderPass).attachments.size(),
+        beginSubpass ? renderPassClears.data() : empty,
     };
 
     VkRenderPassAttachmentBeginInfo imagelessAttachments = {
@@ -236,6 +257,10 @@ void VulkanRenderState::BeginRenderPassAndApplyState(WrappedVulkan *vk, VkComman
 
     ObjDisp(cmd)->CmdBeginRenderPass(Unwrap(cmd), &rpbegin, subpassContents);
   }
+
+  // A resolve-only pass contains no draws, state rebinding or conditional-rendering scope.
+  if(mode == RenderPassMode::Resolve)
+    return;
 
   if(subpassContents != VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS)
   {
@@ -275,6 +300,17 @@ void VulkanRenderState::BeginRenderPassAndApplyState(WrappedVulkan *vk, VkComman
     beginInfo.pNext = VK_NULL_HANDLE;
     ObjDisp(cmd)->CmdBeginCustomResolveEXT(Unwrap(cmd), &beginInfo);
   }
+}
+
+void VulkanRenderState::ResolveSubpass(WrappedVulkan *vk, VkCommandBuffer cmd)
+{
+  if(!splitRenderPass || dynamicRendering.active)
+    return;
+  const VulkanCreationInfo::RenderPass &rpinfo = vk->GetDebugManager()->GetRenderPassInfo(renderPass);
+  if(rpinfo.resolveRPs[subpass] == VK_NULL_HANDLE)
+    return;
+  BeginRenderPassAndApplyState(vk, cmd, BindNone, true, RenderPassMode::Resolve);
+  EndRenderPass(cmd);
 }
 
 void VulkanRenderState::EndRenderPass(VkCommandBuffer cmd)
@@ -623,8 +659,8 @@ void VulkanRenderState::BindDynamicState(WrappedVulkan *vk, VkCommandBuffer cmd)
     {
       ObjDisp(cmd)->CmdSetStencilOpEXT(Unwrap(cmd), VK_STENCIL_FACE_FRONT_BIT, front.failOp,
                                        front.passOp, front.depthFailOp, front.compareOp);
-      ObjDisp(cmd)->CmdSetStencilOpEXT(Unwrap(cmd), VK_STENCIL_FACE_BACK_BIT, front.failOp,
-                                       front.passOp, front.depthFailOp, front.compareOp);
+      ObjDisp(cmd)->CmdSetStencilOpEXT(Unwrap(cmd), VK_STENCIL_FACE_BACK_BIT, back.failOp,
+                                       back.passOp, back.depthFailOp, back.compareOp);
     }
   }
 
@@ -756,7 +792,28 @@ void VulkanRenderState::BindDynamicState(WrappedVulkan *vk, VkCommandBuffer cmd)
     ObjDisp(cmd)->CmdSetLineWidth(Unwrap(cmd), lineWidth);
 
   if(dynamicStates[VkDynamicDepthBias])
-    ObjDisp(cmd)->CmdSetDepthBias(Unwrap(cmd), bias.depth, bias.biasclamp, bias.slope);
+  {
+    if(vk->DepthBiasControl())
+    {
+      VkDepthBiasRepresentationInfoEXT reprInfo = {
+          VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT,
+      };
+      VkDepthBiasInfoEXT info = {VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT, &reprInfo};
+
+      info.depthBiasClamp = bias.biasclamp;
+      info.depthBiasConstantFactor = bias.depth;
+      info.depthBiasSlopeFactor = bias.slope;
+
+      reprInfo.depthBiasExact = bias.exact;
+      reprInfo.depthBiasRepresentation = bias.repr;
+
+      ObjDisp(cmd)->CmdSetDepthBias2EXT(Unwrap(cmd), &info);
+    }
+    else
+    {
+      ObjDisp(cmd)->CmdSetDepthBias(Unwrap(cmd), bias.depth, bias.biasclamp, bias.slope);
+    }
+  }
 
   if(dynamicStates[VkDynamicBlendConstants])
     ObjDisp(cmd)->CmdSetBlendConstants(Unwrap(cmd), blendConst);
@@ -1229,6 +1286,14 @@ void VulkanRenderState::BindDescriptorSetsForShaders(WrappedVulkan *vk, VkComman
   }
 }
 
+void VulkanRenderState::BindGraphicsDescriptors(WrappedVulkan *vk, VkCommandBuffer cmd)
+{
+  if(graphics.shaderObject)
+    BindDescriptorSetsForShaders(vk, cmd, graphics, VK_PIPELINE_BIND_POINT_GRAPHICS);
+  else if(graphics.pipeline != ResourceId())
+    BindDescriptorSetsForPipeline(vk, cmd, graphics, VK_PIPELINE_BIND_POINT_GRAPHICS);
+}
+
 void VulkanRenderState::BindDescriptorSet(WrappedVulkan *vk, const DescSetLayout &descLayout,
                                           VkCommandBuffer cmd, VkPipelineBindPoint bindPoint,
                                           uint32_t setIndex, uint32_t *dynamicOffsets)
@@ -1242,10 +1307,18 @@ void VulkanRenderState::BindDescriptorSet(WrappedVulkan *vk, const DescSetLayout
   {
     if(descSet != ResourceId())
     {
-      ObjDisp(cmd)->CmdBindDescriptorSets(
-          Unwrap(cmd), bindPoint, Unwrap(layout), setIndex, 1,
-          UnwrapPtr(vk->GetResourceManager()->GetHandle<VkDescriptorSet>(descSet)),
-          descLayout.dynamicCount, dynamicOffsets);
+      VkDescriptorSet nativeSet =
+          Unwrap(vk->GetResourceManager()->GetHandle<VkDescriptorSet>(descSet));
+      if(bindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS && vk->GetActionCB())
+      {
+        VkDescriptorSet patched = vk->GetActionCB()->PatchInputDescriptorSet(descSet, *this);
+        if(patched != VK_NULL_HANDLE)
+          nativeSet = patched;
+        if(vk->HasFatalError())
+          return;
+      }
+      ObjDisp(cmd)->CmdBindDescriptorSets(Unwrap(cmd), bindPoint, Unwrap(layout), setIndex, 1,
+                                          &nativeSet, descLayout.dynamicCount, dynamicOffsets);
     }
     else if(desc.descBufferEmbeddedSamplers)
     {
@@ -1323,6 +1396,9 @@ void VulkanRenderState::BindDescriptorSet(WrappedVulkan *vk, const DescSetLayout
         for(uint32_t a = 0; a < push.descriptorCount; a++)
         {
           dst[a].imageLayout = convert(slots[a].imageLayoutOrFormat);
+          if(push.descriptorType == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT && vk->GetActionCB())
+            dst[a].imageLayout = vk->GetActionCB()->PatchInputDescriptorLayout(
+                slots[a].resource, dst[a].imageLayout, *this);
           dst[a].sampler = Unwrap(rm->GetHandle<VkSampler>(slots[a].sampler));
           dst[a].imageView = Unwrap(rm->GetHandle<VkImageView>(slots[a].resource));
 

@@ -34,7 +34,6 @@
 
 #define RENDERDOC_AllocArrayMem RDOCSELF_AllocArrayMem
 #define RENDERDOC_FreeArrayMem RDOCSELF_FreeArrayMem
-#define RENDERDOC_GetDefaultCaptureOptions RDOCSELF_GetDefaultCaptureOptions
 #define RENDERDOC_NeedVulkanLayerRegistration RDOCSELF_NeedVulkanLayerRegistration
 #define RENDERDOC_UpdateVulkanLayerRegistration RDOCSELF_UpdateVulkanLayerRegistration
 #define RENDERDOC_ExecuteAndInject RDOCSELF_ExecuteAndInject
@@ -192,7 +191,7 @@ inline const WindowingData CreateAndroidWindowingData(ANativeWindow *window)
 typedef void *NSView;
 typedef void *CALayer;
 
-DOCUMENT(R"(Create a :class:`WindowingData` for an metal/opengl-compatible macOS ``CALayer`` handle
+DOCUMENT(R"(Create a :class:`WindowingData` for an Metal/OpenGL-compatible macOS ``CALayer`` handle
 and ``NSView`` handle (as void pointers).
 
 :param NSView view: The native ``NSView`` handle for this window.
@@ -384,6 +383,10 @@ protected:
 DOCUMENT(R"(The primary interface to access the information in a capture and the current state, as
 well as control the replay and analysis functionality available.
 
+Available as a blocking interface in UI scripts via
+:meth:`~qrenderdoc.CaptureContext.GetBlockingController` or directly on the replay thread using
+:meth:`~qrenderdoc.ReplayManager.AsyncInvoke`.
+
 .. function:: KillCallback()
 
   Not an actual member function - the signature for any ``KillCallback`` callbacks.
@@ -409,8 +412,8 @@ well as control the replay and analysis functionality available.
   Not an actual member function - the signature for any ``PreviewWindowCallback`` callbacks.
 
   Called when a preview window could optionally be opened to display some information. It will be
-  called repeatedly with :paramref:`active` set to ``True`` to allow any platform-specific message
-  pumping.
+  called repeatedly with :paramref:`PreviewWindowCallback.active` set to ``True`` to allow any
+  platform-specific message pumping.
 
   :param bool active: ``True`` if a preview window is active/opened, ``False`` if it has closed.
   :return: The windowing data for a preview window, or empty/default values if no window should be
@@ -442,7 +445,7 @@ struct IReplayController
 :param WindowingData window: A :class:`WindowingData` describing the native window.
 :param ReplayOutputType type: What type of output to create
 :return: A handle to the created output, or ``None`` on failure
-:rtype: ReplayOutput
+:rtype: Optional[ReplayOutput]
 )");
   virtual IReplayOutput *CreateOutput(WindowingData window, ReplayOutputType type) = 0;
 
@@ -491,7 +494,7 @@ You should use :meth:`GetAPIProperties` to determine the API of the capture.
 See also :meth:`GetPipelineState`.
 
 :return: The current D3D11 pipeline state.
-:rtype: D3D11State
+:rtype: Optional[D3D11State]
 )");
   virtual const D3D11Pipe::State *GetD3D11PipelineState() = 0;
 
@@ -503,7 +506,7 @@ You should use :meth:`GetAPIProperties` to determine the API of the capture.
 See also :meth:`GetPipelineState`.
 
 :return: The current D3D12 pipeline state.
-:rtype: D3D12State
+:rtype: Optional[D3D12State]
 )");
   virtual const D3D12Pipe::State *GetD3D12PipelineState() = 0;
 
@@ -515,7 +518,7 @@ You should use :meth:`GetAPIProperties` to determine the API of the capture.
 See also :meth:`GetPipelineState`.
 
 :return: The current OpenGL pipeline state.
-:rtype: GLState
+:rtype: Optional[GLState]
 )");
   virtual const GLPipe::State *GetGLPipelineState() = 0;
 
@@ -527,7 +530,7 @@ You should use :meth:`GetAPIProperties` to determine the API of the capture.
 See also :meth:`GetPipelineState`.
 
 :return: The current Vulkan pipeline state.
-:rtype: VKState
+:rtype: Optional[VKState]
 )");
   virtual const VKPipe::State *GetVulkanPipelineState() = 0;
 
@@ -582,7 +585,7 @@ Multiple ranges within the store can be queried at once, and are returned in a c
 
   DOCUMENT(R"(Retrieve the list of possible disassembly targets for :meth:`DisassembleShader`. The
 values are implementation dependent but will always include a default target first which is the
-native disassembly of the shader. Further options may be available for additional diassembly views
+native disassembly of the shader. Further options may be available for additional disassembly views
 or hardware-specific ISA formats.
 
 :param bool withPipeline: More disassembly may be available when a pipeline is specified.
@@ -1069,8 +1072,8 @@ otherwise.
 :param ResourceId buffer: The id of the buffer to use for data. If
   :data:`ConstantBlock.bufferBacked` is ``False`` this is ignored.
 :param int offset: Retrieve buffer contents starting at this byte offset.
-:param int length: Retrieve this many bytes after :paramref:`offset`. May be 0 to fetch the rest of the
-  buffer.
+:param int length: Retrieve this many bytes after :paramref:`GetCBufferVariableContents.offset`.
+  May be 0 to fetch the rest of the buffer.
 :return: The shader variables with their contents.
 :rtype: List[ShaderVariable]
 )");
@@ -1215,19 +1218,19 @@ The details of the types of messages that can be received are listed under
 :class:`TargetControlMessage`.
 
 .. note:: If no message has been received, this function will pump the connection. You are expected
-  to continually call this function and process any messages to kee pthe connection alive.
+  to continually call this function and process any messages to keep the connection alive.
 
   This function will block but only to a limited degree. If no message is waiting after a small time
   it will return with a No-op message to allow further processing.
 
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value when a long blocking message is coming through, e.g. a capture copy. Can be ``None`` if no
-  progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value when a long blocking message is coming through,
+  e.g. a capture copy. Can be ``None`` if no progress is desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: The message that was received.
 :rtype: TargetControlMessage
 )");
-  virtual TargetControlMessage ReceiveMessage(RENDERDOC_ProgressCallback progress) = 0;
+  virtual TargetControlMessage ReceiveMessage(RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT("Cycle the currently active window if there are more windows to capture.");
   virtual void CycleActiveWindow() = 0;
@@ -1322,13 +1325,14 @@ separate thread.
   If this is ``False``, the function will not interact or block forever on user interaction and will
   always assume the input is effectively 'cancel' or empty. This may cause the symbol resolution to
   fail.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value for the resolver process. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value for the resolver process. Can be ``None`` if no
+  progress is desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: The result of the operation.
 :rtype: ResultDetails
 )");
-  virtual ResultDetails InitResolver(bool interactive, RENDERDOC_ProgressCallback progress) = 0;
+  virtual ResultDetails InitResolver(bool interactive, RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Retrieve the details of each stackframe in the provided callstack.
 
@@ -1379,14 +1383,14 @@ by calling :meth:`EmbedDependenciesIntoCapture`.
 )");
   virtual ResultDetails RemoveDependenciesFromCapture() = 0;
 
-  DOCUMENT(R"(Are there any depdendent files embedded in the capture i.e. shader debug files.
+  DOCUMENT(R"(Are there any dependent files embedded in the capture i.e. shader debug files.
 
 :return: ``True`` if the capture has embedded dependent files, or ``False`` if the capture does not any embedded dependent files.
 :rtype: bool
 )");
   virtual bool HasEmbeddedDependencies() = 0;
 
-  DOCUMENT(R"(Does the capture have references to dependecies i.e. shader debug files.
+  DOCUMENT(R"(Does the capture have references to dependencies i.e. shader debug files.
 
 :return: ``True`` if the capture has references to dependent files, or ``False`` if the capture does not contain references to dependent files.
 :rtype: bool
@@ -1397,7 +1401,7 @@ by calling :meth:`EmbedDependenciesIntoCapture`.
 by the capture i.e. shader debug files.
 
 .. note::
-  The nicknames can be arbitary and do not have to be a filename or a file path.
+  The nicknames can be arbitrary and do not have to be a filename or a file path.
 
 :return: A list of the nicknames used to reference dependencies.
 :rtype: List[str]
@@ -1523,13 +1527,15 @@ This is primarily useful for when a capture is only stored locally and must be r
 the capture must be available on the machine where the replay happens.
 
 :param str filename: The path to the file on the local system.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value for the copy. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value for the copy. Can be ``None`` if no progress is
+  desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: The path on the remote system where the capture was saved temporarily.
 :rtype: str
 )");
-  virtual rdcstr CopyCaptureToRemote(const rdcstr &filename, RENDERDOC_ProgressCallback progress) = 0;
+  virtual rdcstr CopyCaptureToRemote(const rdcstr &filename,
+                                     RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Copy a capture file that is stored on the remote system to the local system.
 
@@ -1537,12 +1543,13 @@ This function will block until the copy is fully complete, or an error has occur
 
 :param str remotepath: The remote path where the file should be copied from.
 :param str localpath: The local path where the file should be saved.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value for the copy. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value for the copy. Can be ``None`` if no progress is
+  desired.
   Callback function signature must match :func:`ProgressCallback`.
 )");
   virtual void CopyCaptureFromRemote(const rdcstr &remotepath, const rdcstr &localpath,
-                                     RENDERDOC_ProgressCallback progress) = 0;
+                                     RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Open a capture file for remote capture and replay. The capture will be opened and
 replayed on the remote system, and proxied to the local system with a given renderer. As much work
@@ -1557,19 +1564,20 @@ or an error has occurred.
 
 :param int proxyid: The index in the array returned by :meth:`LocalProxies` to use as a local proxy,
   or :data:`NoPreference` to indicate no preference for any proxy.
-:param str logfile: The path on the remote system where the file is. If the file is only available
+:param str filename: The path on the remote system where the file is. If the file is only available
   locally you can use :meth:`CopyCaptureToRemote` to transfer it over the remote connection.
 :param ReplayOptions opts: The options controlling how the capture should be replayed.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value for the opening. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value for the opening. Can be ``None`` if no progress is
+  desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: A tuple containing the status of opening the capture, whether success or failure, and the
   resulting :class:`ReplayController` handle if successful.
 :rtype: Tuple[ResultDetails,ReplayController]
 )");
   virtual rdcpair<ResultDetails, IReplayController *> OpenCapture(
-      uint32_t proxyid, const rdcstr &logfile, const ReplayOptions &opts,
-      RENDERDOC_ProgressCallback progress) = 0;
+      uint32_t proxyid, const rdcstr &filename, const ReplayOptions &opts,
+      RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Close a capture analysis handle previously opened by :meth:`OpenCapture`.
 
@@ -1603,14 +1611,15 @@ empty or unrecognised.
 
 :param str filename: The filename of the file to open.
 :param str filetype: The format of the given file.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value if an import step occurs. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value if an import step occurs. Can be ``None`` if no
+  progress is desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: The result of the operation.
 :rtype: ResultDetails
 )");
   virtual ResultDetails OpenFile(const rdcstr &filename, const rdcstr &filetype,
-                                 RENDERDOC_ProgressCallback progress) = 0;
+                                 RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Initialises the file handle from a raw memory buffer.
 
@@ -1620,14 +1629,15 @@ For the :paramref:`OpenBuffer.filetype` parameter, see :meth:`OpenFile`.
 
 :param bytes buffer: The buffer containing the data to process.
 :param str filetype: The format of the given file.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value if an import step occurs. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value if an import step occurs. Can be ``None`` if no
+  progress is desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: The result of the operation.
 :rtype: ResultDetails
 )");
   virtual ResultDetails OpenBuffer(const bytebuf &buffer, const rdcstr &filetype,
-                                   RENDERDOC_ProgressCallback progress) = 0;
+                                   RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(When a capture file is opened, an exclusive lock is held on the file on disk. This
 makes it impossible to copy the file to another location at the user's request. Calling this
@@ -1650,18 +1660,21 @@ representation back to native RDC.
 
 :param str filename: The filename to save to.
 :param str filetype: The format to convert to.
-:param SDFile file: An optional :class:`SDFile` with the structured data to source from. This is
-  useful in case the format specifies that it doesn't need buffers, and you already have a
-  :class:`ReplayController` open with the structured data. This saves the need to load the file
-  again. If ``None`` then structured data will be fetched if not already present and used.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value for the conversion. Can be ``None`` if no progress is desired.
+:param Optional[SDFile] file=None: **Optional parameter**. An optional :class:`SDFile` with the structured
+  data to source from. This is useful in case the format specifies that it doesn't need buffers, and
+  you already have a :class:`ReplayController` open with the structured data. This saves the need to
+  load the file again. If ``None`` then structured data will be fetched if not already present and
+  used.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value for the conversion. Can be ``None`` if no progress
+  is desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: The result of the operation.
 :rtype: ResultDetails
 )");
-  virtual ResultDetails Convert(const rdcstr &filename, const rdcstr &filetype, const SDFile *file,
-                                RENDERDOC_ProgressCallback progress) = 0;
+  virtual ResultDetails Convert(const rdcstr &filename, const rdcstr &filetype,
+                                const SDFile *file = NULL,
+                                RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Returns the list of capture file formats.
 
@@ -1703,7 +1716,7 @@ microseconds. May be 1.0 if all timestamps and durations are already in microsec
 )");
   virtual double TimestampFrequency() = 0;
 
-  DOCUMENT(R"(Sets the matadata for this capture handle.
+  DOCUMENT(R"(Sets the metadata for this capture handle.
 
 This function may only be called if the handle is 'empty' - i.e. no file has been opened with
 :meth:`OpenFile` or :meth:`OpenBuffer`.
@@ -1742,15 +1755,16 @@ Once the replay is created, this :class:`CaptureFile` can be shut down, there is
 by the :class:`ReplayController`.
 
 :param ReplayOptions opts: The options controlling how the capture should be replayed.
-:param ProgressCallback progress: A callback that will be repeatedly called with an updated progress
-  value for the opening. Can be ``None`` if no progress is desired.
+:param Optional[Callable[[float], None]] progress=None: **Optional parameter**. A callback that will be
+  repeatedly called with an updated progress value for the opening. Can be ``None`` if no progress is
+  desired.
   Callback function signature must match :func:`ProgressCallback`.
 :return: A tuple containing the status of opening the capture, whether success or failure, and the
   resulting :class:`ReplayController` handle if successful.
 :rtype: Tuple[ResultDetails,ReplayController]
 )");
   virtual rdcpair<ResultDetails, IReplayController *> OpenCapture(
-      const ReplayOptions &opts, RENDERDOC_ProgressCallback progress) = 0;
+      const ReplayOptions &opts, RENDERDOC_ProgressCallback progress = NULL) = 0;
 
   DOCUMENT(R"(Returns the structured data for this capture.
 
@@ -1972,7 +1986,7 @@ This function will block until the control connection is ready, or an error occu
 :param bool forceConnection: Force the connection and kick off any existing client that is currently
   connected.
 :return: A handle to the target control connection, or ``None`` if something went wrong.
-:rtype: TargetControl
+:rtype: Optional[TargetControl]
 )");
 extern "C" RENDERDOC_API ITargetControl *RENDERDOC_CC RENDERDOC_CreateTargetControl(
     const rdcstr &URL, uint32_t ident, const rdcstr &clientName, bool forceConnection);
@@ -2031,28 +2045,21 @@ This function will block until a remote connection tells the server to shut down
 
 :param str listenhost: The name of the interface to listen on.
 :param int port: The port to listen on, or ``0`` to listen on the default port.
-:param KillCallback killReplay: A callback that returns a ``bool`` indicating if the server should
-  be shut down or not.
+:param Optional[Callable[[], bool]] killReplay=None: **Optional parameter**.
+  A callback that returns a ``bool`` indicating if the server should be shut down or not.
   Callback function signature must match :func:`KillCallback`.
-:param PreviewWindowCallback previewWindow: A callback that returns information for a preview window
-  when the server wants to display some preview of the ongoing replay.
+:param Optional[Callable[[bool], WindowingData]] previewWindow=None: **Optional parameter**.
+  A callback that returns information for a preview window when the server wants to display
+  some preview of the ongoing replay.
   Callback function signature must match :func:`PreviewWindowCallback`.
 )");
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_BecomeRemoteServer(
-    const rdcstr &listenhost, uint16_t port, RENDERDOC_KillCallback killReplay,
-    RENDERDOC_PreviewWindowCallback previewWindow);
+    const rdcstr &listenhost, uint16_t port, RENDERDOC_KillCallback killReplay = NULL,
+    RENDERDOC_PreviewWindowCallback previewWindow = NULL);
 
 //////////////////////////////////////////////////////////////////////////
 // Injection/execution capture functions.
 //////////////////////////////////////////////////////////////////////////
-
-DOCUMENT(R"(Retrieve the default and recommended set of capture options.
-
-:return: The default capture options.
-:rtype: CaptureOptions
-)");
-extern "C" RENDERDOC_API void RENDERDOC_CC
-RENDERDOC_GetDefaultCaptureOptions(CaptureOptions *defaultOpts);
 
 DOCUMENT(R"(Begin injecting speculatively into all new processes started on the system. Where
 supported by platform, configuration, and setup begin injecting speculatively into all new processes
@@ -2067,13 +2074,13 @@ This function must be called when the process is running with administrator/supe
 
 :param str pathmatch: A string to match against each new process's executable path to determine
   which corresponds to the program we actually want to capture.
-:param str logfile: Where to store any captures.
+:param str capturefile: Where to store any captures.
 :param CaptureOptions opts: The capture options to use when injecting into the program.
 :return: The result of the operation, if the result succeeded the hook is now active.
 :rtype: ResultDetails
 )");
 extern "C" RENDERDOC_API ResultDetails RENDERDOC_CC RENDERDOC_StartGlobalHook(
-    const rdcstr &pathmatch, const rdcstr &logfile, const CaptureOptions &opts);
+    const rdcstr &pathmatch, const rdcstr &capturefile, const CaptureOptions &opts);
 
 DOCUMENT(R"(Stop the global hook that was activated by :func:`StartGlobalHook`.
 
@@ -2141,7 +2148,7 @@ DOCUMENT(R"(When debugging RenderDoc it can be useful to capture itself by doing
 temporary name. This function checks to see if a given self-hosted DLL is available.
 
 :param str dllname: The name of the self-hosted capture module.
-:return: Whether the specified dll is loaded, ready for self-hosted capture.
+:return: Whether the specified DLL is loaded, ready for self-hosted capture.
 :rtype: bool
 )");
 extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_CanSelfHostedCapture(const rdcstr &dllname);
@@ -2186,11 +2193,18 @@ struct VulkanLayerRegistrationInfo
   rdcarray<rdcstr> otherJSONs;
 };
 
-DOCUMENT("INTERNAL: Determine vulkan layer registration status.");
+DOCUMENT(R"(INTERNAL: Determine vulkan layer registration status.
+
+:param VulkanLayerRegistrationInfo x: Internal parameter
+:rtype bool
+)");
 extern "C" RENDERDOC_API bool RENDERDOC_CC
 RENDERDOC_NeedVulkanLayerRegistration(VulkanLayerRegistrationInfo *info);
 
-DOCUMENT("INTERNAL: Update vulkan layer registration.");
+DOCUMENT(R"(INTERNAL: Update vulkan layer registration.
+
+:param bool x: Internal parameter
+)");
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_UpdateVulkanLayerRegistration(bool systemLevel);
 
 //////////////////////////////////////////////////////////////////////////
@@ -2259,7 +2273,7 @@ DOCUMENT(R"(Add a message to RenderDoc's logfile.
   if a debugger is attached, and fatal errors will kill the process after logging.
 :param str project: A short project tag, which should be uppercase and either 3 or 4 characters.
 :param str file: The file where this log message came from.
-:param int line: The line number in :paramref:`file` where this log message came from.
+:param int line: The line number in :paramref:`LogMessage.file` where this log message came from.
 :param str text: The text of the message.
 )");
 extern "C" RENDERDOC_API void RENDERDOC_CC RENDERDOC_LogMessage(LogType type, const rdcstr &project,
@@ -2284,7 +2298,7 @@ extern "C" RENDERDOC_API bool RENDERDOC_CC RENDERDOC_IsReleaseBuild();
 
 DOCUMENT(R"(Retrieves the commit hash used to build.
 
-This will be in the form "0123456789abcdef0123456789abcdef01234567"
+This will be in the form ``0123456789abcdef0123456789abcdef01234567``
 
 :return: The commit hash.
 :rtype: str
@@ -2445,7 +2459,7 @@ immediate use of it may block.
 :param str protocol: The protocol to fetch a controller for.
 :return: A handle to the protocol controller, or ``None`` if something went wrong such as an
   unsupported protocol being specified.
-:rtype: DeviceProtocolController
+:rtype: Optional[DeviceProtocolController]
 )");
 extern "C" RENDERDOC_API IDeviceProtocolController *RENDERDOC_CC
 RENDERDOC_GetDeviceProtocolController(const rdcstr &protocol);

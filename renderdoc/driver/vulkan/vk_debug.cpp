@@ -2742,8 +2742,9 @@ void VulkanDebugManager::UnlockReadbackBuffer()
 }
 
 void VulkanReplay::AllocAndAddReservedDescriptors(
-    const VulkanStatePipeline &pipe, AddedDescriptorData &patchedBufferData,
-    bool vertexPatchedToCompute, const rdcarray<VkDescriptorSetLayoutBinding> &newBindings)
+    const VulkanRenderState &state, const VulkanStatePipeline &pipe,
+    AddedDescriptorData &patchedBufferData, bool vertexPatchedToCompute,
+    const rdcarray<VkDescriptorSetLayoutBinding> &newBindings)
 {
   VkDevice dev = m_Device;
   VulkanCreationInfo &creationInfo = m_pDriver->m_CreationInfo;
@@ -2802,11 +2803,33 @@ void VulkanReplay::AllocAndAddReservedDescriptors(
   // bitmask's type list is.
   rdcarray<rdcpair<size_t, uint32_t>> mutableBitmaskArrayRange;
 
-  // populate mutable bitmasks. This loop is the same as the one below which is more commented
-  for(size_t i = 0; i < setLayouts.size(); i++)
+  const bool compute = pipe.bindPoint == VK_PIPELINE_BIND_POINT_COMPUTE;
+
+  size_t descSetLayoutsSize = 0;
+
+  if(pipe.shaderObject)
   {
-    if(i < pipeInfo.descSetLayouts.size() && i < pipe.descSets.size() &&
-       pipe.descSets[i].pipeLayout != ResourceId())
+    for(uint32_t stage = 0; stage < NumShaderStages; stage++)
+    {
+      if(compute && (ShaderStage)stage != ShaderStage::Compute)
+        continue;
+      if(!compute && (ShaderStage)stage == ShaderStage::Compute)
+        continue;
+
+      descSetLayoutsSize =
+          RDCMAX(descSetLayoutsSize,
+                 creationInfo.m_ShaderObject[state.shaderObjects[stage]].descSetLayouts.size());
+    }
+  }
+  else
+  {
+    descSetLayoutsSize = pipeInfo.descSetLayouts.size();
+  }
+
+  // populate mutable bitmasks. This loop is the same as the one below which is more commented
+  for(size_t i = 0; i < RDCMIN(descSetLayoutsSize, pipe.descSets.size()); i++)
+  {
+    if(pipe.descSets[i].pipeLayout != ResourceId())
     {
       const VulkanCreationInfo::PipelineLayout &pipelineLayoutInfo =
           creationInfo.m_PipelineLayout[pipe.descSets[i].pipeLayout];
@@ -2819,6 +2842,9 @@ void VulkanReplay::AllocAndAddReservedDescriptors(
 
       for(size_t b = 0; b < origLayout.bindings.size(); b++)
       {
+        if(origLayout.bindings[b].layoutDescType != VK_DESCRIPTOR_TYPE_MUTABLE_EXT)
+          continue;
+
         uint64_t mutableBitmask = origLayout.mutableBitmasks[b];
 
         int bitmaskIdx = mutablePoolsizeBitmask.indexOf(mutableBitmask);
@@ -2873,7 +2899,7 @@ void VulkanReplay::AllocAndAddReservedDescriptors(
   // if there are fewer sets bound than were declared in the pipeline layout, only process the
   // bound sets (as otherwise we'd fail to copy from them). Assume the application knew what it
   // was doing and the other sets are statically unused.
-  setLayouts.resize(RDCMIN(pipe.descSets.size(), pipeInfo.descSetLayouts.size()));
+  setLayouts.resize(RDCMIN(pipe.descSets.size(), descSetLayoutsSize));
 
   size_t boundDescs = setLayouts.size();
 
@@ -3037,7 +3063,7 @@ void VulkanReplay::AllocAndAddReservedDescriptors(
 
     // if the shader had no descriptor sets at all, i will be invalid, so just skip and add a set
     // with only our own bindings.
-    if(i < pipeInfo.descSetLayouts.size() && i < pipe.descSets.size() &&
+    if(i < descSetLayoutsSize && i < pipe.descSets.size() &&
        pipe.descSets[i].pipeLayout != ResourceId())
     {
       const VulkanCreationInfo::PipelineLayout &pipelineLayoutInfo =
@@ -3423,7 +3449,7 @@ VulkanReplay::AddedDescriptorData VulkanReplay::PrepareExtraBufferDescriptor(
   {
     // create a duplicate set of descriptor sets, all visible to compute, with bindings shifted to
     // account for new ones we need. This also copies the existing bindings into the new sets
-    AllocAndAddReservedDescriptors(srcPipeState, ret, vertexPatchedToCompute, newBindings);
+    AllocAndAddReservedDescriptors(state, srcPipeState, ret, vertexPatchedToCompute, newBindings);
 
     // if the pool failed due to limits, it will be NULL so bail now
     if(ret.descpool == VK_NULL_HANDLE)
@@ -3550,6 +3576,13 @@ VulkanReplay::AddedDescriptorData VulkanReplay::PrepareExtraBufferDescriptor(
       dstPipeState.descSets[i].pipeLayout = GetResID(ret.pipeLayout);
       dstPipeState.descSets[i].descSet = GetResID(ret.descSets[i]);
     }
+
+    // when no pipeline is bound, we rely on the pipeline layout used by last bound descriptor set
+    // to reconstruct correct descriptor set bindings (see BindDescriptorSetsWithoutPipeline and
+    // BindDescriptorSetsForShaders). Here our descriptor sets have been patched and all bound sets
+    // share a pipeline layout.
+    if(dstPipeState.shaderObject && !vertexPatchedToCompute)
+      dstPipeState.lastBoundDescSet = 0;
   }
   else if(ret.pipeLayout != VK_NULL_HANDLE)
   {
@@ -3601,6 +3634,7 @@ bool VulkanReplay::PrepareStateForPatchedShader(
   }
 
   VkPipeline pipe = VK_NULL_HANDLE;
+  rdcarray<VkShaderEXT> shaderObjs = {};
   if(pipelineId != ResourceId() && compute)
   {
     const rdcarray<uint32_t> &origSpirv =
@@ -3737,74 +3771,81 @@ bool VulkanReplay::PrepareStateForPatchedShader(
 
     modifiedstate.graphics.pipeline = GetResID(pipe);
   }
-
-  rdcarray<VkShaderEXT> shaderObjs;
-
-  for(uint32_t i = 0; i < NumShaderStages; i++)
+  else
   {
-    ResourceId shadId = modifiedstate.shaderObjects[i];
-    if(shadId == ResourceId())
-      continue;
-
-    const rdcarray<uint32_t> &origSpirv = c.m_ShaderModule[shadId].spirv.GetSPIRV();
-    rdcarray<uint32_t> modSpirv;
-
-    VkShaderEXT shad = VK_NULL_HANDLE;
-    VkShaderCreateInfoEXT shadCreateinfo = {};
-    m_pDriver->GetShaderCache()->MakeShaderObjectInfo(shadCreateinfo, shadId);
-
-    bool patched = stagePatchCallback(patchedBufferdata, shadCreateinfo.stage, shadCreateinfo.pName,
-                                      origSpirv, modSpirv, shadCreateinfo.pSpecializationInfo);
-
-    if(patched)
+    for(uint32_t i = 0; i < NumShaderStages; i++)
     {
-      shadCreateinfo.pCode = modSpirv.data();
-      shadCreateinfo.codeSize = modSpirv.size() * sizeof(uint32_t);
+      if(compute && (ShaderStage)i != ShaderStage::Compute)
+        continue;
+      else if(!compute && (ShaderStage)i == ShaderStage::Compute)
+        continue;
+
+      ResourceId shadId = modifiedstate.shaderObjects[i];
+      if(shadId == ResourceId())
+        continue;
+
+      const rdcarray<uint32_t> &origSpirv = c.m_ShaderModule[shadId].spirv.GetSPIRV();
+      rdcarray<uint32_t> modSpirv;
+
+      VkShaderEXT shad = VK_NULL_HANDLE;
+      VkShaderCreateInfoEXT shadCreateinfo = {};
+      m_pDriver->GetShaderCache()->MakeShaderObjectInfo(shadCreateinfo, shadId);
+
+      bool patched = stagePatchCallback(patchedBufferdata, shadCreateinfo.stage, shadCreateinfo.pName,
+                                        origSpirv, modSpirv, shadCreateinfo.pSpecializationInfo);
+
+      if(patched)
+      {
+        shadCreateinfo.pCode = modSpirv.data();
+        shadCreateinfo.codeSize = modSpirv.size() * sizeof(uint32_t);
+      }
+      else if(IsBinding(m_StorageMode))
+      {
+        modSpirv = origSpirv;
+
+        // if we're stealing a binding point, we need to patch all other shaders
+        {
+          rdcspv::Editor editor(modSpirv);
+
+          editor.Prepare();
+          editor.SetBufferStorageMode(m_StorageMode);
+
+          editor.OffsetBindingsToMatchReservation(patchedBufferdata.numNewBindings);
+        }
+
+        shadCreateinfo.pCode = modSpirv.data();
+        shadCreateinfo.codeSize = modSpirv.size() * sizeof(uint32_t);
+      }
+      else
+      {
+        shadCreateinfo.pCode = origSpirv.data();
+        shadCreateinfo.codeSize = origSpirv.size() * sizeof(uint32_t);
+      }
+
+      // if we're stealing a binding point, all shaders need updated descriptor sets
+      if(IsBinding(m_StorageMode))
+      {
+        shadCreateinfo.setLayoutCount = (uint32_t)patchedBufferdata.setLayouts.size();
+        shadCreateinfo.pSetLayouts = patchedBufferdata.setLayouts.data();
+      }
+
+      vkr = m_pDriver->vkCreateShadersEXT(dev, 1, &shadCreateinfo, NULL, &shad);
+      if(vkr != VK_SUCCESS || shad == VK_NULL_HANDLE)
+      {
+        RDCERR("Failed to create patched shader feedback object: %s", ToStr(vkr).c_str());
+        if(shad != VK_NULL_HANDLE)
+          m_pDriver->vkDestroyShaderEXT(dev, shad, NULL);
+        for(VkShaderEXT s : shaderObjs)
+          m_pDriver->vkDestroyShaderEXT(dev, s, NULL);
+        if(pipe != VK_NULL_HANDLE)
+          m_pDriver->vkDestroyPipeline(dev, pipe, NULL);
+        return false;
+      }
+
+      shaderObjs.push_back(shad);
+
+      modifiedstate.shaderObjects[i] = GetResID(shad);
     }
-    else if(IsBinding(m_StorageMode))
-    {
-      modSpirv = origSpirv;
-
-      // if we're stealing a binding point, we need to patch all other shaders
-      rdcspv::Editor editor(modSpirv);
-
-      editor.Prepare();
-      editor.SetBufferStorageMode(m_StorageMode);
-
-      editor.OffsetBindingsToMatchReservation(patchedBufferdata.numNewBindings);
-
-      shadCreateinfo.pCode = modSpirv.data();
-      shadCreateinfo.codeSize = modSpirv.size() * sizeof(uint32_t);
-    }
-    else
-    {
-      shadCreateinfo.pCode = origSpirv.data();
-      shadCreateinfo.codeSize = origSpirv.size() * sizeof(uint32_t);
-    }
-
-    // if we're stealing a binding point, all shaders need updated descriptor sets
-    if(IsBinding(m_StorageMode))
-    {
-      shadCreateinfo.setLayoutCount = (uint32_t)patchedBufferdata.setLayouts.size();
-      shadCreateinfo.pSetLayouts = patchedBufferdata.setLayouts.data();
-    }
-
-    vkr = m_pDriver->vkCreateShadersEXT(dev, 1, &shadCreateinfo, NULL, &shad);
-    if(vkr != VK_SUCCESS || shad == VK_NULL_HANDLE)
-    {
-      RDCERR("Failed to create patched shader feedback object: %s", ToStr(vkr).c_str());
-      if(shad != VK_NULL_HANDLE)
-        m_pDriver->vkDestroyShaderEXT(dev, shad, NULL);
-      for(VkShaderEXT s : shaderObjs)
-        m_pDriver->vkDestroyShaderEXT(dev, s, NULL);
-      if(pipe != VK_NULL_HANDLE)
-        m_pDriver->vkDestroyPipeline(dev, pipe, NULL);
-      return false;
-    }
-
-    shaderObjs.push_back(shad);
-
-    modifiedstate.shaderObjects[i] = GetResID(shad);
   }
 
   modifiedstate.subpassContents = VK_SUBPASS_CONTENTS_INLINE;
@@ -3862,7 +3903,10 @@ bool VulkanReplay::RunFeedbackAction(VkDeviceSize bufferSize, const ActionDescri
 
   if(action->flags & ActionFlags::Dispatch)
   {
-    modifiedstate.BindPipeline(m_pDriver, cmd, VulkanRenderState::BindCompute, true);
+    if(modifiedstate.compute.shaderObject)
+      modifiedstate.BindShaderObjects(m_pDriver, cmd, VulkanRenderState::BindCompute);
+    else
+      modifiedstate.BindPipeline(m_pDriver, cmd, VulkanRenderState::BindCompute, true);
 
     ObjDisp(cmd)->CmdDispatch(Unwrap(cmd), action->dispatchDimension[0],
                               action->dispatchDimension[1], action->dispatchDimension[2]);
@@ -3901,43 +3945,23 @@ void VulkanReplay::CreateResources()
 {
   m_Device = m_pDriver->GetDev();
 
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.0f);
-
   m_General.Init(m_pDriver, VK_NULL_HANDLE);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.1f);
 
   m_TexRender.Init(m_pDriver, m_General.DescriptorPool);
 
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.3f);
-
   m_Overlay.Init(m_pDriver, m_General.DescriptorPool);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.4f);
 
   m_MeshRender.Init(m_pDriver, m_General.DescriptorPool);
 
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.6f);
-
   m_VertexPick.Init(m_pDriver, m_General.DescriptorPool);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.7f);
 
   m_PixelPick.Init(m_pDriver, m_General.DescriptorPool);
 
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.75f);
-
   m_PixelHistory.Init(m_pDriver, m_General.DescriptorPool);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.8f);
 
   m_Histogram.Init(m_pDriver, m_General.DescriptorPool);
 
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 0.9f);
-
   m_ShaderDebugData.Init(m_pDriver, m_General.DescriptorPool);
-
-  RenderDoc::Inst().SetProgress(LoadProgress::DebugManagerInit, 1.0f);
 
   m_StorageMode = BufferStorageMode::Descriptor;
 
@@ -5693,12 +5717,21 @@ void ShaderDebugData::Init(WrappedVulkan *driver, VkDescriptorPool descriptorPoo
   for(uint32_t i = 0; i < MAX_QUEUED_OPS; ++i)
     CREATE_OBJECT(DescSets[i], DescPool, DescSetLayout);
 
+  // the sampling shader writes its result in the texture's native type, so the attachment format
+  // has to match. All three formats are in the same 128-bit compatibility class, so a single
+  // mutable-format image can be viewed as any of them.
+  const VkFormat sampleFormats[SampleFormat_Count] = {
+      VK_FORMAT_R32G32B32A32_SFLOAT,
+      VK_FORMAT_R32G32B32A32_UINT,
+      VK_FORMAT_R32G32B32A32_SINT,
+  };
+
   VkImageCreateInfo imInfo = {
       VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
       NULL,
-      0,
+      VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT,
       VK_IMAGE_TYPE_2D,
-      VK_FORMAT_R32G32B32A32_SFLOAT,
+      sampleFormats[SampleFormat_Float],
       {1, 1, 1},
       1,
       1,
@@ -5740,7 +5773,7 @@ void ShaderDebugData::Init(WrappedVulkan *driver, VkDescriptorPool descriptorPoo
       0,
       Image,
       VK_IMAGE_VIEW_TYPE_2D,
-      VK_FORMAT_R32G32B32A32_SFLOAT,
+      VK_FORMAT_UNDEFINED,
       {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
        VK_COMPONENT_SWIZZLE_IDENTITY},
       {
@@ -5752,14 +5785,9 @@ void ShaderDebugData::Init(WrappedVulkan *driver, VkDescriptorPool descriptorPoo
       },
   };
 
-  vkr = driver->vkCreateImageView(driver->GetDev(), &viewInfo, NULL, &ImageView);
-  CHECK_VKR(driver, vkr);
-
-  NameVulkanObject(ImageView, "ShaderDebugData.ImageView");
-
   VkAttachmentDescription attDesc = {
       0,
-      VK_FORMAT_R32G32B32A32_SFLOAT,
+      VK_FORMAT_UNDEFINED,
       VK_SAMPLE_COUNT_1_BIT,
       VK_ATTACHMENT_LOAD_OP_CLEAR,
       VK_ATTACHMENT_STORE_OP_STORE,
@@ -5800,17 +5828,38 @@ void ShaderDebugData::Init(WrappedVulkan *driver, VkDescriptorPool descriptorPoo
       VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, NULL, 0, 1, &attDesc, 1, &sub, 2, deps,
   };
 
-  vkr = driver->vkCreateRenderPass(driver->GetDev(), &rpinfo, NULL, &RenderPass);
-  if(vkr != VK_SUCCESS)
-    RDCERR("Failed to create shader debug render pass: %s", ToStr(vkr).c_str());
-
   // create framebuffer
   VkFramebufferCreateInfo fbinfo = {
-      VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, NULL, 0, RenderPass, 1, &ImageView, 1, 1, 1,
+      VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, NULL, 0, VK_NULL_HANDLE, 1, NULL, 1, 1, 1,
   };
 
-  vkr = driver->vkCreateFramebuffer(driver->GetDev(), &fbinfo, NULL, &Framebuffer);
-  CHECK_VKR(driver, vkr);
+  const char *viewNames[SampleFormat_Count] = {
+      "ShaderDebugData.ImageView[float]",
+      "ShaderDebugData.ImageView[uint]",
+      "ShaderDebugData.ImageView[sint]",
+  };
+
+  for(size_t i = 0; i < SampleFormat_Count; i++)
+  {
+    viewInfo.format = sampleFormats[i];
+
+    vkr = driver->vkCreateImageView(driver->GetDev(), &viewInfo, NULL, &ImageView[i]);
+    CHECK_VKR(driver, vkr);
+
+    NameVulkanObject(ImageView[i], viewNames[i]);
+
+    attDesc.format = sampleFormats[i];
+
+    vkr = driver->vkCreateRenderPass(driver->GetDev(), &rpinfo, NULL, &RenderPass[i]);
+    if(vkr != VK_SUCCESS)
+      RDCERR("Failed to create shader debug render pass: %s", ToStr(vkr).c_str());
+
+    fbinfo.renderPass = RenderPass[i];
+    fbinfo.pAttachments = &ImageView[i];
+
+    vkr = driver->vkCreateFramebuffer(driver->GetDev(), &fbinfo, NULL, &Framebuffer[i]);
+    CHECK_VKR(driver, vkr);
+  }
 
   VkDeviceSize resultMaxElementSize = sizeof(Vec4f) * 4;
   MathResult.Create(driver, driver->GetDev(), resultMaxElementSize, 1,
@@ -5840,9 +5889,13 @@ void ShaderDebugData::Destroy(WrappedVulkan *driver)
 
   driver->vkDestroyImage(driver->GetDev(), Image, NULL);
   driver->vkFreeMemory(driver->GetDev(), ImageMemory, NULL);
-  driver->vkDestroyImageView(driver->GetDev(), ImageView, NULL);
-  driver->vkDestroyFramebuffer(driver->GetDev(), Framebuffer, NULL);
-  driver->vkDestroyRenderPass(driver->GetDev(), RenderPass, NULL);
+
+  for(size_t i = 0; i < SampleFormat_Count; i++)
+  {
+    driver->vkDestroyImageView(driver->GetDev(), ImageView[i], NULL);
+    driver->vkDestroyFramebuffer(driver->GetDev(), Framebuffer[i], NULL);
+    driver->vkDestroyRenderPass(driver->GetDev(), RenderPass[i], NULL);
+  }
 
   // one module each for float, uint, sint.
   for(size_t i = 0; i < ARRAY_COUNT(Module); i++)

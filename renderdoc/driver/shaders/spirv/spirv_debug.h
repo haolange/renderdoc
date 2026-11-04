@@ -156,7 +156,8 @@ public:
                                  const ShaderVariable &compare, GatherChannel gatherChannel,
                                  const rdcspv::ImageOperandsAndParamDatas &operands,
                                  ShaderVariable &output, bool &hasResult) = 0;
-  virtual bool QueueCalculateMathOp(GLSLstd450 op, const rdcarray<ShaderVariable> &params) = 0;
+  virtual bool QueueCalculateMathOp(Op opcode, GLSLstd450 op,
+                                    const rdcarray<ShaderVariable> &params) = 0;
   virtual bool GetQueuedResults(rdcarray<ShaderVariable *> &mathOpResults,
                                 rdcarray<ShaderVariable *> &sampleGatherResults) = 0;
   virtual bool QueuedOpsHasSpace() = 0;
@@ -182,10 +183,28 @@ struct ResultDataBase
   uint32_t helperBallot[4];
 
   uint32_t numSubgroups;    // may be packed oddly so we don't assume we can calculate
-  uint32_t padding[3];
+  uint32_t shadRate;
+  uint32_t padding[2];
+
+  // padding so overall struct size is 8-byte aligned for if LaneData contains 8-byte data
+  uint32_t paddingForDoubles[4];
 
   // LaneData lanes[N]
   // each LaneData is prefixed by the subgroup struct below if needed, and then the stage struct unconditionally
+};
+
+struct ResultBaseBuffer
+{
+  uint32_t hit_count;
+  uint32_t total_count;
+  uint32_t dummy;
+  uint32_t padding;
+
+  // extra padding so the offset of ResultData is 8-byte aligned in case we have user 8-byte inputs
+  Vec4u paddingForDoubles;
+
+  // dummy entry, used only for offsets of ResultData hits[];
+  byte hits;
 };
 
 // things we need per-lane with subgroups active, before any per-stage data
@@ -285,7 +304,8 @@ private:
 struct GpuMathOperation
 {
   uint32_t workgroupIndex;
-  GLSLstd450 op;
+  Op opcode;
+  GLSLstd450 glslop;
   rdcarray<ShaderVariable> paramVars;
   ShaderVariable *result;
 };
@@ -419,7 +439,7 @@ struct ThreadState
     Stepped,
   };
 
-  void QueueMathOp(GLSLstd450 op, const rdcarray<ShaderVariable> &paramVars,
+  void QueueMathOp(Op opcode, GLSLstd450 op, const rdcarray<ShaderVariable> &paramVars,
                    const ShaderVariable &result);
   void QueueSampleGather(Op opcode, DebugAPIWrapper::TextureType texType,
                          const ShaderBindIndex &imageBind, const ShaderBindIndex &samplerBind,
@@ -679,7 +699,9 @@ class Debugger : public Processor, public ShaderDebugger
 public:
   Debugger();
   ~Debugger();
-  virtual void Parse(const rdcarray<uint32_t> &spirvWords);
+
+  using Processor::Parse;
+
   ShaderDebugTrace *BeginDebug(DebugAPIWrapper *apiWrapper, const ShaderStage stage,
                                const rdcstr &entryPoint, const rdcarray<SpecConstant> &specInfo,
                                const std::map<size_t, uint32_t> &instructionLines,
@@ -716,7 +738,7 @@ public:
   bool ArePointersAndEqual(const ShaderVariable &a, const ShaderVariable &b) const;
   DeviceOpResult WriteThroughPointer(ShaderVariable &ptr, const ShaderVariable &val) const;
   ShaderVariable MakeCompositePointer(const ShaderVariable &base, Id id,
-                                      rdcarray<uint32_t> &indices) const;
+                                      const rdcarray<uint32_t> &indices) const;
 
   DebugAPIWrapper *GetAPIWrapper() const;
   uint32_t GetNumInstructions() const { return (uint32_t)instructionOffsets.size(); }
@@ -789,6 +811,7 @@ private:
     rdcstr name;
   };
 
+  std::set<rdcstr> usedNames;
   DenseIdMap<rdcstr> strings;
   rdcarray<MemberName> memberNames;
   std::map<ShaderEntryPoint, Id> entryLookup;
@@ -818,10 +841,6 @@ private:
   Function *curFunction = NULL;
 
   rdcarray<size_t> instructionOffsets;
-
-  mutable std::set<rdcstr> usedNames;
-  mutable Threading::RWLock dynamicNamesLock;
-  mutable std::map<Id, rdcstr> dynamicNames;
 
   struct
   {

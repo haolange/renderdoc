@@ -118,6 +118,7 @@ set(VULKAN_SRC
         vk/vk_descriptor_reuse.cpp
         vk/vk_descriptor_variable_count.cpp
         vk/vk_descriptor_buffer_analyse.cpp
+        vk/vk_device_address_commands.cpp
         vk/vk_discard_rects.cpp
         vk/vk_discard_zoo.cpp
         vk/vk_draw_zoo.cpp
@@ -166,6 +167,7 @@ set(VULKAN_SRC
         vk/vk_simple_triangle.cpp
         vk/vk_spec_constants.cpp
         vk/vk_spirv_13_shaders.cpp
+        vk/vk_stripped_shaders.cpp
         vk/vk_subgroup_zoo.cpp
         vk/vk_structured_buffer_nested.cpp
         vk/vk_sync2.cpp
@@ -175,6 +177,7 @@ set(VULKAN_SRC
         vk/vk_vertex_attr_zoo.cpp
         vk/vk_video_textures.cpp
         vk/vk_vs_max_desc_set.cpp
+        vk/vk_vrs.cpp
         vk/vk_workgroup_zoo.cpp)
 
 set(OPENGL_SRC
@@ -213,6 +216,7 @@ set(OPENGL_SRC
         gl/gl_resource_lifetimes.cpp
         gl/gl_runtime_bind_prog_to_pipe.cpp
         gl/gl_separable_geometry_shader.cpp
+        gl/gl_shader_debug_zoo.cpp
         gl/gl_shader_editing.cpp
         gl/gl_shader_isa.cpp
         gl/gl_simple_triangle.cpp
